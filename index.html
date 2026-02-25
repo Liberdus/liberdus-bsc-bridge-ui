@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#ffffff" />
+
+    <title>Liberdus BSC Bridge</title>
+
+    <link rel="icon" type="image/png" href="./assets/logo.png" />
+
+    <link rel="stylesheet" href="./css/base.css" />
+    <link rel="stylesheet" href="./css/header.css" />
+    <link rel="stylesheet" href="./css/tabs.css" />
+    <link rel="stylesheet" href="./css/wallet-popup.css" />
+    <link rel="stylesheet" href="./css/notifications.css" />
+  </head>
+
+  <body>
+    <script src="./libs/ethers.umd.min.js"></script>
+    <script src="./js/app.js" type="module"></script>
+
+    <div class="container" id="app">
+      <header class="header" id="header">
+        <div class="header-toolbar">
+          <a
+            href="https://liberdus.com"
+            target="_blank"
+            rel="noopener"
+            class="logo-link"
+            aria-label="Visit Liberdus website"
+          >
+            <img class="logo" src="./assets/logo.png" alt="Liberdus logo" />
+          </a>
+          <div class="logo-text">
+            <div class="app-title">Liberdus BSC Bridge <span class="app-version"></span></div>
+            <div class="app-subtitle">Polygon Vault Skeleton UI</div>
+          </div>
+
+          <nav class="nav-section" aria-label="Header actions">
+            <button
+              id="connect-wallet-btn"
+              class="connect-wallet-btn"
+              type="button"
+              title="Connect MetaMask"
+            >
+              Connect Wallet
+            </button>
+          </nav>
+        </div>
+      </header>
+
+      <main class="main" id="main-content">
+        <section class="tabs" aria-label="Main tabs">
+          <div class="tab-bar" role="tablist" aria-label="Liberdus BSC Bridge tabs">
+            <button
+              class="tab-button is-active"
+              role="tab"
+              aria-selected="true"
+              aria-controls="tab-panel-overview"
+              id="tab-overview"
+              data-tab="overview"
+              type="button"
+            >
+              Overview
+            </button>
+            <button
+              class="tab-button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="tab-panel-bridge-out"
+              id="tab-bridge-out"
+              data-tab="bridge-out"
+              type="button"
+            >
+              Bridge Out
+            </button>
+            <button
+              class="tab-button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="tab-panel-operations"
+              id="tab-operations"
+              data-tab="operations"
+              type="button"
+            >
+              Operations
+            </button>
+            <button
+              class="tab-button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="tab-panel-contract"
+              id="tab-contract"
+              data-tab="contract"
+              type="button"
+            >
+              Contract
+            </button>
+          </div>
+
+          <div class="tab-panels">
+            <section
+              class="tab-panel is-active"
+              id="tab-panel-overview"
+              role="tabpanel"
+              aria-labelledby="tab-overview"
+              tabindex="0"
+              data-panel="overview"
+            ></section>
+
+            <section
+              class="tab-panel"
+              id="tab-panel-bridge-out"
+              role="tabpanel"
+              aria-labelledby="tab-bridge-out"
+              tabindex="0"
+              hidden
+              data-panel="bridge-out"
+            ></section>
+
+            <section
+              class="tab-panel"
+              id="tab-panel-operations"
+              role="tabpanel"
+              aria-labelledby="tab-operations"
+              tabindex="0"
+              hidden
+              data-panel="operations"
+            ></section>
+
+            <section
+              class="tab-panel"
+              id="tab-panel-contract"
+              role="tabpanel"
+              aria-labelledby="tab-contract"
+              tabindex="0"
+              hidden
+              data-panel="contract"
+            ></section>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <div class="footer-inner">
+          <div class="footer-left">
+            <span>(c) Liberdus</span>
+            <span class="footer-sep">|</span>
+            <a href="https://github.com/Liberdus" target="_blank" rel="noopener">GitHub</a>
+          </div>
+        </div>
+      </footer>
+
+      <div id="notification-container" class="notification-container"></div>
+    </div>
+
+    <div id="wallet-popup-container"></div>
+  </body>
+</html>
