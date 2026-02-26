@@ -17,6 +17,7 @@
     <link rel="stylesheet" href="./css/tabs.css" />
     <link rel="stylesheet" href="./css/wallet-popup.css" />
     <link rel="stylesheet" href="./css/notifications.css" />
+    <link rel="stylesheet" href="./css/bridge-module.css" />
   </head>
 
   <body>
@@ -87,7 +88,7 @@
               data-tab="operations"
               type="button"
             >
-              Operations
+              Admin/Multisig
             </button>
             <button
               class="tab-button"
@@ -99,6 +100,17 @@
               type="button"
             >
               Contract
+            </button>
+            <button
+              class="tab-button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="tab-panel-transactions"
+              id="tab-transactions"
+              data-tab="transactions"
+              type="button"
+            >
+              Transactions
             </button>
           </div>
 
@@ -140,6 +152,16 @@
               tabindex="0"
               hidden
               data-panel="contract"
+            ></section>
+
+            <section
+              class="tab-panel"
+              id="tab-panel-transactions"
+              role="tabpanel"
+              aria-labelledby="tab-transactions"
+              tabindex="0"
+              hidden
+              data-panel="transactions"
             ></section>
           </div>
         </section>

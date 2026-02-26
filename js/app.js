@@ -5,6 +5,7 @@ import { OverviewTab } from './components/overview-tab.js';
 import { BridgeOutTab } from './components/bridge-out-tab.js';
 import { OperationsTab } from './components/operations-tab.js';
 import { ContractTab } from './components/contract-tab.js';
+import { TransactionsTab } from './components/transactions-tab.js';
 import { ToastManager } from './components/toast-manager.js';
 import { WalletManager } from './wallet/wallet-manager.js';
 import { NetworkManager } from './wallet/network-manager.js';
@@ -17,6 +18,7 @@ const overviewTab = new OverviewTab();
 const bridgeOutTab = new BridgeOutTab();
 const operationsTab = new OperationsTab();
 const contractTab = new ContractTab();
+const transactionsTab = new TransactionsTab();
 const toastManager = new ToastManager();
 const walletManager = new WalletManager();
 const networkManager = new NetworkManager({ walletManager });
@@ -54,6 +56,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   bridgeOutTab.load();
   operationsTab.load();
   contractTab.load();
+  transactionsTab.load();
 
   tabBar.load();
 });

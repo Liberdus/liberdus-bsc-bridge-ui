@@ -29,7 +29,8 @@ export class TabBar {
   applyHash() {
     const hash = (window.location.hash || '').replace(/^#/, '').trim();
     const next = hash && this.tabPanelsByName.has(hash) ? hash : 'overview';
-    this.switchTab(next, { updateHash: false, focusPanel: false });
+    const resolved = this._isTabAvailable(next) ? next : 'overview';
+    this.switchTab(resolved, { updateHash: false, focusPanel: false });
   }
 
   switchTab(tabName, { updateHash = false, focusPanel = false } = {}) {
@@ -46,7 +47,7 @@ export class TabBar {
       const isActive = btn.dataset.tab === tabName;
       btn.classList.toggle('is-active', isActive);
       btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
-      btn.tabIndex = isActive ? 0 : -1;
+      btn.tabIndex = isActive && !btn.hidden ? 0 : -1;
     });
 
     // Panels
@@ -84,10 +85,11 @@ export class TabBar {
     const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter', ' '];
     if (!keys.includes(key)) return;
 
-    const currentIndex = this.tabButtons.findIndex((b) => b.dataset.tab === this.activeTab);
+    const visibleTabs = this._getVisibleTabButtons();
+    const currentIndex = visibleTabs.findIndex((b) => b.dataset.tab === this.activeTab);
     if (currentIndex < 0) return;
 
-    const lastIndex = this.tabButtons.length - 1;
+    const lastIndex = visibleTabs.length - 1;
     let nextIndex = currentIndex;
 
     if (key === 'ArrowLeft') nextIndex = currentIndex === 0 ? lastIndex : currentIndex - 1;
@@ -97,7 +99,7 @@ export class TabBar {
 
     if (nextIndex !== currentIndex) {
       e.preventDefault();
-      this.tabButtons[nextIndex]?.focus();
+      visibleTabs[nextIndex]?.focus();
       return;
     }
 
@@ -110,5 +112,15 @@ export class TabBar {
         this.switchTab(tabName, { updateHash: true, focusPanel: true });
       }
     }
+  }
+
+  _getVisibleTabButtons() {
+    return this.tabButtons.filter((btn) => !btn.hidden && !btn.classList.contains('hidden'));
+  }
+
+  _isTabAvailable(tabName) {
+    if (tabName === 'overview') return true;
+    const btn = this.tabButtons.find((b) => b.dataset.tab === tabName);
+    return !!btn && !btn.hidden && !btn.classList.contains('hidden');
   }
 }

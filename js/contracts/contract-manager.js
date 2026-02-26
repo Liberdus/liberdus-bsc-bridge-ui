@@ -124,6 +124,10 @@ export class ContractManager {
 
     const [
       onChainId,
+      chainId,
+      owner,
+      operationCount,
+      operationDeadline,
       token,
       requiredSignatures,
       bridgeOutEnabled,
@@ -136,6 +140,10 @@ export class ContractManager {
       signer3,
     ] = await Promise.all([
       this._safeRead(contract, 'getChainId'),
+      this._safeRead(contract, 'chainId'),
+      this._safeRead(contract, 'owner'),
+      this._safeRead(contract, 'operationCount'),
+      this._safeRead(contract, 'OPERATION_DEADLINE'),
       this._safeRead(contract, 'token'),
       this._safeRead(contract, 'REQUIRED_SIGNATURES'),
       this._safeRead(contract, 'bridgeOutEnabled'),
@@ -149,6 +157,10 @@ export class ContractManager {
     ]);
 
     snapshot.onChainId = this._toNumberOrNull(onChainId.value);
+    snapshot.onChainChainId = this._toNumberOrNull(chainId.value);
+    snapshot.owner = owner.value ? String(owner.value) : null;
+    snapshot.operationCount = this._toNumberOrNull(operationCount.value);
+    snapshot.operationDeadlineSeconds = this._toNumberOrNull(operationDeadline.value);
     snapshot.token = token.value ? String(token.value) : null;
     snapshot.requiredSignatures = this._toNumberOrNull(requiredSignatures.value);
     snapshot.bridgeOutEnabled = this._toBoolOrNull(bridgeOutEnabled.value);
@@ -161,6 +173,10 @@ export class ContractManager {
 
     snapshot.errors = {
       getChainId: onChainId.error,
+      chainId: chainId.error,
+      owner: owner.error,
+      operationCount: operationCount.error,
+      OPERATION_DEADLINE: operationDeadline.error,
       token: token.error,
       REQUIRED_SIGNATURES: requiredSignatures.error,
       bridgeOutEnabled: bridgeOutEnabled.error,
@@ -202,6 +218,10 @@ export class ContractManager {
       configuredAddress: CONFIG?.CONTRACT?.ADDRESS || null,
       configuredChainId: Number(CONFIG?.NETWORK?.CHAIN_ID || 0) || null,
       onChainId: null,
+      onChainChainId: null,
+      owner: null,
+      operationCount: null,
+      operationDeadlineSeconds: null,
       token: null,
       requiredSignatures: null,
       bridgeOutEnabled: null,

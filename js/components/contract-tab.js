@@ -39,6 +39,11 @@ export class ContractTab {
             </div>
 
             <div class="kv">
+              <div class="kv-label">On-Chain chainId()</div>
+              <div class="kv-value" data-onchain-chain-id-view>--</div>
+            </div>
+
+            <div class="kv">
               <div class="kv-label">On-Chain getChainId()</div>
               <div class="kv-value" data-onchain-chain-id>--</div>
             </div>
@@ -59,6 +64,16 @@ export class ContractTab {
             </div>
 
             <div class="kv">
+              <div class="kv-label">Operation Count</div>
+              <div class="kv-value" data-operation-count>--</div>
+            </div>
+
+            <div class="kv">
+              <div class="kv-label">Operation Deadline</div>
+              <div class="kv-value" data-operation-deadline>--</div>
+            </div>
+
+            <div class="kv">
               <div class="kv-label">Bridge Out Enabled</div>
               <div class="kv-value" data-bridge-enabled>--</div>
             </div>
@@ -76,6 +91,16 @@ export class ContractTab {
             <div class="kv">
               <div class="kv-label">Vault Balance</div>
               <div class="kv-value" data-vault-balance>--</div>
+            </div>
+
+            <div class="kv kv--full">
+              <div class="kv-label">Owner</div>
+              <div class="kv-value">
+                <div class="param-address">
+                  <code data-owner-address>--</code>
+                  <button type="button" class="copy-inline" data-copy-address data-address="">Copy</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -146,10 +171,14 @@ export class ContractTab {
 
     this._renderAddress('[data-contract-address]', snapshot.configuredAddress || '--');
     this._renderAddress('[data-token-address]', snapshot.token || '--');
+    this._renderAddress('[data-owner-address]', snapshot.owner || '--');
 
     this._setText('[data-config-chain-id]', this._valueOrDash(snapshot.configuredChainId));
     this._setText('[data-onchain-chain-id]', this._valueOrDash(snapshot.onChainId));
+    this._setText('[data-onchain-chain-id-view]', this._valueOrDash(snapshot.onChainChainId));
     this._setText('[data-required-signatures]', this._valueOrDash(snapshot.requiredSignatures));
+    this._setText('[data-operation-count]', this._valueOrDash(snapshot.operationCount));
+    this._setText('[data-operation-deadline]', this._formatOperationDeadline(snapshot.operationDeadlineSeconds));
     this._setText('[data-bridge-enabled]', this._boolLabel(snapshot.bridgeOutEnabled));
     this._setText('[data-vault-halted]', this._boolLabel(snapshot.halted));
     this._setText('[data-max-bridge-out]', this._formatTokenAmount(snapshot.maxBridgeOutAmount));
@@ -263,14 +292,29 @@ export class ContractTab {
 
     try {
       if (window.ethers?.utils?.formatUnits) {
-        const formatted = window.ethers.utils.formatUnits(value, 18);
-        return `${this._trimDecimals(formatted)} LIB`;
+        const decimals = Number(window.CONFIG?.TOKEN?.DECIMALS ?? 18);
+        const symbol = window.CONFIG?.TOKEN?.SYMBOL || 'TOKEN';
+        const formatted = window.ethers.utils.formatUnits(value, Number.isFinite(decimals) ? decimals : 18);
+        return `${this._trimDecimals(formatted)} ${symbol}`;
       }
     } catch {
       // fall back to raw below
     }
 
     return `${String(value)} (raw)`;
+  }
+
+  _formatOperationDeadline(seconds) {
+    const n = Number(seconds);
+    if (!Number.isFinite(n) || n <= 0) return '--';
+    const days = Math.floor(n / 86400);
+    const hours = Math.floor((n % 86400) / 3600);
+    const mins = Math.floor((n % 3600) / 60);
+    const parts = [];
+    if (days) parts.push(`${days}d`);
+    if (hours) parts.push(`${hours}h`);
+    if (mins || !parts.length) parts.push(`${mins}m`);
+    return `${parts.join(' ')} (${n}s)`;
   }
 
   _trimDecimals(value) {
