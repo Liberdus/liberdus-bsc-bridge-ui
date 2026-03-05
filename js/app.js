@@ -42,6 +42,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   toastManager.load();
   walletManager.load();
   await walletManager.init();
+  
+  // Force header update after wallet init (in case of restored connection)
+  setTimeout(() => {
+    const headerInstance = header;
+    if (headerInstance?.updateConnectButtonStatus) {
+      headerInstance.updateConnectButtonStatus();
+    }
+  }, 100);
+  
   networkManager.load();
   walletPopup.load();
 

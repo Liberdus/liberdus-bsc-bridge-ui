@@ -214,6 +214,7 @@ export class WalletManager {
   }
 
   _notify(event, data) {
+    console.log('[WalletManager] _notify:', event, data);
     // Listener callbacks
     this.listeners.forEach((cb) => {
       try {

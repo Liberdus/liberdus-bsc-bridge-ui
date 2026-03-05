@@ -10,7 +10,11 @@ export class BridgeOutTab {
     this.panel = document.querySelector('.tab-panel[data-panel="bridge-out"]');
     if (!this.panel) return;
 
-    this.module = new PolygonBscBridgeModule();
+    this.module = new PolygonBscBridgeModule({
+      contractManager: window.contractManager,
+      walletManager: window.walletManager,
+      networkManager: window.networkManager,
+    });
     this.module.mount(this.panel);
   }
 }

@@ -4,22 +4,17 @@ export const CONFIG = {
     VERSION: '0.1.0-skeleton',
   },
 
-  ACCESS: {
-    ADMIN_ADDRESSES: [],
-    MULTISIG_ADDRESSES: [],
-  },
-
   TOKEN: {
     SYMBOL: 'LIB',
     DECIMALS: 18,
+    ADDRESS: '0xD5409531c857AfD1b2fF6Cd527038e9981ef4863',
   },
 
   NETWORK: {
     CHAIN_ID: 80002,
-    NAME: 'Polygon Amoy Testnet',
-    RPC_URL: 'https://rpc-amoy.polygon.technology',
+    NAME: 'Polygon Amoy',
+    RPC_URL: 'https://rpc.ankr.com/polygon_amoy',
     FALLBACK_RPCS: [
-      'https://polygon-amoy.drpc.org',
       'https://polygon-amoy-bor-rpc.publicnode.com',
     ],
     BLOCK_EXPLORER: 'https://amoy.polygonscan.com',
@@ -36,10 +31,9 @@ export const CONFIG = {
     CHAINS: {
       POLYGON: {
         CHAIN_ID: 80002,
-        NAME: 'Polygon Amoy Testnet',
-        RPC_URL: 'https://rpc-amoy.polygon.technology',
+        NAME: 'Polygon Amoy',
+        RPC_URL: 'https://rpc.ankr.com/polygon_amoy',
         FALLBACK_RPCS: [
-          'https://polygon-amoy.drpc.org',
           'https://polygon-amoy-bor-rpc.publicnode.com',
         ],
         BLOCK_EXPLORER: 'https://amoy.polygonscan.com',
@@ -49,7 +43,7 @@ export const CONFIG = {
         NAME: 'BSC Testnet',
         RPC_URL: 'https://bsc-testnet.publicnode.com',
         FALLBACK_RPCS: [
-          'https://rpc.ankr.com/bsc_testnet_chapel',
+          'https://rpc.ankr.com/bsc_testnet',
         ],
         BLOCK_EXPLORER: 'https://testnet.bscscan.com',
       },

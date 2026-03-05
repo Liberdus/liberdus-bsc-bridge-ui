@@ -88,6 +88,14 @@ export class Header {
     const walletManager = window.walletManager;
     const networkManager = window.networkManager;
 
+    console.log('[Header] updateConnectButtonStatus called', {
+      walletManagerExists: !!walletManager,
+      isConnected: walletManager?.isConnected?.(),
+      address: walletManager?.getAddress?.(),
+      chainId: walletManager?.getChainId?.(),
+      isOnRequiredNetwork: networkManager?.isOnRequiredNetwork?.(),
+    });
+
     if (!this.connectWalletBtn) return;
 
     // MetaMask not installed
@@ -104,6 +112,8 @@ export class Header {
     const isConnected = !!walletManager?.isConnected?.();
     const address = walletManager?.getAddress?.();
     const onPolygon = !!networkManager?.isOnRequiredNetwork?.();
+
+    console.log('[Header] Connection state:', { isConnected, address, onPolygon });
 
     if (!isConnected) {
       this.renderConnectButton({ text: 'Connect Wallet', disabled: false });

@@ -69,6 +69,10 @@ export class PolygonBscBridgeModule {
     this._els.approveBtn?.addEventListener('click', this._onApproveClicked);
     this._els.bridgeBtn?.addEventListener('click', this._onBridgeClicked);
     this._els.setMaxBtn?.addEventListener('click', this._onSetMaxClicked);
+    
+    // Listen to input changes for real-time validation
+    this._els.recipient?.addEventListener('input', () => this._updateActionStates());
+    this._els.amount?.addEventListener('input', () => this._updateActionStates());
   }
 
   _unbind() {
@@ -236,6 +240,12 @@ export class PolygonBscBridgeModule {
     const txEnabled = !!this.networkManager?.isTxEnabled?.();
     const snapshot = this._lastSnapshot;
 
+    console.log('[BridgeModule] _updateActionStates:', {
+      txEnabled,
+      snapshot,
+      networkManager: !!this.networkManager,
+    });
+
     const recipientOk = this._isAddress(this._els.recipient?.value);
     const amountWei = this._parseAmountToWei(this._els.amount?.value);
     const amountOk = amountWei && amountWei.gt(0);
@@ -244,6 +254,15 @@ export class PolygonBscBridgeModule {
     const maxOk = snapshot?.maxBridgeOutAmount ? amountWei && amountWei.lte(this._bn(snapshot.maxBridgeOutAmount)) : true;
 
     const needsApproval = this._needsApproval(amountWei);
+
+    console.log('[BridgeModule] Button states:', {
+      recipientOk,
+      amountOk,
+      amountValue: this._els.amount?.value,
+      bridgeEnabled,
+      maxOk,
+      needsApproval,
+    });
 
     if (this._els.approveBtn) this._els.approveBtn.disabled = !txEnabled || !amountOk || !needsApproval;
     if (this._els.bridgeBtn)
@@ -449,6 +468,15 @@ export class PolygonBscBridgeModule {
   }
 
   async _getTokenAddress() {
+    const configured = this.config?.TOKEN?.ADDRESS;
+    if (configured && window.ethers?.utils?.getAddress) {
+      try {
+        return window.ethers.utils.getAddress(configured);
+      } catch (_) {
+        // fall through to contract-derived address
+      }
+    }
+
     const snapshot = this.contractManager?.getStatusSnapshot?.();
     if (snapshot?.token) return snapshot.token;
 
