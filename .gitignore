@@ -8,8 +8,6 @@ build/
 out/
 coverage/
 tss-signer/
-liberdus-bsc-bridge-ui/
-liberdus-token-bridge-ui/
 tss-signer/
 # Environment files
 .env
