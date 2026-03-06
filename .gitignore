@@ -7,8 +7,6 @@ build/
 .next/
 out/
 coverage/
-tss-signer/
-tss-signer/
 # Environment files
 .env
 .env.*
