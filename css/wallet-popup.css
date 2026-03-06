@@ -91,6 +91,52 @@
   margin-top: 12px;
 }
 
+.wallet-network {
+  margin-top: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  background: var(--hover-background);
+}
+
+.wallet-network-label {
+  font-size: var(--font-size-xs);
+  color: var(--secondary-text-color);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.wallet-network-value {
+  margin-top: 4px;
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-sm);
+}
+
+.wallet-network-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+.network-switch-button {
+  flex: 1;
+  border: 1px solid var(--border-color);
+  background: var(--background-color);
+  color: var(--text-color);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  font-size: var(--font-size-xs);
+}
+
+.network-switch-button:hover {
+  background: var(--hover-background);
+}
+
+.network-switch-button.is-active {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
 .disconnect-button {
   width: 100%;
   border: 1px solid var(--border-color);

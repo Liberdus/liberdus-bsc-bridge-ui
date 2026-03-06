@@ -126,13 +126,14 @@ function getEthers() {
 
 async function createReadOnlyProvider() {
   const ethers = getEthers();
+  const config = window.CONFIG || CONFIG;
 
-  const primaryRpcUrl = CONFIG?.NETWORK?.RPC_URL;
-  const fallbackRpcs = Array.isArray(CONFIG?.NETWORK?.FALLBACK_RPCS)
-    ? CONFIG.NETWORK.FALLBACK_RPCS
+  const primaryRpcUrl = config?.NETWORK?.RPC_URL;
+  const fallbackRpcs = Array.isArray(config?.NETWORK?.FALLBACK_RPCS)
+    ? config.NETWORK.FALLBACK_RPCS
     : [];
-  const chainId = Number(CONFIG?.NETWORK?.CHAIN_ID);
-  const networkName = CONFIG?.NETWORK?.NAME || 'unknown';
+  const chainId = Number(config?.NETWORK?.CHAIN_ID);
+  const networkName = config?.NETWORK?.NAME || 'unknown';
 
   const rpcUrls = Array.from(new Set([primaryRpcUrl, ...fallbackRpcs].filter(Boolean)));
 

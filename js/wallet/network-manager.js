@@ -10,8 +10,6 @@ import { peekReadOnlyProvider } from '../utils/read-only-provider.js';
 export class NetworkManager {
   constructor({ walletManager } = {}) {
     this.walletManager = walletManager || null;
-    this.requiredChainId = CONFIG.NETWORK.CHAIN_ID;
-    this.requiredChainHex = this._toHexChainId(this.requiredChainId);
   }
 
   load() {
@@ -26,8 +24,8 @@ export class NetworkManager {
   }
 
   isOnRequiredNetwork(chainId = null) {
-    const cid = chainId ?? this.walletManager?.getChainId?.() ?? null;
-    return Number(cid) === Number(this.requiredChainId);
+    const cid = this._normalizeChainId(chainId ?? this.getCurrentChainId());
+    return Number(cid) === Number(this._requiredChainId());
   }
 
   isTxEnabled() {
@@ -45,26 +43,15 @@ export class NetworkManager {
   }
 
   async ensurePolygonNetwork() {
-    const walletProvider = await this.walletManager?.getEip1193Provider?.({ waitMs: 200 });
-    if (!walletProvider) throw new Error('MetaMask not available');
-    // Try switching; if missing, add then switch.
-    try {
-      await walletProvider.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: this.requiredChainHex }],
-      });
-      return true;
-    } catch (error) {
-      if (error && error.code === 4902) {
-        await this.addPolygonNetwork();
-        await walletProvider.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: this.requiredChainHex }],
-        });
-        return true;
-      }
-      throw error;
-    }
+    const network = this._networkConfig();
+    return await this.switchToChain({
+      chainId: network?.CHAIN_ID,
+      name: network?.NAME,
+      rpcUrl: network?.RPC_URL,
+      fallbackRpcs: network?.FALLBACK_RPCS || [],
+      blockExplorer: network?.BLOCK_EXPLORER,
+      nativeCurrency: network?.NATIVE_CURRENCY,
+    });
   }
 
   async addPolygonNetwork() {
@@ -77,18 +64,93 @@ export class NetworkManager {
     });
   }
 
+  getAvailableNetworks() {
+    const config = this._config();
+    const polygon = config?.BRIDGE?.CHAINS?.POLYGON || config?.NETWORK || null;
+    const bsc = config?.BRIDGE?.CHAINS?.BSC || null;
+    const polygonNative = polygon?.NATIVE_CURRENCY || config?.NETWORK?.NATIVE_CURRENCY || { name: 'MATIC', symbol: 'MATIC', decimals: 18 };
+    return [
+      {
+        key: 'polygon',
+        chainId: polygon?.CHAIN_ID || config?.NETWORK?.CHAIN_ID || 80002,
+        name: polygon?.NAME || config?.NETWORK?.NAME || 'Polygon Amoy Testnet',
+        rpcUrl: polygon?.RPC_URL || config?.NETWORK?.RPC_URL || '',
+        fallbackRpcs: polygon?.FALLBACK_RPCS || config?.NETWORK?.FALLBACK_RPCS || [],
+        blockExplorer: polygon?.BLOCK_EXPLORER || config?.NETWORK?.BLOCK_EXPLORER || '',
+        nativeCurrency: polygonNative,
+      },
+      {
+        key: 'bsc',
+        chainId: bsc?.CHAIN_ID || 97,
+        name: bsc?.NAME || 'BSC Testnet',
+        rpcUrl: bsc?.RPC_URL || '',
+        fallbackRpcs: bsc?.FALLBACK_RPCS || [],
+        blockExplorer: bsc?.BLOCK_EXPLORER || '',
+        nativeCurrency: { name: 'BNB', symbol: 'tBNB', decimals: 18 },
+      },
+    ];
+  }
+
+  getCurrentChainId() {
+    const fromManager = this.walletManager?.getChainId?.();
+    if (fromManager != null) return this._normalizeChainId(fromManager);
+    const fromProvider = this.walletManager?.getProvider?.()?.provider?.chainId;
+    if (fromProvider != null) return this._normalizeChainId(fromProvider);
+    return null;
+  }
+
+  async switchToNetworkByKey(key) {
+    const target = this.getAvailableNetworks().find((n) => n.key === key);
+    if (!target) throw new Error('Unsupported network');
+    return await this.switchToChain(target);
+  }
+
+  async switchToChain(chain) {
+    const walletProvider = await this.walletManager?.getEip1193Provider?.({ waitMs: 200 });
+    if (!walletProvider) throw new Error('MetaMask not available');
+    const chainHex = this._toHexChainId(chain.chainId);
+    try {
+      await walletProvider.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: chainHex }],
+      });
+      return true;
+    } catch (error) {
+      if (error && error.code === 4902) {
+        await walletProvider.request({
+          method: 'wallet_addEthereumChain',
+          params: [{
+            chainId: chainHex,
+            chainName: chain.name,
+            rpcUrls: [chain.rpcUrl, ...(chain.fallbackRpcs || [])].filter(Boolean),
+            nativeCurrency: chain.nativeCurrency,
+            blockExplorerUrls: [chain.blockExplorer].filter(Boolean),
+          }],
+        });
+        await walletProvider.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: chainHex }],
+        });
+        return true;
+      }
+      throw error;
+    }
+  }
+
   buildPolygonNetworkConfig() {
+    const network = this._networkConfig();
+    const chainId = Number(network?.CHAIN_ID || this._requiredChainId() || 80002);
     return {
-      chainId: this.requiredChainHex,
-      chainName: CONFIG.NETWORK.NAME,
-      rpcUrls: [CONFIG.NETWORK.RPC_URL, ...(CONFIG.NETWORK.FALLBACK_RPCS || [])].filter(Boolean),
-      nativeCurrency: CONFIG.NETWORK.NATIVE_CURRENCY,
-      blockExplorerUrls: [CONFIG.NETWORK.BLOCK_EXPLORER].filter(Boolean),
+      chainId: this._toHexChainId(chainId),
+      chainName: network?.NAME || 'Polygon Amoy',
+      rpcUrls: [network?.RPC_URL, ...(network?.FALLBACK_RPCS || [])].filter(Boolean),
+      nativeCurrency: network?.NATIVE_CURRENCY || { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
+      blockExplorerUrls: [network?.BLOCK_EXPLORER].filter(Boolean),
     };
   }
 
   networkSymbol() {
-    return CONFIG.NETWORK?.NATIVE_CURRENCY?.symbol || 'MATIC';
+    return this._networkConfig()?.NATIVE_CURRENCY?.symbol || 'MATIC';
   }
 
   updateUIState() {
@@ -105,6 +167,14 @@ export class NetworkManager {
     gated.forEach((el) => {
       // Allow permanent disable for placeholders (Phase 1/5/6 UI)
       if (el.getAttribute('data-always-disabled') === 'true') return;
+      // Allow data entry even when not tx-enabled for specified inputs
+      if (el.getAttribute('data-allow-input-when-locked') === 'true') {
+        if ('disabled' in el) {
+          el.disabled = false;
+        }
+        el.classList.toggle('is-disabled', !txEnabled);
+        return;
+      }
 
       if ('disabled' in el) {
         el.disabled = !txEnabled;
@@ -115,5 +185,29 @@ export class NetworkManager {
 
   _toHexChainId(chainId) {
     return '0x' + Number(chainId).toString(16);
+  }
+
+  _normalizeChainId(chainId) {
+    let cid = chainId;
+    if (typeof cid === 'string' && cid.startsWith('0x')) {
+      try {
+        cid = parseInt(cid, 16);
+      } catch {
+        cid = NaN;
+      }
+    }
+    return Number(cid);
+  }
+
+  _config() {
+    return window.CONFIG || CONFIG;
+  }
+
+  _networkConfig() {
+    return this._config()?.NETWORK || null;
+  }
+
+  _requiredChainId() {
+    return Number(this._networkConfig()?.CHAIN_ID || 0) || null;
   }
 }

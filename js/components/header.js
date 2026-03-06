@@ -41,28 +41,9 @@ export class Header {
       return;
     }
 
-    // Connected + on Polygon → show popup
-    if (walletManager?.isConnected?.() && networkManager?.isOnRequiredNetwork?.()) {
+    // Connected → open wallet popup (network can be switched there)
+    if (walletManager?.isConnected?.()) {
       walletPopup?.toggle?.(btn);
-      return;
-    }
-
-    // Connected but wrong network → add/switch to Polygon
-    if (walletManager?.isConnected?.() && !networkManager?.isOnRequiredNetwork?.()) {
-      this.renderConnectButton({ text: 'Connecting to Polygon…', disabled: true });
-      try {
-        await networkManager.ensurePolygonNetwork();
-      } catch (e) {
-        if (e?.code === 4001) {
-          window.alert('Network switch request was rejected.');
-        } else if (e?.code === -32002) {
-          window.alert('Network switch request already pending in MetaMask.');
-        } else {
-          window.alert('Please connect to Polygon in MetaMask.');
-        }
-      } finally {
-        this.updateConnectButtonStatus();
-      }
       return;
     }
 
@@ -70,7 +51,7 @@ export class Header {
     this.renderConnectButton({ text: 'Connecting…', disabled: true });
     try {
       await walletManager?.connectMetaMask?.();
-      // If connected but wrong network, keep simple: user can click again to switch.
+      walletPopup?.show?.(btn);
     } catch (e) {
       if (e?.code === 4001) {
         window.alert('Connection request was rejected.');
@@ -87,14 +68,6 @@ export class Header {
   updateConnectButtonStatus() {
     const walletManager = window.walletManager;
     const networkManager = window.networkManager;
-
-    console.log('[Header] updateConnectButtonStatus called', {
-      walletManagerExists: !!walletManager,
-      isConnected: walletManager?.isConnected?.(),
-      address: walletManager?.getAddress?.(),
-      chainId: walletManager?.getChainId?.(),
-      isOnRequiredNetwork: networkManager?.isOnRequiredNetwork?.(),
-    });
 
     if (!this.connectWalletBtn) return;
 
@@ -113,20 +86,13 @@ export class Header {
     const address = walletManager?.getAddress?.();
     const onPolygon = !!networkManager?.isOnRequiredNetwork?.();
 
-    console.log('[Header] Connection state:', { isConnected, address, onPolygon });
-
     if (!isConnected) {
       this.renderConnectButton({ text: 'Connect Wallet', disabled: false });
       return;
     }
 
-    if (!onPolygon) {
-      this.renderConnectButton({ text: 'Connect to Polygon', disabled: false });
-      return;
-    }
-
     const short = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : 'Connected';
-    this.renderConnectButton({ text: short, disabled: false, connected: true });
+    this.renderConnectButton({ text: short, disabled: false, connected: onPolygon });
   }
 
   renderConnectButton({ text, disabled = false, connected = false } = {}) {

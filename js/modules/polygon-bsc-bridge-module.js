@@ -118,12 +118,12 @@ export class PolygonBscBridgeModule {
         <div class="form-grid">
           <label class="field field--full">
             <span class="field-label">Recipient Address (BSC)</span>
-            <input class="field-input" type="text" placeholder="0x..." data-bridge-recipient data-requires-tx="true" />
+            <input class="field-input" type="text" placeholder="0x..." data-bridge-recipient data-requires-tx="true" data-allow-input-when-locked="true" />
           </label>
 
           <label class="field">
             <span class="field-label">Amount (${this._tokenSymbol()})</span>
-            <input class="field-input" type="text" placeholder="0" inputmode="decimal" data-bridge-amount data-requires-tx="true" />
+            <input class="field-input" type="text" placeholder="0" inputmode="decimal" data-bridge-amount data-requires-tx="true" data-allow-input-when-locked="true" />
           </label>
 
           <label class="field">
@@ -240,11 +240,8 @@ export class PolygonBscBridgeModule {
     const txEnabled = !!this.networkManager?.isTxEnabled?.();
     const snapshot = this._lastSnapshot;
 
-    console.log('[BridgeModule] _updateActionStates:', {
-      txEnabled,
-      snapshot,
-      networkManager: !!this.networkManager,
-    });
+    if (this._els.recipient) this._els.recipient.disabled = false;
+    if (this._els.amount) this._els.amount.disabled = false;
 
     const recipientOk = this._isAddress(this._els.recipient?.value);
     const amountWei = this._parseAmountToWei(this._els.amount?.value);
@@ -254,15 +251,6 @@ export class PolygonBscBridgeModule {
     const maxOk = snapshot?.maxBridgeOutAmount ? amountWei && amountWei.lte(this._bn(snapshot.maxBridgeOutAmount)) : true;
 
     const needsApproval = this._needsApproval(amountWei);
-
-    console.log('[BridgeModule] Button states:', {
-      recipientOk,
-      amountOk,
-      amountValue: this._els.amount?.value,
-      bridgeEnabled,
-      maxOk,
-      needsApproval,
-    });
 
     if (this._els.approveBtn) this._els.approveBtn.disabled = !txEnabled || !amountOk || !needsApproval;
     if (this._els.bridgeBtn)
@@ -355,13 +343,15 @@ export class PolygonBscBridgeModule {
 
       const dest = this._getDestChain();
       if (!dest?.chainId) throw new Error('Destination chain not configured');
+      const bridgeChainId = this._getBridgeOutChainId(snapshot);
+      if (!bridgeChainId) throw new Error('Bridge chain ID is not configured');
 
       if (this._needsApproval(amountWei)) throw new Error('Approval required before bridging');
 
-      const overrides = await this._buildGasOverrides(contract, amountWei, recipient, dest.chainId);
+      const overrides = await this._buildGasOverrides(contract, amountWei, recipient, bridgeChainId);
 
       const toastId = this.toastManager?.loading?.('Confirm the bridge transaction in your wallet', { id: 'bridgeOut' });
-      const tx = await contract.bridgeOut(amountWei, recipient, dest.chainId, overrides);
+      const tx = await contract.bridgeOut(amountWei, recipient, bridgeChainId, overrides);
 
       this._showStatus('Bridge transaction submitted', this._txLinkHtml(this._getSourceChainExplorer(), tx.hash));
       this.toastManager?.update?.(toastId, {
@@ -506,7 +496,7 @@ export class PolygonBscBridgeModule {
   _getVaultAddress() {
     const fromChainCfg = this._chainConfig?.vaultChain?.contractAddress || null;
     const fromConfig = this.config?.CONTRACT?.ADDRESS || this.config?.BRIDGE?.CONTRACTS?.POLYGON?.ADDRESS || null;
-    return fromChainCfg || fromConfig || null;
+    return fromConfig || fromChainCfg || null;
   }
 
   _getSourceChain() {
@@ -523,6 +513,14 @@ export class PolygonBscBridgeModule {
     const cfg = this.config?.BRIDGE?.CHAINS?.BSC;
     if (cfg?.CHAIN_ID) return { name: cfg.NAME || 'BSC', chainId: Number(cfg.CHAIN_ID) };
     return null;
+  }
+
+  _getBridgeOutChainId(snapshot = null) {
+    const status = snapshot || this.contractManager?.getStatusSnapshot?.() || null;
+    const onChainId = Number(status?.onChainId || 0);
+    if (Number.isFinite(onChainId) && onChainId > 0) return onChainId;
+    const configuredChainId = Number(this.config?.NETWORK?.CHAIN_ID || 0);
+    return Number.isFinite(configuredChainId) && configuredChainId > 0 ? configuredChainId : null;
   }
 
   _getSourceChainExplorer() {

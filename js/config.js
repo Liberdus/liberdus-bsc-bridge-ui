@@ -1,7 +1,7 @@
 export const CONFIG = {
   APP: {
     NAME: 'Liberdus BSC Bridge UI',
-    VERSION: '0.1.0-skeleton',
+    VERSION: '0.1.1-amoy-sync',
   },
 
   TOKEN: {
@@ -22,7 +22,7 @@ export const CONFIG = {
   },
 
   CONTRACT: {
-    ADDRESS: '0x1469f20C91da50BF9Cc82d7cFB9A8D9EF1dEe86a',
+    ADDRESS: '0xaA2616CD3A3d3d63F8e1ac9c7d7BDc37f16709dA',
     ABI_PATH: './abi/vault.json',
   },
 
@@ -50,10 +50,10 @@ export const CONFIG = {
     },
     CONTRACTS: {
       POLYGON: {
-        ADDRESS: '0x1469f20C91da50BF9Cc82d7cFB9A8D9EF1dEe86a',
+        ADDRESS: '0xaA2616CD3A3d3d63F8e1ac9c7d7BDc37f16709dA',
       },
       BSC: {
-        ADDRESS: '0xA8Da42C5C915384e5d0938A0CbeC5720af736E27',
+        ADDRESS: '0xf5A75e4bC827c9cC31BacD4c4d365107C698b465',
       },
     },
   },

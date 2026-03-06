@@ -1,16 +1,16 @@
-import { CONFIG } from './config.js';
-import { Header } from './components/header.js';
-import { TabBar } from './components/tab-bar.js';
-import { OverviewTab } from './components/overview-tab.js';
-import { BridgeOutTab } from './components/bridge-out-tab.js';
-import { OperationsTab } from './components/operations-tab.js';
-import { ContractTab } from './components/contract-tab.js';
-import { TransactionsTab } from './components/transactions-tab.js';
-import { ToastManager } from './components/toast-manager.js';
-import { WalletManager } from './wallet/wallet-manager.js';
-import { NetworkManager } from './wallet/network-manager.js';
-import { WalletPopup } from './wallet/wallet-popup.js';
-import { ContractManager } from './contracts/contract-manager.js';
+import { CONFIG } from './config.js?v=20260305f';
+import { Header } from './components/header.js?v=20260305f';
+import { TabBar } from './components/tab-bar.js?v=20260305f';
+import { OverviewTab } from './components/overview-tab.js?v=20260305f';
+import { BridgeOutTab } from './components/bridge-out-tab.js?v=20260305f';
+import { OperationsTab } from './components/operations-tab.js?v=20260305f';
+import { ContractTab } from './components/contract-tab.js?v=20260305f';
+import { TransactionsTab } from './components/transactions-tab.js?v=20260305f';
+import { ToastManager } from './components/toast-manager.js?v=20260305f';
+import { WalletManager } from './wallet/wallet-manager.js?v=20260305f';
+import { NetworkManager } from './wallet/network-manager.js?v=20260305f';
+import { WalletPopup } from './wallet/wallet-popup.js?v=20260305f';
+import { ContractManager } from './contracts/contract-manager.js?v=20260305f';
 
 const header = new Header();
 const tabBar = new TabBar();
@@ -41,18 +41,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   toastManager.load();
   walletManager.load();
-  await walletManager.init();
-  
-  // Force header update after wallet init (in case of restored connection)
-  setTimeout(() => {
-    const headerInstance = header;
-    if (headerInstance?.updateConnectButtonStatus) {
-      headerInstance.updateConnectButtonStatus();
-    }
-  }, 100);
-  
   networkManager.load();
   walletPopup.load();
+  await walletManager.init();
 
   try {
     await contractManager.load();

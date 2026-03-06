@@ -204,7 +204,15 @@ export class WalletManager {
   }
 
   _handleChainChanged(chainId) {
-    this.chainId = Number(chainId);
+    let cid = chainId;
+    if (typeof cid === 'string' && cid.startsWith('0x')) {
+      try {
+        cid = parseInt(cid, 16);
+      } catch {
+        cid = NaN;
+      }
+    }
+    this.chainId = Number(cid);
     this._storeConnectionInfo();
     this._notify('chainChanged', { address: this.address, chainId: this.chainId });
   }
@@ -214,7 +222,6 @@ export class WalletManager {
   }
 
   _notify(event, data) {
-    console.log('[WalletManager] _notify:', event, data);
     // Listener callbacks
     this.listeners.forEach((cb) => {
       try {
