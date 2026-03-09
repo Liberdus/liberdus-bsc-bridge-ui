@@ -208,13 +208,11 @@ function renderStatus(status) {
 
 async function loadTransactionsFromCoordinator({ limit = 200 } = {}) {
   const chains = getChainConfig();
-  const chainConfig = await fetchChainConfig();
   const chainIdIndex = buildChainIdIndex(chains);
-  const coordinatorUrl = normalizeCoordinatorUrl(chainConfig?.coordinatorUrl);
+  const coordinatorUrl = normalizeCoordinatorUrl(CONFIG?.BRIDGE?.COORDINATOR_URL || CONFIG?.COORDINATOR_URL);
   if (!coordinatorUrl) throw new Error('Coordinator URL is not configured');
 
   const secondaryChainId =
-    Number(chainConfig?.secondaryChainConfig?.chainId) ||
     Number(chains?.BSC?.CHAIN_ID) ||
     0;
 
@@ -446,7 +444,11 @@ async function loadTransactionsFromOnchain({ limit = 200 } = {}) {
 }
 
 async function loadTransactionsData({ limit = 200 } = {}) {
-  return await loadTransactionsFromCoordinator({ limit });
+  try {
+    return await loadTransactionsFromCoordinator({ limit });
+  } catch {
+    return await loadTransactionsFromOnchain({ limit });
+  }
 }
 
 export class TransactionsTab {

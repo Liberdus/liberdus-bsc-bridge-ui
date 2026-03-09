@@ -28,6 +28,7 @@ export const CONFIG = {
 
   BRIDGE: {
     LOOKBACK_BLOCKS: 60000,
+    COORDINATOR_URL: 'https://dev.liberdus.com:3030',
     CHAINS: {
       POLYGON: {
         CHAIN_ID: 80002,
