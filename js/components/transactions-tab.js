@@ -82,18 +82,42 @@ function linkTx(chainKey, txHash) {
 
 let _chainConfigCache = null;
 
+function getDefaultCoordinatorUrl() {
+  return normalizeCoordinatorUrl(
+    CONFIG?.BRIDGE?.COORDINATOR_URL ||
+      CONFIG?.COORDINATOR?.URL ||
+      CONFIG?.COORDINATOR_URL ||
+      'https://tss-test1.liberdus.com'
+  );
+}
+
 async function fetchChainConfig() {
   if (_chainConfigCache) return _chainConfigCache;
+
+  const defaultCoordinatorUrl = getDefaultCoordinatorUrl();
+  let remoteConfig = null;
+
   try {
     const response = await fetch('./tss-signer/chain-config.json', { cache: 'no-cache' });
     if (!response.ok) throw new Error(`Failed to load chain config: ${response.status}`);
     const json = await response.json();
-    _chainConfigCache = json && typeof json === 'object' ? json : null;
-    return _chainConfigCache;
+    remoteConfig = json && typeof json === 'object' ? json : null;
   } catch {
-    _chainConfigCache = null;
-    return null;
+    remoteConfig = null;
   }
+
+  const remoteCoordinatorUrl = normalizeCoordinatorUrl(remoteConfig?.coordinatorUrl);
+  const isLocalCoordinatorUrl = /^https?:\/\/(127\.0\.0\.1|localhost)(?::\d+)?$/i.test(remoteCoordinatorUrl);
+
+  _chainConfigCache = {
+    ...(remoteConfig || {}),
+    coordinatorUrl:
+      remoteCoordinatorUrl && !isLocalCoordinatorUrl
+        ? remoteCoordinatorUrl
+        : defaultCoordinatorUrl,
+  };
+
+  return _chainConfigCache;
 }
 
 function resolveChainConfig(chainId, chainConfig) {
@@ -197,22 +221,24 @@ function renderStatus(status) {
   if (num === 2) return `<span class="tx-status tx-status--ok">Completed</span>`;
   if (num === 1) return `<span class="tx-status tx-status--pending">Processing</span>`;
   if (num === 0) return `<span class="tx-status tx-status--pending">Pending</span>`;
-  if (num === 3) return `<span class="tx-status tx-status--error">Failed</span>`;
+  if (num === 3 || num === 4) return `<span class="tx-status tx-status--error">error</span>`;
   const s = String(status || '').toLowerCase();
   if (s === 'completed') return `<span class="tx-status tx-status--ok">Completed</span>`;
   if (s === 'pending') return `<span class="tx-status tx-status--pending">Pending</span>`;
   if (s === 'processing') return `<span class="tx-status tx-status--pending">Processing</span>`;
-  if (s === 'failed') return `<span class="tx-status tx-status--error">Failed</span>`;
+  if (s === 'failed' || s === 'reverted') return `<span class="tx-status tx-status--error">error</span>`;
   return `<span class="tx-status tx-status--unknown">Unknown</span>`;
 }
 
 async function loadTransactionsFromCoordinator({ limit = 200 } = {}) {
   const chains = getChainConfig();
+  const chainConfig = await fetchChainConfig();
   const chainIdIndex = buildChainIdIndex(chains);
-  const coordinatorUrl = normalizeCoordinatorUrl(CONFIG?.BRIDGE?.COORDINATOR_URL || CONFIG?.COORDINATOR_URL);
+  const coordinatorUrl = normalizeCoordinatorUrl(chainConfig?.coordinatorUrl) || getDefaultCoordinatorUrl();
   if (!coordinatorUrl) throw new Error('Coordinator URL is not configured');
 
   const secondaryChainId =
+    Number(chainConfig?.secondaryChainConfig?.chainId) ||
     Number(chains?.BSC?.CHAIN_ID) ||
     0;
 
@@ -444,11 +470,7 @@ async function loadTransactionsFromOnchain({ limit = 200 } = {}) {
 }
 
 async function loadTransactionsData({ limit = 200 } = {}) {
-  try {
-    return await loadTransactionsFromCoordinator({ limit });
-  } catch {
-    return await loadTransactionsFromOnchain({ limit });
-  }
+  return await loadTransactionsFromCoordinator({ limit });
 }
 
 export class TransactionsTab {
