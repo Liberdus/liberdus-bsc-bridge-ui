@@ -1,7 +1,7 @@
 export const CONFIG = {
   APP: {
     NAME: 'Liberdus BSC Bridge UI',
-    VERSION: '0.1.1-amoy-sync',
+    VERSION: '0.1.1',
   },
 
   TOKEN: {
