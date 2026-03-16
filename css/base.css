@@ -642,6 +642,36 @@ textarea:focus-visible {
   gap: 6px;
 }
 
+.tx-pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.tx-page-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tx-page-info {
+  font-size: var(--font-size-sm);
+  color: var(--secondary-text-color);
+}
+
+.tx-page-size select,
+.tx-page-size .field-input {
+  min-width: 96px;
+}
+
+@media (max-width: 720px) {
+  .tx-pager {
+    flex-wrap: wrap;
+  }
+}
+
 .tx-arrow {
   color: var(--secondary-text-color);
 }

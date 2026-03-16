@@ -499,6 +499,12 @@ export class TransactionsTab {
     this._isLoading = false;
     this._rows = [];
     this._refreshTimer = null;
+    this.page = 1;
+    this.pageSize = 25;
+    this.prevBtn = null;
+    this.nextBtn = null;
+    this.pageInfoEl = null;
+    this.pageSizeEl = null;
   }
 
   load() {
@@ -550,6 +556,22 @@ export class TransactionsTab {
           </table>
         </div>
       </div>
+      <div class="tx-pager">
+        <div class="tx-page-size">
+          <label for="tx-page-size" class="sr-only">Page size</label>
+          <select id="tx-page-size" data-tx-page-size class="field-input">
+            <option value="10">10</option>
+            <option value="25" selected>25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </div>
+        <div class="tx-page-controls">
+          <button type="button" class="btn" data-tx-prev>Prev</button>
+          <span class="tx-page-info" data-tx-page-info>Page 1 of 1</span>
+          <button type="button" class="btn" data-tx-next>Next</button>
+        </div>
+      </div>
     `;
 
     this.refreshBtn = this.panel.querySelector('[data-tx-refresh]');
@@ -557,9 +579,30 @@ export class TransactionsTab {
     this.searchInput = this.panel.querySelector('[data-tx-search]');
     this.totalEl = this.panel.querySelector('[data-tx-total]');
     this.tableBody = this.panel.querySelector('[data-tx-body]');
+    this.prevBtn = this.panel.querySelector('[data-tx-prev]');
+    this.nextBtn = this.panel.querySelector('[data-tx-next]');
+    this.pageInfoEl = this.panel.querySelector('[data-tx-page-info]');
+    this.pageSizeEl = this.panel.querySelector('[data-tx-page-size]');
 
     this.refreshBtn?.addEventListener('click', () => this.refresh());
-    this.searchInput?.addEventListener('input', () => this.render());
+    this.searchInput?.addEventListener('input', () => {
+      this.page = 1;
+      this.render();
+    });
+    this.prevBtn?.addEventListener('click', () => {
+      this.page = Math.max(1, this.page - 1);
+      this.render();
+    });
+    this.nextBtn?.addEventListener('click', () => {
+      this.page = this.page + 1;
+      this.render();
+    });
+    this.pageSizeEl?.addEventListener('change', () => {
+      const v = Number(this.pageSizeEl.value);
+      this.pageSize = Number.isFinite(v) && v > 0 ? v : 25;
+      this.page = 1;
+      this.render();
+    });
 
     document.addEventListener('tabActivated', (e) => {
       if (e?.detail?.tabName === 'transactions') {
@@ -609,13 +652,27 @@ export class TransactionsTab {
 
     if (filtered.length === 0) {
       this.tableBody.innerHTML = `<tr><td colspan="8" class="tx-muted tx-center">No transactions found.</td></tr>`;
+      if (this.pageInfoEl) this.pageInfoEl.textContent = 'Page 1 of 1';
+      if (this.prevBtn) this.prevBtn.disabled = true;
+      if (this.nextBtn) this.nextBtn.disabled = true;
       return;
     }
+
+    const totalPages = Math.max(1, Math.ceil(filtered.length / this.pageSize));
+    if (this.page > totalPages) this.page = totalPages;
+    if (this.page < 1) this.page = 1;
+    const start = (this.page - 1) * this.pageSize;
+    const end = start + this.pageSize;
+    const pageRows = filtered.slice(start, end);
+    if (this.pageInfoEl) this.pageInfoEl.textContent = `Page ${this.page} of ${totalPages}`;
+    if (this.prevBtn) this.prevBtn.disabled = this.page <= 1;
+    if (this.nextBtn) this.nextBtn.disabled = this.page >= totalPages;
+    if (this.pageSizeEl) this.pageSizeEl.value = String(this.pageSize);
 
     const symbol = CONFIG?.TOKEN?.SYMBOL || 'LIB';
     const decimals = Number(CONFIG?.TOKEN?.DECIMALS || 18);
 
-    this.tableBody.innerHTML = filtered
+    this.tableBody.innerHTML = pageRows
       .map((row) => {
         const tx = renderTxLink(row.srcChainKey, row.txHash);
         const sender = renderAddress(row.from);
