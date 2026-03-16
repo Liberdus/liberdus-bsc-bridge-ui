@@ -545,6 +545,22 @@ textarea:focus-visible {
 
 .tx-search-input {
   flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .tx-search {
+    flex-wrap: wrap;
+  }
+
+  .tx-search-prefix {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .tx-search-input {
+    width: 100%;
+  }
 }
 
 .tx-table-card {
