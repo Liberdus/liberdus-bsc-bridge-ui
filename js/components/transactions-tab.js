@@ -1,10 +1,20 @@
 import { CONFIG } from '../config.js';
 import { getReadOnlyProviderForNetwork } from '../utils/read-only-provider-for-network.js';
 
-function shortenHex(value, { head = 6, tail = 4 } = {}) {
+function shortenHex(value, { head = 4, tail = 4 } = {}) {
   const s = String(value || '');
   if (!s.startsWith('0x') || s.length <= head + tail + 2) return s || '--';
   return `${s.slice(0, 2 + head)}…${s.slice(-tail)}`;
+}
+
+function shortenAny(value, { head = 4, tail = 4 } = {}) {
+  const s = String(value || '');
+  if (!s || s.length <= head + tail + 1) return s || '--';
+  return `${s.slice(0, head)}…${s.slice(-tail)}`;
+}
+
+function shortenAddress(value) {
+  return shortenHex(value, { head: 4, tail: 4 });
 }
 
 function safeLowerHex(value) {
@@ -40,8 +50,10 @@ function formatTokenAmount(amount, decimals, symbol) {
     const bn = toBigNumber(amount);
     if (!bn) return '--';
     const formatted = ethers.utils.formatUnits(bn, Number(decimals || 18));
-    const trimmed = formatted.includes('.') ? formatted.replace(/\.?0+$/, '') : formatted;
-    return `${trimmed} ${symbol || ''}`.trim();
+    const value = Number(formatted);
+    if (!Number.isFinite(value)) return '--';
+    const rounded = value.toFixed(2);
+    return `${rounded} ${symbol || ''}`.trim();
   } catch {
     return '--';
   }
@@ -74,9 +86,59 @@ function getExplorer(chainKey) {
 }
 
 function linkTx(chainKey, txHash) {
+  if (!chainKey) return '';
   const explorer = getExplorer(chainKey);
   if (!explorer || !txHash) return '';
   return `${explorer}/tx/${txHash}`;
+}
+
+let _chainConfigCache = null;
+
+function getDefaultCoordinatorUrl() {
+  return normalizeCoordinatorUrl(
+    CONFIG?.BRIDGE?.COORDINATOR_URL ||
+      CONFIG?.COORDINATOR?.URL ||
+      CONFIG?.COORDINATOR_URL ||
+      'https://tss-test1.liberdus.com'
+  );
+}
+
+async function fetchChainConfig() {
+  if (_chainConfigCache) return _chainConfigCache;
+
+  const defaultCoordinatorUrl = getDefaultCoordinatorUrl();
+  let remoteConfig = null;
+
+  try {
+    const response = await fetch('./tss-signer/chain-config.json', { cache: 'no-cache' });
+    if (!response.ok) throw new Error(`Failed to load chain config: ${response.status}`);
+    const json = await response.json();
+    remoteConfig = json && typeof json === 'object' ? json : null;
+  } catch {
+    remoteConfig = null;
+  }
+
+  const remoteCoordinatorUrl = normalizeCoordinatorUrl(remoteConfig?.coordinatorUrl);
+  const isLocalCoordinatorUrl = /^https?:\/\/(127\.0\.0\.1|localhost)(?::\d+)?$/i.test(remoteCoordinatorUrl);
+
+  _chainConfigCache = {
+    ...(remoteConfig || {}),
+    coordinatorUrl:
+      remoteCoordinatorUrl && !isLocalCoordinatorUrl
+        ? remoteCoordinatorUrl
+        : defaultCoordinatorUrl,
+  };
+
+  return _chainConfigCache;
+}
+
+function resolveChainConfig(chainId, chainConfig) {
+  if (!chainConfig || !Number.isFinite(chainId)) return null;
+  const supported = chainConfig?.supportedChains?.[String(chainId)];
+  if (supported && supported.chainId) return supported;
+  if (Number(chainConfig?.vaultChain?.chainId) === chainId) return chainConfig.vaultChain;
+  if (Number(chainConfig?.secondaryChainConfig?.chainId) === chainId) return chainConfig.secondaryChainConfig;
+  return null;
 }
 
 async function fetchAbi() {
@@ -106,6 +168,19 @@ async function getLogsChunked(provider, baseFilter, fromBlock, toBlock, chunkSiz
   return results;
 }
 
+async function fetchTransactionReceipt(provider, txHash) {
+  try {
+    const receipt = await provider.getTransactionReceipt(txHash);
+    if (!receipt) return null;
+    return {
+      status: receipt.status,
+      blockNumber: receipt.blockNumber,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function buildChainIdIndex(chains) {
   const map = new Map();
   for (const [key, cfg] of Object.entries(chains || {})) {
@@ -122,16 +197,25 @@ function sortByTimestampDesc(a, b) {
   return String(b?.txHash || '').localeCompare(String(a?.txHash || ''));
 }
 
+function normalizeCoordinatorUrl(url) {
+  const value = String(url || '').trim();
+  if (!value) return '';
+  return value.replace(/\/$/, '');
+}
+
 function renderTxLink(chainKey, txHash) {
   if (!txHash) return '<span class="tx-muted">--</span>';
-  const url = linkTx(chainKey, txHash);
-  const label = shortenHex(txHash);
+  const raw = String(txHash || '');
+  const url = linkTx(chainKey, raw);
+  const label = raw.startsWith('0x')
+    ? shortenHex(raw, { head: 4, tail: 4 })
+    : shortenAny(raw, { head: 4, tail: 4 });
   if (!url) return `<code class="tx-code">${label}</code>`;
   return `<a class="tx-link" href="${url}" target="_blank" rel="noopener"><code class="tx-code">${label}</code><span class="tx-ext">↗</span></a>`;
 }
 
 function renderAddress(address) {
-  const label = shortenHex(address);
+  const label = shortenAddress(address);
   return `<code class="tx-code">${label}</code>`;
 }
 
@@ -148,14 +232,92 @@ function renderChainRoute(src, dst, srcName, dstName) {
 }
 
 function renderStatus(status) {
+  const num = Number(status);
+  if (num === 2) return `<span class="tx-status tx-status--ok">Completed</span>`;
+  if (num === 1) return `<span class="tx-status tx-status--pending">Processing</span>`;
+  if (num === 0) return `<span class="tx-status tx-status--pending">Pending</span>`;
+  if (num === 3 || num === 4) return `<span class="tx-status tx-status--error">error</span>`;
   const s = String(status || '').toLowerCase();
   if (s === 'completed') return `<span class="tx-status tx-status--ok">Completed</span>`;
   if (s === 'pending') return `<span class="tx-status tx-status--pending">Pending</span>`;
+  if (s === 'processing') return `<span class="tx-status tx-status--pending">Processing</span>`;
+  if (s === 'failed' || s === 'reverted') return `<span class="tx-status tx-status--error">error</span>`;
   return `<span class="tx-status tx-status--unknown">Unknown</span>`;
 }
 
-async function loadTransactionsData({ limit = 200 } = {}) {
-  if (!window.ethers) throw new Error('Ethers.js not loaded');
+async function loadTransactionsFromCoordinator({ limit = 200 } = {}) {
+  const chains = getChainConfig();
+  const chainConfig = await fetchChainConfig();
+  const chainIdIndex = buildChainIdIndex(chains);
+  const coordinatorUrl = normalizeCoordinatorUrl(chainConfig?.coordinatorUrl) || getDefaultCoordinatorUrl();
+  if (!coordinatorUrl) throw new Error('Coordinator URL is not configured');
+
+  const secondaryChainId =
+    Number(chainConfig?.secondaryChainConfig?.chainId) ||
+    Number(chains?.BSC?.CHAIN_ID) ||
+    0;
+
+  const allTransactions = [];
+  let page = 1;
+  let totalPages = 1;
+
+  while (page <= totalPages) {
+    const response = await fetch(`${coordinatorUrl}/transaction?page=${page}`);
+    if (!response.ok) throw new Error(`Failed to load transactions: ${response.status}`);
+    const data = await response.json();
+    const ok = data?.Ok || null;
+    const txs = Array.isArray(ok?.transactions) ? ok.transactions : [];
+    totalPages = Number(ok?.totalPages || totalPages);
+    if (txs.length) allTransactions.push(...txs);
+    if (!Number.isFinite(totalPages) || totalPages < 1) break;
+    page += 1;
+  }
+
+  const rows = allTransactions
+    .map((tx) => {
+      const type = Number(tx?.type);
+      const chainId = Number(tx?.chainId);
+      const srcChainId = type === 0 ? 0 : chainId;
+      const dstChainId = type === 0 ? chainId : type === 2 ? secondaryChainId : 0;
+
+      const srcChainKey = chainIdIndex.get(Number(srcChainId)) || null;
+      const dstChainKey = chainIdIndex.get(Number(dstChainId)) || null;
+
+      const srcName =
+        srcChainId === 0
+          ? 'Liberdus Network'
+          : chains?.[srcChainKey]?.NAME || `Chain ${srcChainId}`;
+      const dstName =
+        dstChainId === 0
+          ? 'Liberdus Network'
+          : chains?.[dstChainKey]?.NAME || `Chain ${dstChainId}`;
+
+      const rawTimestamp = Number(tx?.txTimestamp || 0);
+      const timestamp = rawTimestamp > 1e12 ? Math.floor(rawTimestamp / 1000) : rawTimestamp;
+
+      return {
+        id: tx?.txId,
+        srcChainKey,
+        dstChainKey,
+        srcName,
+        dstName,
+        from: tx?.sender,
+        amount: tx?.value,
+        timestamp,
+        txHash: tx?.txId,
+        receiptTxHash: tx?.receiptId || '',
+        status: tx?.status,
+        type,
+      };
+    })
+    .sort(sortByTimestampDesc)
+    .slice(0, Number(limit || 200));
+
+  return rows;
+}
+
+
+async function loadTransactionsFromOnchain({ limit = 200 } = {}) {
 
   const ethers = window.ethers;
   const abi = await fetchAbi();
@@ -165,6 +327,7 @@ async function loadTransactionsData({ limit = 200 } = {}) {
 
   const chains = getChainConfig();
   const contracts = getContractsConfig();
+  const chainConfig = await fetchChainConfig();
   const chainIdIndex = buildChainIdIndex(chains);
 
   const lookbackBlocks = Number(CONFIG?.BRIDGE?.LOOKBACK_BLOCKS || 60000);
@@ -172,8 +335,15 @@ async function loadTransactionsData({ limit = 200 } = {}) {
     try {
       const provider = await getReadOnlyProviderForNetwork(cfg);
       const toBlock = await provider.getBlockNumber();
-      const fromBlock = Math.max(0, toBlock - lookbackBlocks);
-      const address = contracts?.[chainKey];
+      const chainId = Number(cfg?.CHAIN_ID);
+      const resolvedChain = resolveChainConfig(chainId, chainConfig);
+      const deploymentBlock = Number(resolvedChain?.deploymentBlock);
+      const fallbackFrom = Math.max(0, toBlock - lookbackBlocks);
+      const fromBlock =
+        Number.isFinite(deploymentBlock) && deploymentBlock > 0 && deploymentBlock <= toBlock
+          ? Math.min(deploymentBlock, fallbackFrom)
+          : fallbackFrom;
+      const address = resolvedChain?.contractAddress || contracts?.[chainKey];
       if (!address) return { chainKey, bridgedOut: [], relinquished: [], error: '' };
 
       const bridgedOutLogs = await getLogsChunked(
@@ -257,8 +427,8 @@ async function loadTransactionsData({ limit = 200 } = {}) {
   }
 
   const usedReceipts = new Set();
-  const rows = bridgedOutAll
-    .map((ev) => {
+  let rows = await Promise.all(
+    bridgedOutAll.map(async (ev) => {
       const destChainKey = chainIdIndex.get(Number(ev.targetChainId)) || null;
       const destName = destChainKey ? chains?.[destChainKey]?.NAME : `Chain ${ev.targetChainId}`;
       const srcName = chains?.[ev.chainKey]?.NAME || ev.chainKey;
@@ -273,6 +443,25 @@ async function loadTransactionsData({ limit = 200 } = {}) {
       );
       if (receipt?.txHash) usedReceipts.add(receipt.txHash);
 
+      let status = receipt?.txHash ? 'Completed' : 'Pending';
+
+      if (!receipt?.txHash) {
+        const chainCfg = chains?.[ev.chainKey];
+        if (chainCfg) {
+          try {
+            const provider = await getReadOnlyProviderForNetwork(chainCfg);
+            const receiptData = await fetchTransactionReceipt(provider, ev.txHash);
+            if (receiptData) {
+              if (receiptData.status === 1) {
+                status = 'Completed';
+              } else if (receiptData.status === 0) {
+                status = 'Failed';
+              }
+            }
+          } catch {}
+        }
+      }
+
       return {
         id: ev.txHash,
         srcChainKey: ev.chainKey,
@@ -284,13 +473,19 @@ async function loadTransactionsData({ limit = 200 } = {}) {
         timestamp: ev.timestamp,
         txHash: ev.txHash,
         receiptTxHash: receipt?.txHash || '',
-        status: receipt?.txHash ? 'Completed' : 'Pending',
+        status,
+        type: 1,
       };
     })
-    .sort(sortByTimestampDesc)
-    .slice(0, Number(limit || 200));
+  );
+
+  rows = rows.sort(sortByTimestampDesc).slice(0, Number(limit || 200));
 
   return rows;
+}
+
+async function loadTransactionsData({ limit = 200 } = {}) {
+  return await loadTransactionsFromCoordinator({ limit });
 }
 
 export class TransactionsTab {
@@ -426,7 +621,9 @@ export class TransactionsTab {
         const sender = renderAddress(row.from);
         const value = formatTokenAmount(row.amount, decimals, symbol);
         const route = renderChainRoute(row.srcChainKey, row.dstChainKey, row.srcName, row.dstName);
-        const type = `<span class="tx-type">Bridge Vault</span>`;
+        const typeLabel =
+          row.type === 0 ? 'Bridge In' : row.type === 1 ? 'Bridge Out' : row.type === 2 ? 'Bridge Vault' : 'Unknown';
+        const type = `<span class="tx-type">${typeLabel}</span>`;
         const status = renderStatus(row.status);
         const issued = `<span class="tx-muted">${formatRelativeTime(row.timestamp)}</span>`;
         const receipt = row.receiptTxHash ? renderTxLink(row.dstChainKey, row.receiptTxHash) : '<span class="tx-muted">--</span>';
