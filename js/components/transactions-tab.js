@@ -1,10 +1,20 @@
 import { CONFIG } from '../config.js';
 import { getReadOnlyProviderForNetwork } from '../utils/read-only-provider-for-network.js';
 
-function shortenHex(value, { head = 6, tail = 4 } = {}) {
+function shortenHex(value, { head = 4, tail = 4 } = {}) {
   const s = String(value || '');
   if (!s.startsWith('0x') || s.length <= head + tail + 2) return s || '--';
   return `${s.slice(0, 2 + head)}…${s.slice(-tail)}`;
+}
+
+function shortenAny(value, { head = 4, tail = 4 } = {}) {
+  const s = String(value || '');
+  if (!s || s.length <= head + tail + 1) return s || '--';
+  return `${s.slice(0, head)}…${s.slice(-tail)}`;
+}
+
+function shortenAddress(value) {
+  return shortenHex(value, { head: 4, tail: 4 });
 }
 
 function safeLowerHex(value) {
@@ -40,8 +50,10 @@ function formatTokenAmount(amount, decimals, symbol) {
     const bn = toBigNumber(amount);
     if (!bn) return '--';
     const formatted = ethers.utils.formatUnits(bn, Number(decimals || 18));
-    const trimmed = formatted.includes('.') ? formatted.replace(/\.?0+$/, '') : formatted;
-    return `${trimmed} ${symbol || ''}`.trim();
+    const value = Number(formatted);
+    if (!Number.isFinite(value)) return '--';
+    const rounded = value.toFixed(2);
+    return `${rounded} ${symbol || ''}`.trim();
   } catch {
     return '--';
   }
@@ -193,14 +205,17 @@ function normalizeCoordinatorUrl(url) {
 
 function renderTxLink(chainKey, txHash) {
   if (!txHash) return '<span class="tx-muted">--</span>';
-  const url = linkTx(chainKey, txHash);
-  const label = shortenHex(txHash);
+  const raw = String(txHash || '');
+  const url = linkTx(chainKey, raw);
+  const label = raw.startsWith('0x')
+    ? shortenHex(raw, { head: 4, tail: 4 })
+    : shortenAny(raw, { head: 4, tail: 4 });
   if (!url) return `<code class="tx-code">${label}</code>`;
   return `<a class="tx-link" href="${url}" target="_blank" rel="noopener"><code class="tx-code">${label}</code><span class="tx-ext">↗</span></a>`;
 }
 
 function renderAddress(address) {
-  const label = shortenHex(address);
+  const label = shortenAddress(address);
   return `<code class="tx-code">${label}</code>`;
 }
 
