@@ -286,7 +286,7 @@ export class WalletPopup {
 
   _currentNetworkLabel(currentChainId, networks) {
     const found = (networks || []).find((n) => Number(n.chainId) === Number(currentChainId));
-    if (found) return `${found.name} (${found.chainId})`;
+    if (found?.name) return found.name;
     return currentChainId ? `Chain ${currentChainId}` : 'Unknown';
   }
 }
