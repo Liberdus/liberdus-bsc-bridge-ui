@@ -43,6 +43,7 @@
 .logo-text {
   display: flex;
   flex-direction: column;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -60,6 +61,17 @@
   font-size: var(--font-size-sm);
   color: var(--secondary-text-color);
   opacity: 0.7;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-subtitle-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
 }
 
 .app-subtitle {
@@ -68,6 +80,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex-shrink: 0;
 }
 
 .nav-section {
@@ -102,8 +115,9 @@
 
 @media (max-width: 768px) {
   .header-toolbar {
-    flex-wrap: nowrap;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px 10px;
     padding: 10px var(--container-padding);
     align-items: center;
   }
@@ -118,41 +132,28 @@
     height: 32px;
   }
 
-  .logo-text {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-    flex: 1;
-    min-width: 0;
-  }
-
   .app-title {
     font-size: var(--font-size-base);
-    line-height: 1.2;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
-  .app-subtitle {
+  .app-subtitle-row {
+    gap: 4px;
+  }
+
+  .app-subtitle,
+  .app-version {
     font-size: var(--font-size-xs);
     line-height: 1.2;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .nav-section {
-    flex-shrink: 0;
-    align-self: center;
-    margin-top: 0;
-    min-width: 0;
+    justify-self: end;
   }
 
   .connect-wallet-btn {
     padding: 6px 10px;
     font-size: var(--font-size-xs);
-    max-width: 40vw;
+    max-width: min(40vw, 220px);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
