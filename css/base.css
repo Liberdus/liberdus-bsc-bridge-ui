@@ -946,8 +946,17 @@ textarea:focus-visible {
   margin-bottom: 6px;
 }
 
+.kv-value {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
 .kv-value code {
   word-break: break-all;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Parameters tab */
@@ -967,6 +976,14 @@ textarea:focus-visible {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.param-address code {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-all;
 }
 
 .copy-inline {

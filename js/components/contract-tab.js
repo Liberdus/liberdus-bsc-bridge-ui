@@ -6,6 +6,16 @@ export class ContractTab {
     this._isLoading = false;
   }
 
+  _shortenHex(value, head = 4, tail = 4) {
+    const s = String(value || '');
+    if (!s.startsWith('0x') || s.length <= head + tail + 2) return s || '--';
+    return `${s.slice(0, 2 + head)}…${s.slice(-tail)}`;
+  }
+
+  _shortenAddress(value) {
+    return this._shortenHex(value, 4, 4);
+  }
+
   load() {
     this.panel = document.querySelector('.tab-panel[data-panel="contract"]');
     if (!this.panel) return;
@@ -199,15 +209,18 @@ export class ContractTab {
 
     listEl.innerHTML = signers
       .map(
-        (address, index) => `
+        (address, index) => {
+          const display = this._shortenAddress(address);
+          return `
           <div class="param-row">
             <strong>Signer ${index}:</strong>
             <div class="param-address">
-              <code>${address}</code>
+              <code title="${address}">${display}</code>
               <button type="button" class="copy-inline" data-copy-address data-address="${address}">Copy</button>
             </div>
           </div>
-        `
+        `;
+        }
       )
       .join('');
   }
@@ -219,7 +232,11 @@ export class ContractTab {
     const codeEl = wrapper.querySelector('code');
     const copyBtn = wrapper.querySelector('[data-copy-address]');
 
-    if (codeEl) codeEl.textContent = address || '--';
+    if (codeEl) {
+      const display = this._shortenAddress(address);
+      codeEl.textContent = display || '--';
+      codeEl.setAttribute('title', address || '');
+    }
     if (copyBtn) copyBtn.setAttribute('data-address', address && address !== '--' ? address : '');
   }
 
