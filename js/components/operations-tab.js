@@ -10,6 +10,7 @@ export class OperationsTab {
     };
     this._lastOperationId = null;
     this._isLoadingOperation = false;
+    this._actionToastSequence = 0;
   }
 
   load() {
@@ -313,7 +314,7 @@ export class OperationsTab {
       } else if (!this._access.isAdmin && !this._access.isMultisig) {
         statusEl.textContent = 'Connected wallet is not allowed to access Admin/Multisig.';
       } else if (!txEnabled) {
-        statusEl.textContent = 'Switch to Polygon to enable transactions.';
+        statusEl.textContent = `Connected on the wrong network. Transaction actions will prompt a switch to ${this._requiredNetworkName()} when used.`;
       } else {
         statusEl.textContent = 'Ready.';
       }
@@ -428,12 +429,6 @@ export class OperationsTab {
   async _requestOperation() {
     if (!this._access.connected || !(this._access.isAdmin || this._access.isMultisig)) return;
 
-    const contract = window.contractManager?.getWriteContract?.();
-    if (!contract) {
-      window.toastManager?.error?.('Connect a wallet on Polygon to request operations.');
-      return;
-    }
-
     const typeSelect = this.panel?.querySelector('[data-op-type]');
     const opType = typeSelect instanceof HTMLSelectElement ? Number(typeSelect.value) : NaN;
     if (!Number.isFinite(opType)) {
@@ -485,8 +480,19 @@ export class OperationsTab {
       return;
     }
 
-    const toastId = window.toastManager?.loading?.('Submitting request…', { id: 'requestOperation' });
+    const actionToastId = this._nextActionToastId('requestOperation');
+    let toastId = null;
     try {
+      const switchResult = await this._ensureRequiredNetworkForAction(actionToastId);
+      toastId = switchResult.toastId || null;
+
+      const contract = window.contractManager?.getWriteContract?.();
+      if (!contract) throw new Error(`Connect a wallet on ${this._requiredNetworkName()} to request operations.`);
+
+      toastId = this._showActionLoadingToast({
+        toastId: toastId || actionToastId,
+        message: 'Submitting request…',
+      });
       const tx = await contract.requestOperation(opType, target, value, data);
       const receipt = await tx.wait?.();
 
@@ -505,23 +511,18 @@ export class OperationsTab {
       const message = link
         ? `Request submitted. <a href="${link}" target="_blank">View transaction</a>`
         : 'Request submitted.';
-      window.toastManager?.update?.(toastId, { type: 'success', title: 'Done', message, timeoutMs: 3500, allowHtml: true });
+      this._showActionToast({ toastId, type: 'success', title: 'Done', message, timeoutMs: 3500, dismissible: true, allowHtml: true });
 
       await window.contractManager?.refreshStatus?.({ reason: 'operationRequested' }).catch(() => {});
     } catch (error) {
-      const msg = error?.reason || error?.message || 'Request failed.';
-      window.toastManager?.update?.(toastId, { type: 'error', title: 'Error', message: msg, timeoutMs: 0 });
+      toastId = toastId || error?._actionToastId || actionToastId;
+      const msg = this._actionErrorMessage(error, 'Request failed.');
+      this._showActionToast({ toastId, type: 'error', title: 'Error', message: msg, timeoutMs: 0, dismissible: true });
     }
   }
 
   async _transferOwnership() {
     if (!this._access.connected || !this._access.isAdmin) return;
-
-    const contract = window.contractManager?.getWriteContract?.();
-    if (!contract) {
-      window.toastManager?.error?.('Connect a wallet on Polygon to transfer ownership.');
-      return;
-    }
 
     const input = this.panel?.querySelector('[data-ops-new-owner]');
     const newOwner = input instanceof HTMLInputElement ? input.value.trim() : '';
@@ -531,8 +532,19 @@ export class OperationsTab {
       return;
     }
 
-    const toastId = window.toastManager?.loading?.('Submitting transfer…', { id: 'transferOwnership' });
+    const actionToastId = this._nextActionToastId('transferOwnership');
+    let toastId = null;
     try {
+      const switchResult = await this._ensureRequiredNetworkForAction(actionToastId);
+      toastId = switchResult.toastId || null;
+
+      const contract = window.contractManager?.getWriteContract?.();
+      if (!contract) throw new Error(`Connect a wallet on ${this._requiredNetworkName()} to transfer ownership.`);
+
+      toastId = this._showActionLoadingToast({
+        toastId: toastId || actionToastId,
+        message: 'Submitting transfer…',
+      });
       const tx = await contract.transferOwnership(normalized);
       await tx.wait?.();
 
@@ -541,13 +553,14 @@ export class OperationsTab {
       const message = link
         ? `Transfer submitted. <a href="${link}" target="_blank">View transaction</a>`
         : 'Transfer submitted.';
-      window.toastManager?.update?.(toastId, { type: 'success', title: 'Done', message, timeoutMs: 3500, allowHtml: true });
+      this._showActionToast({ toastId, type: 'success', title: 'Done', message, timeoutMs: 3500, dismissible: true, allowHtml: true });
 
       await this._syncAccessInfo().catch(() => {});
       await window.contractManager?.refreshStatus?.({ reason: 'ownershipTransferred' }).catch(() => {});
     } catch (error) {
-      const msg = error?.reason || error?.message || 'Transfer failed.';
-      window.toastManager?.update?.(toastId, { type: 'error', title: 'Error', message: msg, timeoutMs: 0 });
+      toastId = toastId || error?._actionToastId || actionToastId;
+      const msg = this._actionErrorMessage(error, 'Transfer failed.');
+      this._showActionToast({ toastId, type: 'error', title: 'Error', message: msg, timeoutMs: 0, dismissible: true });
     }
   }
 
@@ -653,22 +666,29 @@ export class OperationsTab {
       return;
     }
 
-    const contractRead = window.contractManager?.getReadContract?.();
-    const contractWrite = window.contractManager?.getWriteContract?.();
-    const signer = window.walletManager?.getSigner?.();
-    if (!contractRead || !contractWrite || !signer) {
-      window.toastManager?.error?.('Connect a wallet on Polygon to submit signatures.');
-      return;
-    }
-
     const utils = window.ethers?.utils;
     if (!utils?.arrayify) {
       window.toastManager?.error?.('Ethers utils unavailable.');
       return;
     }
 
-    const toastId = window.toastManager?.loading?.('Signing & submitting…', { id: 'submitSignature' });
+    const actionToastId = this._nextActionToastId('submitSignature');
+    let toastId = null;
     try {
+      const switchResult = await this._ensureRequiredNetworkForAction(actionToastId);
+      toastId = switchResult.toastId || null;
+
+      const contractRead = window.contractManager?.getReadContract?.();
+      const contractWrite = window.contractManager?.getWriteContract?.();
+      const signer = window.walletManager?.getSigner?.();
+      if (!contractRead || !contractWrite || !signer) {
+        throw new Error(`Connect a wallet on ${this._requiredNetworkName()} to submit signatures.`);
+      }
+
+      toastId = this._showActionLoadingToast({
+        toastId: toastId || actionToastId,
+        message: 'Signing & submitting…',
+      });
       const messageHash = await contractRead.getOperationHash(operationId);
       const signature = await signer.signMessage(utils.arrayify(messageHash));
       const tx = await contractWrite.submitSignature(operationId, signature);
@@ -679,14 +699,120 @@ export class OperationsTab {
       const message = link
         ? `Signature submitted. <a href="${link}" target="_blank">View transaction</a>`
         : 'Signature submitted.';
-      window.toastManager?.update?.(toastId, { type: 'success', title: 'Done', message, timeoutMs: 3500, allowHtml: true });
+      this._showActionToast({ toastId, type: 'success', title: 'Done', message, timeoutMs: 3500, dismissible: true, allowHtml: true });
 
       await this._loadOperationDetails().catch(() => {});
       await window.contractManager?.refreshStatus?.({ reason: 'signatureSubmitted' }).catch(() => {});
     } catch (error) {
-      const msg = error?.reason || error?.message || 'Submission failed.';
-      window.toastManager?.update?.(toastId, { type: 'error', title: 'Error', message: msg, timeoutMs: 0 });
+      toastId = toastId || error?._actionToastId || actionToastId;
+      const msg = this._actionErrorMessage(error, 'Submission failed.');
+      this._showActionToast({ toastId, type: 'error', title: 'Error', message: msg, timeoutMs: 0, dismissible: true });
     }
+  }
+
+  async _ensureRequiredNetworkForAction(toastId) {
+    if (window.networkManager?.isOnRequiredNetwork?.()) {
+      return { switched: false, toastId: null };
+    }
+
+    const activeToastId = this._showActionToast({
+      toastId,
+      type: 'loading',
+      title: 'Loading',
+      message: `Switch to ${this._requiredNetworkName()} in MetaMask to continue`,
+      timeoutMs: 0,
+      dismissible: false,
+    });
+
+    try {
+      const result = await window.networkManager?.ensureRequiredNetwork?.();
+      await window.contractManager?.refreshStatus?.({ reason: 'requiredNetworkEnsured' }).catch(() => {});
+      await this._syncAccessInfo().catch(() => {});
+      return { switched: !!result?.switched, toastId: activeToastId };
+    } catch (error) {
+      if (error && typeof error === 'object') {
+        error._phase = 'networkSwitch';
+        error._actionToastId = activeToastId;
+      }
+      throw error;
+    }
+  }
+
+  _requiredNetworkName() {
+    return window.CONFIG?.NETWORK?.NAME || 'the required network';
+  }
+
+  _showActionLoadingToast({ toastId = null, message }) {
+    return this._showActionToast({
+      toastId,
+      type: 'loading',
+      title: 'Loading',
+      message,
+      timeoutMs: 0,
+      dismissible: false,
+    });
+  }
+
+  _showActionToast({ toastId = null, title, message, type = 'info', timeoutMs = 0, dismissible = true, allowHtml = false }) {
+    return (
+      window.toastManager?.show?.({
+        id: toastId || undefined,
+        title,
+        message,
+        type,
+        timeoutMs,
+        dismissible,
+        delayMs: 0,
+        allowHtml,
+      }) || toastId || null
+    );
+  }
+
+  _nextActionToastId(base) {
+    this._actionToastSequence += 1;
+    return `${base}-${Date.now()}-${this._actionToastSequence}`;
+  }
+
+  _actionErrorMessage(error, fallback) {
+    if (error?._phase === 'networkSwitch') {
+      if (error?.code === 4001) return 'Network switch request was rejected.';
+      if (error?.code === -32002) return 'Network switch request already pending in MetaMask.';
+      return this._extractActionErrorMessage(error) || `Failed to switch to ${this._requiredNetworkName()}.`;
+    }
+    return this._extractActionErrorMessage(error) || fallback;
+  }
+
+  _extractActionErrorMessage(error) {
+    const candidates = [
+      error?.data?.message,
+      error?.error?.data?.message,
+      error?.reason,
+      error?.shortMessage,
+      error?.error?.message,
+      error?.message,
+    ];
+
+    let fallback = null;
+    for (const candidate of candidates) {
+      if (typeof candidate !== 'string') continue;
+      const normalized = this._normalizeActionErrorMessage(candidate);
+      if (!normalized) continue;
+      if (!/^internal json-rpc error\.?$/i.test(normalized)) return normalized;
+      fallback = fallback || normalized;
+    }
+
+    return fallback;
+  }
+
+  _normalizeActionErrorMessage(message) {
+    let text = String(message || '').trim();
+    if (!text) return null;
+
+    text = text.replace(/^Internal JSON-RPC error\.?\s*/i, '').trim();
+    text = text.replace(/^execution reverted:\s*/i, '').trim();
+    if (!text) return 'Internal JSON-RPC error.';
+
+    return text;
   }
 
   async _copy(text) {

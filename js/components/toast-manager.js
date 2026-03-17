@@ -32,7 +32,8 @@ export class ToastManager {
 
     const create = () => {
       const el = document.createElement('div');
-      el.className = `notification ${type}`;
+      el.className = 'notification';
+      this._applyTypeClass(el, type);
       el.setAttribute('data-toast-id', toastId);
       el.setAttribute('role', type === 'error' ? 'alert' : 'status');
 
@@ -68,7 +69,7 @@ export class ToastManager {
       const closeBtn = el.querySelector('.notification-close');
       closeBtn?.addEventListener('click', () => this.dismiss(toastId));
 
-      this.container.appendChild(el);
+      this.container.prepend(el);
       // Trigger entry animation (match lib-lp-staking-frontend style).
       requestAnimationFrame(() => el.classList.add('show'));
 
@@ -119,7 +120,7 @@ export class ToastManager {
     if (!el) return false;
 
     if (type) {
-      el.className = `notification ${type}`;
+      this._applyTypeClass(el, type);
       el.setAttribute('role', type === 'error' ? 'alert' : 'status');
       // Update icon
       const iconMap = {
@@ -137,6 +138,11 @@ export class ToastManager {
           iconEl.textContent = iconMap[type] || 'ℹ';
         }
       }
+    }
+    el.classList.remove('hide');
+    el.classList.add('show');
+    if (this.container && el.parentElement === this.container && this.container.firstChild !== el) {
+      this.container.prepend(el);
     }
     if (typeof title === 'string') {
       const titleEl = el.querySelector('.notification-title');
@@ -174,6 +180,12 @@ export class ToastManager {
     }
 
     return true;
+  }
+
+  _applyTypeClass(el, type) {
+    if (!el) return;
+    el.classList.remove('success', 'error', 'warning', 'info', 'loading');
+    if (type) el.classList.add(type);
   }
 
   _sanitizeMessageHtml(message) {
@@ -239,4 +251,3 @@ export class ToastManager {
     return true;
   }
 }
-

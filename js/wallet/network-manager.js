@@ -54,6 +54,22 @@ export class NetworkManager {
     });
   }
 
+  async ensureRequiredNetwork({ timeoutMs = 3000 } = {}) {
+    if (this.isOnRequiredNetwork()) {
+      return { switched: false };
+    }
+
+    const waiter = this._createRequiredNetworkWaiter({ timeoutMs });
+    try {
+      await this.switchToChain(this._requiredNetworkDescriptor());
+      await waiter.promise;
+      return { switched: true };
+    } catch (error) {
+      waiter.cancel();
+      throw error;
+    }
+  }
+
   async addPolygonNetwork() {
     const walletProvider = await this.walletManager?.getEip1193Provider?.({ waitMs: 200 });
     if (!walletProvider) throw new Error('MetaMask not available');
@@ -160,27 +176,27 @@ export class NetworkManager {
 
   /**
    * Simple gating: any element marked data-requires-tx="true"
-   * will be disabled unless tx-enabled.
+   * will be hard-disabled unless a wallet is connected.
    */
   updateTxGatedControls() {
-    const txEnabled = this.isTxEnabled();
+    const connected = !!this.walletManager?.isConnected?.();
     const gated = Array.from(document.querySelectorAll('[data-requires-tx="true"]'));
     gated.forEach((el) => {
       // Allow permanent disable for placeholders (Phase 1/5/6 UI)
       if (el.getAttribute('data-always-disabled') === 'true') return;
-      // Allow data entry even when not tx-enabled for specified inputs
+      // Allow data entry even when wallet connection is missing for specified inputs
       if (el.getAttribute('data-allow-input-when-locked') === 'true') {
         if ('disabled' in el) {
-          el.disabled = false;
+          el.disabled = !connected;
         }
-        el.classList.toggle('is-disabled', !txEnabled);
+        el.classList.toggle('is-disabled', !connected);
         return;
       }
 
       if ('disabled' in el) {
-        el.disabled = !txEnabled;
+        el.disabled = !connected;
       }
-      el.classList.toggle('is-disabled', !txEnabled);
+      el.classList.toggle('is-disabled', !connected);
     });
   }
 
@@ -210,5 +226,75 @@ export class NetworkManager {
 
   _requiredChainId() {
     return Number(this._networkConfig()?.CHAIN_ID || 0) || null;
+  }
+
+  _requiredNetworkDescriptor() {
+    const network = this._networkConfig();
+    return {
+      chainId: network?.CHAIN_ID,
+      name: network?.NAME || 'Required Network',
+      rpcUrl: network?.RPC_URL || '',
+      fallbackRpcs: network?.FALLBACK_RPCS || [],
+      blockExplorer: network?.BLOCK_EXPLORER || '',
+      nativeCurrency: network?.NATIVE_CURRENCY || { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
+    };
+  }
+
+  _requiredNetworkName() {
+    return this._requiredNetworkDescriptor().name || 'the required network';
+  }
+
+  _createRequiredNetworkWaiter({ timeoutMs = 3000 } = {}) {
+    if (this.isOnRequiredNetwork()) {
+      return {
+        promise: Promise.resolve(true),
+        cancel() {},
+      };
+    }
+
+    let timeoutId = null;
+    let pollId = null;
+    let resolved = false;
+    let chainChangedHandler = null;
+
+    const cleanup = () => {
+      if (timeoutId != null) window.clearTimeout(timeoutId);
+      if (pollId != null) window.clearInterval(pollId);
+      if (chainChangedHandler) {
+        document.removeEventListener('walletChainChanged', chainChangedHandler);
+      }
+    };
+
+    const resolveIfReady = (resolve) => {
+      if (!resolved && this.isOnRequiredNetwork()) {
+        resolved = true;
+        cleanup();
+        resolve(true);
+      }
+    };
+
+    const promise = new Promise((resolve, reject) => {
+      chainChangedHandler = () => resolveIfReady(resolve);
+      document.addEventListener('walletChainChanged', chainChangedHandler);
+
+      timeoutId = window.setTimeout(() => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        reject(new Error(`Timed out waiting for wallet to switch to ${this._requiredNetworkName()}`));
+      }, timeoutMs);
+
+      pollId = window.setInterval(() => resolveIfReady(resolve), 50);
+      resolveIfReady(resolve);
+    });
+
+    return {
+      promise,
+      cancel() {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+      },
+    };
   }
 }

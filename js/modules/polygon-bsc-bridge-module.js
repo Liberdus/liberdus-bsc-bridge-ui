@@ -22,6 +22,7 @@ export class PolygonBscBridgeModule {
     this._els = {};
     this._lastSnapshot = null;
     this._refreshTimerId = null;
+    this._actionToastSequence = 0;
     this._bound = false;
 
     this._onWalletEvent = this._onWalletEvent.bind(this);
@@ -238,6 +239,7 @@ export class PolygonBscBridgeModule {
 
   _updateActionStates() {
     const txEnabled = !!this.networkManager?.isTxEnabled?.();
+    const connected = !!this.walletManager?.isConnected?.();
     const snapshot = this._lastSnapshot;
 
     if (this._els.recipient) this._els.recipient.disabled = false;
@@ -252,10 +254,10 @@ export class PolygonBscBridgeModule {
 
     const needsApproval = this._needsApproval(amountWei);
 
-    if (this._els.approveBtn) this._els.approveBtn.disabled = !txEnabled || !amountOk || !needsApproval;
+    if (this._els.approveBtn) this._els.approveBtn.disabled = !connected || !amountOk || !needsApproval;
     if (this._els.bridgeBtn)
       this._els.bridgeBtn.disabled =
-        !txEnabled || !recipientOk || !amountOk || !bridgeEnabled || !maxOk || needsApproval;
+        !connected || !recipientOk || !amountOk || !bridgeEnabled || !maxOk || needsApproval;
     if (this._els.setMaxBtn) this._els.setMaxBtn.disabled = !txEnabled;
   }
 
@@ -283,10 +285,11 @@ export class PolygonBscBridgeModule {
   }
 
   async _onApproveClicked() {
+    const actionToastId = this._nextActionToastId('bridgeApprove');
+    let toastId = null;
     try {
-      const signer = this.walletManager?.getSigner?.();
       const address = this.walletManager?.getAddress?.();
-      if (!signer || !address) throw new Error('Wallet not connected');
+      if (!address) throw new Error('Wallet not connected');
 
       const tokenAddr = await this._getTokenAddress();
       if (!tokenAddr) throw new Error('Token address not available');
@@ -294,16 +297,40 @@ export class PolygonBscBridgeModule {
       const amountWei = this._parseAmountToWei(this._els.amount?.value);
       if (!amountWei || amountWei.lte(0)) throw new Error('Enter a valid amount');
 
-      const token = new window.ethers.Contract(tokenAddr, this._erc20Abi(), signer);
       const vault = this._getVaultAddress();
       if (!vault) throw new Error('Vault address not configured');
 
-      const toastId = this.toastManager?.loading?.('Confirm the approval in your wallet', { id: 'bridgeApprove' });
+      const switchResult = await this._ensureRequiredNetworkForAction(actionToastId);
+      toastId = switchResult.toastId || null;
+
+      const signer = this.walletManager?.getSigner?.();
+      if (!signer || !this.walletManager?.getAddress?.()) throw new Error('Wallet not connected');
+
+      if (!this._needsApproval(amountWei)) {
+        toastId = this._showActionToast({
+          toastId: toastId || actionToastId,
+          title: 'Done',
+          message: 'Approval already sufficient',
+          type: 'success',
+          timeoutMs: 2500,
+          dismissible: true,
+        });
+        this._showStatus('Approval not needed', 'Current allowance already covers this amount.');
+        this._updateActionStates();
+        return;
+      }
+
+      const token = new window.ethers.Contract(tokenAddr, this._erc20Abi(), signer);
+      toastId = this._showActionLoadingToast({
+        toastId: toastId || actionToastId,
+        message: 'Confirm the approval in your wallet',
+      });
 
       const tx = await token.approve(vault, window.ethers.constants.MaxUint256);
       this._showStatus('Approval submitted', this._txLinkHtml(this._getSourceChainExplorer(), tx.hash));
 
-      this.toastManager?.update?.(toastId, {
+      toastId = this._showActionToast({
+        toastId,
         title: 'Approval submitted',
         message: `Tx: ${tx.hash}`,
         type: 'info',
@@ -313,20 +340,30 @@ export class PolygonBscBridgeModule {
 
       await tx.wait(1);
 
-      this.toastManager?.success?.('Approval confirmed', { id: toastId, timeoutMs: 2500 });
+      this._showActionToast({
+        toastId,
+        title: 'Done',
+        message: 'Approval confirmed',
+        type: 'success',
+        timeoutMs: 2500,
+        dismissible: true,
+      });
       await this._refreshBalances();
       this._updateActionStates();
     } catch (error) {
-      this.toastManager?.error?.(error?.reason || error?.message || 'Approval failed');
-      this._showStatus('Approval failed', this._escapeHtml(error?.reason || error?.message || 'Unknown error'));
+      toastId = toastId || error?._actionToastId || actionToastId;
+      const message = this._actionErrorMessage(error, 'Approval failed');
+      this._showActionToast({ toastId, title: 'Error', message, type: 'error', timeoutMs: 0, dismissible: true });
+      this._showStatus('Approval failed', this._escapeHtml(message));
     }
   }
 
   async _onBridgeClicked() {
+    const actionToastId = this._nextActionToastId('bridgeOut');
+    let toastId = null;
     try {
-      const contract = this.contractManager?.getWriteContract?.();
       const address = this.walletManager?.getAddress?.();
-      if (!contract || !address) throw new Error('Wallet not connected');
+      if (!address) throw new Error('Wallet not connected');
 
       const recipient = String(this._els.recipient?.value || '').trim();
       if (!this._isAddress(recipient)) throw new Error('Invalid recipient address');
@@ -346,15 +383,26 @@ export class PolygonBscBridgeModule {
       const bridgeChainId = this._getBridgeOutChainId(snapshot);
       if (!bridgeChainId) throw new Error('Bridge chain ID is not configured');
 
+      const switchResult = await this._ensureRequiredNetworkForAction(actionToastId);
+      toastId = switchResult.toastId || null;
+
+      const contract = this.contractManager?.getWriteContract?.();
+      const activeAddress = this.walletManager?.getAddress?.();
+      if (!contract || !activeAddress) throw new Error('Wallet not connected');
+
       if (this._needsApproval(amountWei)) throw new Error('Approval required before bridging');
 
       const overrides = await this._buildGasOverrides(contract, amountWei, recipient, bridgeChainId);
 
-      const toastId = this.toastManager?.loading?.('Confirm the bridge transaction in your wallet', { id: 'bridgeOut' });
+      toastId = this._showActionLoadingToast({
+        toastId: toastId || actionToastId,
+        message: 'Confirm the bridge transaction in your wallet',
+      });
       const tx = await contract.bridgeOut(amountWei, recipient, bridgeChainId, overrides);
 
       this._showStatus('Bridge transaction submitted', this._txLinkHtml(this._getSourceChainExplorer(), tx.hash));
-      this.toastManager?.update?.(toastId, {
+      toastId = this._showActionToast({
+        toastId,
         title: 'Bridge submitted',
         message: `Tx: ${tx.hash}`,
         type: 'info',
@@ -370,18 +418,34 @@ export class PolygonBscBridgeModule {
         const msg = `From ${this._shortAddress(from)} • ${this._formatTokenUnits(amount)} ${this._tokenSymbol()} → ${this._shortAddress(
           targetAddress
         )} (chain ${chainId})`;
-        this.toastManager?.success?.('Bridge out confirmed', { id: toastId, timeoutMs: 3500 });
+        this._showActionToast({
+          toastId,
+          title: 'Done',
+          message: 'Bridge out confirmed',
+          type: 'success',
+          timeoutMs: 3500,
+          dismissible: true,
+        });
         this._showStatus('Bridge out confirmed', this._escapeHtml(msg));
       } else {
-        this.toastManager?.success?.('Bridge confirmed', { id: toastId, timeoutMs: 2500 });
+        this._showActionToast({
+          toastId,
+          title: 'Done',
+          message: 'Bridge confirmed',
+          type: 'success',
+          timeoutMs: 2500,
+          dismissible: true,
+        });
         this._showStatus('Bridge confirmed', 'Transaction confirmed on Polygon');
       }
 
       await this._refreshBalances();
       this._updateActionStates();
     } catch (error) {
-      this.toastManager?.error?.(error?.reason || error?.message || 'Bridge failed');
-      this._showStatus('Bridge failed', this._escapeHtml(error?.reason || error?.message || 'Unknown error'));
+      toastId = toastId || error?._actionToastId || actionToastId;
+      const message = this._actionErrorMessage(error, 'Bridge failed');
+      this._showActionToast({ toastId, title: 'Error', message, type: 'error', timeoutMs: 0, dismissible: true });
+      this._showStatus('Bridge failed', this._escapeHtml(message));
     }
   }
 
@@ -529,6 +593,112 @@ export class PolygonBscBridgeModule {
     const name = (this._getSourceChain()?.name || '').toLowerCase();
     if (name.includes('amoy')) return 'https://amoy.polygonscan.com';
     return '';
+  }
+
+  async _ensureRequiredNetworkForAction(toastId) {
+    if (this.networkManager?.isOnRequiredNetwork?.()) {
+      return { switched: false, toastId: null };
+    }
+
+    const activeToastId = this._showActionToast({
+      toastId,
+      title: 'Loading',
+      message: `Switch to ${this._requiredNetworkName()} in MetaMask to continue`,
+      type: 'loading',
+      timeoutMs: 0,
+      dismissible: false,
+    });
+
+    try {
+      const result = await this.networkManager?.ensureRequiredNetwork?.();
+      await this.contractManager?.refreshStatus?.({ reason: 'requiredNetworkEnsured' }).catch(() => {});
+      await this._refreshBalances().catch(() => {});
+      this._updateActionStates();
+      return { switched: !!result?.switched, toastId: activeToastId };
+    } catch (error) {
+      if (error && typeof error === 'object') {
+        error._phase = 'networkSwitch';
+        error._actionToastId = activeToastId;
+      }
+      throw error;
+    }
+  }
+
+  _showActionLoadingToast({ toastId = null, message }) {
+    return this._showActionToast({
+      toastId,
+      title: 'Loading',
+      message,
+      type: 'loading',
+      timeoutMs: 0,
+      dismissible: false,
+    });
+  }
+
+  _showActionToast({ toastId = null, title, message, type = 'info', timeoutMs = 0, dismissible = true, allowHtml = false }) {
+    return (
+      this.toastManager?.show?.({
+        id: toastId || undefined,
+        title,
+        message,
+        type,
+        timeoutMs,
+        dismissible,
+        delayMs: 0,
+        allowHtml,
+      }) || toastId || null
+    );
+  }
+
+  _nextActionToastId(base) {
+    this._actionToastSequence += 1;
+    return `${base}-${Date.now()}-${this._actionToastSequence}`;
+  }
+
+  _requiredNetworkName() {
+    return this.config?.NETWORK?.NAME || 'the required network';
+  }
+
+  _actionErrorMessage(error, fallback) {
+    if (error?._phase === 'networkSwitch') {
+      if (error?.code === 4001) return 'Network switch request was rejected.';
+      if (error?.code === -32002) return 'Network switch request already pending in MetaMask.';
+      return this._extractActionErrorMessage(error) || `Failed to switch to ${this._requiredNetworkName()}.`;
+    }
+    return this._extractActionErrorMessage(error) || fallback;
+  }
+
+  _extractActionErrorMessage(error) {
+    const candidates = [
+      error?.data?.message,
+      error?.error?.data?.message,
+      error?.reason,
+      error?.shortMessage,
+      error?.error?.message,
+      error?.message,
+    ];
+
+    let fallback = null;
+    for (const candidate of candidates) {
+      if (typeof candidate !== 'string') continue;
+      const normalized = this._normalizeActionErrorMessage(candidate);
+      if (!normalized) continue;
+      if (!/^internal json-rpc error\.?$/i.test(normalized)) return normalized;
+      fallback = fallback || normalized;
+    }
+
+    return fallback;
+  }
+
+  _normalizeActionErrorMessage(message) {
+    let text = String(message || '').trim();
+    if (!text) return null;
+
+    text = text.replace(/^Internal JSON-RPC error\.?\s*/i, '').trim();
+    text = text.replace(/^execution reverted:\s*/i, '').trim();
+    if (!text) return 'Internal JSON-RPC error.';
+
+    return text;
   }
 
   _scheduleRefresh() {
