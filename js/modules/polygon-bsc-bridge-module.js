@@ -95,7 +95,7 @@ export class PolygonBscBridgeModule {
 
     this.container.innerHTML = `
       <div class="panel-header">
-        <h2>Bridge Out</h2>
+        <h2>Bridge</h2>
         <p class="muted">Bridge ${this._tokenSymbol()} from <span data-bridge-source-name></span> to <span data-bridge-dest-name></span>.</p>
       </div>
 

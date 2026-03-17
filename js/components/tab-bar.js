@@ -28,9 +28,8 @@ export class TabBar {
 
   applyHash() {
     const hash = (window.location.hash || '').replace(/^#/, '').trim();
-    const next = hash && this.tabPanelsByName.has(hash) ? hash : 'overview';
-    const resolved = this._isTabAvailable(next) ? next : 'overview';
-    this.switchTab(resolved, { updateHash: false, focusPanel: false });
+    const next = hash && this.tabPanelsByName.has(hash) ? hash : 'bridge';
+    this.switchTab(next, { updateHash: !!hash && next !== hash, focusPanel: false });
   }
 
   switchTab(tabName, { updateHash = false, focusPanel = false } = {}) {
@@ -116,11 +115,5 @@ export class TabBar {
 
   _getVisibleTabButtons() {
     return this.tabButtons.filter((btn) => !btn.hidden && !btn.classList.contains('hidden'));
-  }
-
-  _isTabAvailable(tabName) {
-    if (tabName === 'overview') return true;
-    const btn = this.tabButtons.find((b) => b.dataset.tab === tabName);
-    return !!btn && !btn.hidden && !btn.classList.contains('hidden');
   }
 }
