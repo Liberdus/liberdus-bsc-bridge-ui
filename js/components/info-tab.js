@@ -21,7 +21,6 @@ export class InfoTab {
 
         <div class="info-layout">
           <div class="card info-card info-card--summary">
-            <div class="card-title">Contract Summary</div>
             <div class="kv-grid info-kv-grid">
             <div class="kv">
               <div class="kv-label">Vault Chain ID</div>
@@ -48,7 +47,7 @@ export class InfoTab {
               <div class="kv-value" data-info-vault-balance>--</div>
             </div>
 
-            <div class="kv kv--full">
+            <div class="kv">
               <div class="kv-label">Contract Address</div>
               <div class="kv-value">
                 <div class="param-address">
@@ -58,7 +57,7 @@ export class InfoTab {
               </div>
             </div>
 
-            <div class="kv kv--full">
+            <div class="kv">
               <div class="kv-label">Token Address</div>
               <div class="kv-value">
                 <div class="param-address">
@@ -68,7 +67,7 @@ export class InfoTab {
               </div>
             </div>
 
-            <div class="kv kv--full">
+            <div class="kv">
               <div class="kv-label">Owner</div>
               <div class="kv-value">
                 <div class="param-address">

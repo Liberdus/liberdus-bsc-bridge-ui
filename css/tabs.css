@@ -185,6 +185,10 @@
     gap: 12px;
   }
 
+  .tab-panel[data-panel="info"] .info-card--summary .info-kv-grid {
+    grid-template-columns: 1fr;
+  }
+
   .tab-panel[data-panel="info"] .info-signers-grid {
     grid-template-columns: 1fr;
   }
