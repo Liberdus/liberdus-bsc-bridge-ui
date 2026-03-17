@@ -76,9 +76,8 @@ export class VersionService {
     }
 
     if (!hasStoredVersion) {
-      localStorage.setItem(VERSION_STORAGE_KEY, nextVersion);
-      debug('No stored version found. Bootstrapping app_version without update.');
-      return false;
+      debug('No stored version found. Forcing clean refresh before bootstrapping app_version.');
+      return await this.performUpdate(nextVersion);
     }
 
     if (storedVersion !== nextVersion) {
