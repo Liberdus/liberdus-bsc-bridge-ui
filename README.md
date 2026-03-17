@@ -48,7 +48,7 @@ Edit `js/config.js` to change network/contract settings:
 - `CONFIG.CONTRACT.{ADDRESS, ABI_PATH}`
 - `CONFIG.BRIDGE.CHAINS.BSC` and `CONFIG.BRIDGE.CONTRACTS.BSC` remain destination-only bridge metadata
 
-Wallet connect only requests account access. If the wallet is on the wrong chain, the app stays connected but transaction actions remain disabled until future contract-action-specific network prompts are added.
+Wallet connect only requests account access. If the wallet is on the wrong chain, the app stays connected and tx actions will prompt a switch to the configured source network when used.
 
 ## Next Implementation Steps
 

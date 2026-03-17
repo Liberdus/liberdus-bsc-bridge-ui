@@ -42,18 +42,6 @@ export class NetworkManager {
     return this.walletManager?.getProvider?.() || null;
   }
 
-  async ensurePolygonNetwork() {
-    const network = this._networkConfig();
-    return await this.switchToChain({
-      chainId: network?.CHAIN_ID,
-      name: network?.NAME,
-      rpcUrl: network?.RPC_URL,
-      fallbackRpcs: network?.FALLBACK_RPCS || [],
-      blockExplorer: network?.BLOCK_EXPLORER,
-      nativeCurrency: network?.NATIVE_CURRENCY,
-    });
-  }
-
   async ensureRequiredNetwork({ timeoutMs = 15000 } = {}) {
     if (this.isOnRequiredNetwork()) {
       return { switched: false };
@@ -72,16 +60,6 @@ export class NetworkManager {
       waiter.cancel();
       throw error;
     }
-  }
-
-  async addPolygonNetwork() {
-    const walletProvider = await this.walletManager?.getEip1193Provider?.({ waitMs: 200 });
-    if (!walletProvider) throw new Error('MetaMask not available');
-    const networkConfig = this.buildPolygonNetworkConfig();
-    await walletProvider.request({
-      method: 'wallet_addEthereumChain',
-      params: [networkConfig],
-    });
   }
 
   getAvailableNetworks() {
@@ -120,12 +98,6 @@ export class NetworkManager {
     return null;
   }
 
-  async switchToNetworkByKey(key) {
-    const target = this.getAvailableNetworks().find((n) => n.key === key);
-    if (!target) throw new Error('Unsupported network');
-    return await this.switchToChain(target);
-  }
-
   async switchToChain(chain) {
     const walletProvider = await this.walletManager?.getEip1193Provider?.({ waitMs: 200 });
     if (!walletProvider) throw new Error('MetaMask not available');
@@ -156,18 +128,6 @@ export class NetworkManager {
       }
       throw error;
     }
-  }
-
-  buildPolygonNetworkConfig() {
-    const network = this._networkConfig();
-    const chainId = Number(network?.CHAIN_ID || this._requiredChainId() || 80002);
-    return {
-      chainId: this._toHexChainId(chainId),
-      chainName: network?.NAME || 'Polygon Amoy',
-      rpcUrls: [network?.RPC_URL, ...(network?.FALLBACK_RPCS || [])].filter(Boolean),
-      nativeCurrency: network?.NATIVE_CURRENCY || { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
-      blockExplorerUrls: [network?.BLOCK_EXPLORER].filter(Boolean),
-    };
   }
 
   networkSymbol() {

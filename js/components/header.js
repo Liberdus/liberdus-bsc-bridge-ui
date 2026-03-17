@@ -10,7 +10,7 @@ export class Header {
 
     this._connectBtnText = this.connectWalletBtn.textContent?.trim() || this._connectBtnText;
 
-    // Phase 2: MetaMask-only connection (Polygon-only tx)
+    // Phase 2: MetaMask-only connection with config-driven tx network
     this.connectWalletBtn.addEventListener('click', () => this.onConnectWalletClick());
 
     // React to wallet events
