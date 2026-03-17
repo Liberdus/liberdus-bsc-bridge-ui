@@ -98,7 +98,8 @@ export class MetaMaskConnector {
     this.account = accounts[0];
     this.chainId = await this._readChainId(walletProvider);
 
-    this.provider = new window.ethers.providers.Web3Provider(walletProvider);
+    // Use the "any" network so the injected provider survives wallet chain changes.
+    this.provider = new window.ethers.providers.Web3Provider(walletProvider, 'any');
     this.signer = this.provider.getSigner();
     this.isConnected = true;
 
@@ -199,10 +200,9 @@ export class MetaMaskConnector {
       if (typeof this.onChainChanged === 'function') this.onChainChanged(this.chainId);
     };
 
-    this._boundDisconnect = () => {
+    this._boundDisconnect = (error) => {
       this.isConnected = false;
-      this.account = null;
-      if (typeof this.onDisconnected === 'function') this.onDisconnected();
+      if (typeof this.onDisconnected === 'function') this.onDisconnected(error);
     };
 
     walletProvider.on('accountsChanged', this._boundAccountsChanged);

@@ -54,14 +54,18 @@ export class NetworkManager {
     });
   }
 
-  async ensureRequiredNetwork({ timeoutMs = 3000 } = {}) {
+  async ensureRequiredNetwork({ timeoutMs = 15000 } = {}) {
     if (this.isOnRequiredNetwork()) {
       return { switched: false };
     }
 
+    await this.switchToChain(this._requiredNetworkDescriptor());
+    if (this.isOnRequiredNetwork()) {
+      return { switched: true };
+    }
+
     const waiter = this._createRequiredNetworkWaiter({ timeoutMs });
     try {
-      await this.switchToChain(this._requiredNetworkDescriptor());
       await waiter.promise;
       return { switched: true };
     } catch (error) {

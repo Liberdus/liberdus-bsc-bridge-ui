@@ -1,4 +1,4 @@
-import { MetaMaskConnector } from './metamask-connector.js';
+import { MetaMaskConnector } from './metamask-connector.js?v=20260317g';
 
 /**
  * WalletManager (Phase 2)
@@ -30,7 +30,7 @@ export class WalletManager {
     // Wire connector callbacks → WalletManager events
     this.connector.onAccountsChanged = (accounts) => this._handleAccountsChanged(accounts);
     this.connector.onChainChanged = (chainId) => this._handleChainChanged(chainId);
-    this.connector.onDisconnected = () => this._handleDisconnected();
+    this.connector.onDisconnected = (error) => this._handleDisconnected(error);
   }
 
   async init() {
@@ -162,7 +162,8 @@ export class WalletManager {
         return false;
       }
 
-      this.provider = new window.ethers.providers.Web3Provider(eip1193Provider);
+      // Use the "any" network so restored wallet providers survive later chain changes.
+      this.provider = new window.ethers.providers.Web3Provider(eip1193Provider, 'any');
       this.signer = this.provider.getSigner();
       this.address = addr;
 
@@ -217,7 +218,12 @@ export class WalletManager {
     this._notify('chainChanged', { address: this.address, chainId: this.chainId });
   }
 
-  _handleDisconnected() {
+  _handleDisconnected(_error) {
+    // MetaMask can emit a transient provider disconnect during add/switch flows.
+    // Keep account permission state until accountsChanged([]) or explicit disconnect proves the wallet is gone.
+    if (this.address && this.provider && this.signer) {
+      return;
+    }
     this._clearStateAndNotifyDisconnect();
   }
 

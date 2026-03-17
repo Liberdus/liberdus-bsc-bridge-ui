@@ -3,7 +3,7 @@ const PROFILES = {
     NETWORK: {
       CHAIN_ID: 80002,
       NAME: 'Polygon Amoy',
-      RPC_URL: 'https://rpc.ankr.com/polygon_amoy',
+      RPC_URL: 'https://polygon-amoy-bor-rpc.publicnode.com',
       FALLBACK_RPCS: [
         'https://polygon-amoy-bor-rpc.publicnode.com',
       ],
