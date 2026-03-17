@@ -28,11 +28,13 @@ export class TabBar {
 
   applyHash() {
     const hash = (window.location.hash || '').replace(/^#/, '').trim();
-    const next = hash && this.tabPanelsByName.has(hash) ? hash : 'bridge';
+    const normalizedHash = this._normalizeTabName(hash);
+    const next = normalizedHash && this.tabPanelsByName.has(normalizedHash) ? normalizedHash : 'bridge';
     this.switchTab(next, { updateHash: !!hash && next !== hash, focusPanel: false });
   }
 
   switchTab(tabName, { updateHash = false, focusPanel = false } = {}) {
+    tabName = this._normalizeTabName(tabName);
     if (!tabName || !this.tabPanelsByName.has(tabName)) return;
     if (this.activeTab === tabName) return;
 
@@ -115,5 +117,10 @@ export class TabBar {
 
   _getVisibleTabButtons() {
     return this.tabButtons.filter((btn) => !btn.hidden && !btn.classList.contains('hidden'));
+  }
+
+  _normalizeTabName(tabName) {
+    if (tabName === 'overview' || tabName === 'contract') return 'info';
+    return tabName;
   }
 }

@@ -1,10 +1,9 @@
 import { CONFIG } from './config.js?v=20260317b';
 import { Header } from './components/header.js?v=20260317i';
-import { TabBar } from './components/tab-bar.js?v=20260309n';
-import { OverviewTab } from './components/overview-tab.js?v=20260309n';
+import { TabBar } from './components/tab-bar.js?v=20260317o';
+import { InfoTab } from './components/info-tab.js?v=20260317a';
 import { BridgeOutTab } from './components/bridge-out-tab.js?v=20260317c';
-import { OperationsTab } from './components/operations-tab.js?v=20260317c';
-import { ContractTab } from './components/contract-tab.js?v=20260309n';
+import { OperationsTab } from './components/operations-tab.js?v=20260317d';
 import { TransactionsTab } from './components/transactions-tab.js?v=20260309n';
 import { ToastManager } from './components/toast-manager.js?v=20260317k';
 import { WalletManager } from './wallet/wallet-manager.js?v=20260317j';
@@ -14,10 +13,9 @@ import { ContractManager } from './contracts/contract-manager.js?v=20260317e';
 
 const header = new Header();
 const tabBar = new TabBar();
-const overviewTab = new OverviewTab();
+const infoTab = new InfoTab();
 const bridgeOutTab = new BridgeOutTab();
 const operationsTab = new OperationsTab();
-const contractTab = new ContractTab();
 const transactionsTab = new TransactionsTab();
 const toastManager = new ToastManager();
 const walletManager = new WalletManager();
@@ -52,10 +50,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   header.load();
-  overviewTab.load();
+  infoTab.load();
   bridgeOutTab.load();
   operationsTab.load();
-  contractTab.load();
   transactionsTab.load();
 
   tabBar.load();
