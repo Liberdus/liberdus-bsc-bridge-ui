@@ -14,14 +14,14 @@
 
     <link rel="stylesheet" href="./css/base.css?v=20260309a" />
     <link rel="stylesheet" href="./css/header.css?v=20260309a" />
-    <link rel="stylesheet" href="./css/tabs.css?v=20260316a" />
+    <link rel="stylesheet" href="./css/tabs.css?v=20260317b" />
     <link rel="stylesheet" href="./css/wallet-popup.css?v=20260317a" />
     <link rel="stylesheet" href="./css/notifications.css?v=20260309a" />
   </head>
 
   <body>
     <script src="./libs/ethers.umd.min.js?v=20260305c"></script>
-    <script src="./js/app.js?v=20260317l" type="module"></script>
+    <script src="./js/app.js?v=20260317m" type="module"></script>
 
     <div class="container" id="app">
       <header class="header" id="header">
@@ -74,17 +74,6 @@
               class="tab-button"
               role="tab"
               aria-selected="false"
-              aria-controls="tab-panel-overview"
-              id="tab-overview"
-              data-tab="overview"
-              type="button"
-            >
-              Overview
-            </button>
-            <button
-              class="tab-button"
-              role="tab"
-              aria-selected="false"
               aria-controls="tab-panel-operations"
               id="tab-operations"
               data-tab="operations"
@@ -96,23 +85,23 @@
               class="tab-button"
               role="tab"
               aria-selected="false"
-              aria-controls="tab-panel-contract"
-              id="tab-contract"
-              data-tab="contract"
-              type="button"
-            >
-              Contract
-            </button>
-            <button
-              class="tab-button"
-              role="tab"
-              aria-selected="false"
               aria-controls="tab-panel-transactions"
               id="tab-transactions"
               data-tab="transactions"
               type="button"
             >
               Transactions
+            </button>
+            <button
+              class="tab-button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="tab-panel-info"
+              id="tab-info"
+              data-tab="info"
+              type="button"
+            >
+              Info
             </button>
           </div>
 
@@ -128,16 +117,6 @@
 
             <section
               class="tab-panel"
-              id="tab-panel-overview"
-              role="tabpanel"
-              aria-labelledby="tab-overview"
-              tabindex="0"
-              hidden
-              data-panel="overview"
-            ></section>
-
-            <section
-              class="tab-panel"
               id="tab-panel-operations"
               role="tabpanel"
               aria-labelledby="tab-operations"
@@ -148,22 +127,22 @@
 
             <section
               class="tab-panel"
-              id="tab-panel-contract"
-              role="tabpanel"
-              aria-labelledby="tab-contract"
-              tabindex="0"
-              hidden
-              data-panel="contract"
-            ></section>
-
-            <section
-              class="tab-panel"
               id="tab-panel-transactions"
               role="tabpanel"
               aria-labelledby="tab-transactions"
               tabindex="0"
               hidden
               data-panel="transactions"
+            ></section>
+
+            <section
+              class="tab-panel"
+              id="tab-panel-info"
+              role="tabpanel"
+              aria-labelledby="tab-info"
+              tabindex="0"
+              hidden
+              data-panel="info"
             ></section>
           </div>
         </section>

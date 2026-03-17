@@ -55,6 +55,104 @@
   display: block;
 }
 
+.tab-panel[data-panel="info"] .info-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.tab-panel[data-panel="info"] .info-hero {
+  margin-bottom: 0;
+}
+
+.tab-panel[data-panel="info"] .info-hero-row {
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.tab-panel[data-panel="info"] .info-refresh-btn {
+  background: transparent;
+}
+
+.tab-panel[data-panel="info"] .info-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.tab-panel[data-panel="info"] .info-card {
+  padding: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #fcfcfe 100%);
+}
+
+.tab-panel[data-panel="info"] .info-card--summary .info-kv-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tab-panel[data-panel="info"] .info-card--signers {
+  grid-column: 1 / -1;
+}
+
+.tab-panel[data-panel="info"] .info-kv-grid {
+  gap: 10px;
+}
+
+.tab-panel[data-panel="info"] .info-kv-grid .kv {
+  padding: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8f9fc 100%);
+}
+
+.tab-panel[data-panel="info"] .info-kv-grid .kv-label {
+  margin-bottom: 8px;
+}
+
+.tab-panel[data-panel="info"] .info-signers-header {
+  margin-bottom: 10px;
+}
+
+.tab-panel[data-panel="info"] .info-signers-subtitle {
+  color: var(--secondary-text-color);
+  font-size: var(--font-size-sm);
+}
+
+.tab-panel[data-panel="info"] .info-signers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.tab-panel[data-panel="info"] .info-signer-card {
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7f8fc 100%);
+}
+
+.tab-panel[data-panel="info"] .info-signer-meta {
+  margin-bottom: 8px;
+}
+
+.tab-panel[data-panel="info"] .info-signer-index {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(61, 61, 206, 0.08);
+  color: var(--primary-color);
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tab-panel[data-panel="info"] .info-signer-address {
+  justify-content: space-between;
+}
+
+.tab-panel[data-panel="info"] .info-signer-address code {
+  font-size: 13px;
+}
+
 @media (max-width: 768px) {
   .tab-bar {
     display: grid;
@@ -77,6 +175,23 @@
   .tab-panels {
     min-height: auto;
   }
+
+  .tab-panel[data-panel="info"] .info-hero {
+    padding: 0;
+  }
+
+  .tab-panel[data-panel="info"] .info-layout {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .tab-panel[data-panel="info"] .info-card--summary .info-kv-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tab-panel[data-panel="info"] .info-signers-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 480px) {
@@ -90,5 +205,25 @@
     padding: 7px 7px;
     font-size: 11px;
     letter-spacing: -0.01em;
+  }
+
+  .tab-panel[data-panel="info"] .info-hero-row {
+    align-items: center;
+  }
+
+  .tab-panel[data-panel="info"] .info-refresh-btn {
+    width: auto;
+  }
+
+  .tab-panel[data-panel="info"] .info-card {
+    padding: 12px;
+  }
+
+  .tab-panel[data-panel="info"] .info-kv-grid .kv {
+    padding: 10px;
+  }
+
+  .tab-panel[data-panel="info"] .info-signer-address {
+    align-items: flex-start;
   }
 }

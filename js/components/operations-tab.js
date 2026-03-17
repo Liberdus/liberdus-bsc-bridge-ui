@@ -272,7 +272,7 @@ export class OperationsTab {
     this.tabButton.tabIndex = allowed ? -1 : -1;
 
     if (!allowed && (window.location.hash || '') === '#operations') {
-      window.location.hash = '#overview';
+      window.location.hash = '#info';
     }
   }
 
