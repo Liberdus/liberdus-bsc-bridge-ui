@@ -2,7 +2,7 @@
  * WalletPopup (Phase 2)
  * Simple MetaMask popup:
  * - address (copy)
- * - balance (native, best-effort)
+ * - app-chain native balance (best-effort)
  * - disconnect
  */
 
@@ -160,9 +160,7 @@ export class WalletPopup {
 
   _renderHTML({ address, balanceText }) {
     const short = this._shortAddress(address);
-    const currentChainId = this.networkManager?.getCurrentChainId?.();
-    const knownNetworks = this.networkManager?.getAvailableNetworks?.() || [];
-    const currentNetworkLabel = this._currentNetworkLabel(currentChainId, knownNetworks);
+    const appNetworkLabel = this._appNetworkLabel();
     return `
       <div class="wallet-popup" role="dialog" aria-label="Wallet">
         <div class="wallet-popup-content">
@@ -181,8 +179,8 @@ export class WalletPopup {
           </div>
 
           <div class="wallet-network">
-            <div class="wallet-network-label">Current Network</div>
-            <div class="wallet-network-value">${currentNetworkLabel}</div>
+            <div class="wallet-network-label">App Network</div>
+            <div class="wallet-network-value">${appNetworkLabel}</div>
           </div>
 
           <div class="wallet-actions">
@@ -258,9 +256,10 @@ export class WalletPopup {
     return this.networkManager?.networkSymbol?.() || (this.networkManager ? 'MATIC' : 'MATIC');
   }
 
-  _currentNetworkLabel(currentChainId, networks) {
-    const found = (networks || []).find((n) => Number(n.chainId) === Number(currentChainId));
-    if (found?.name) return found.name;
-    return currentChainId ? `Chain ${currentChainId}` : 'Unknown';
+  _appNetworkLabel() {
+    const name = window.CONFIG?.NETWORK?.NAME || '';
+    const chainId = Number(window.CONFIG?.NETWORK?.CHAIN_ID || 0) || null;
+    if (name) return name;
+    return chainId != null ? `Chain ${chainId}` : 'Unknown';
   }
 }

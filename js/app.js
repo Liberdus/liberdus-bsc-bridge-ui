@@ -9,7 +9,7 @@ import { TransactionsTab } from './components/transactions-tab.js?v=20260309n';
 import { ToastManager } from './components/toast-manager.js?v=20260317k';
 import { WalletManager } from './wallet/wallet-manager.js?v=20260317j';
 import { NetworkManager } from './wallet/network-manager.js?v=20260317j';
-import { WalletPopup } from './wallet/wallet-popup.js?v=20260317a';
+import { WalletPopup } from './wallet/wallet-popup.js?v=20260317c';
 import { ContractManager } from './contracts/contract-manager.js?v=20260317e';
 
 const header = new Header();
