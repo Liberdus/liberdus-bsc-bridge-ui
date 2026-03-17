@@ -162,22 +162,6 @@ export class MetaMaskConnector {
     return this._hexToNumber(chainIdHex);
   }
 
-  getAccount() {
-    return this.account;
-  }
-
-  getChainId() {
-    return this.chainId;
-  }
-
-  getProvider() {
-    return this.provider;
-  }
-
-  getSigner() {
-    return this.signer;
-  }
-
   _setupEventListeners() {
     const walletProvider = this.peekEip1193Provider();
     if (!walletProvider || !walletProvider.on) return;

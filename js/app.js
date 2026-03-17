@@ -6,9 +6,9 @@ import { BridgeOutTab } from './components/bridge-out-tab.js?v=20260317c';
 import { OperationsTab } from './components/operations-tab.js?v=20260317c';
 import { ContractTab } from './components/contract-tab.js?v=20260309n';
 import { TransactionsTab } from './components/transactions-tab.js?v=20260309n';
-import { ToastManager } from './components/toast-manager.js?v=20260317d';
-import { WalletManager } from './wallet/wallet-manager.js?v=20260317i';
-import { NetworkManager } from './wallet/network-manager.js?v=20260317i';
+import { ToastManager } from './components/toast-manager.js?v=20260317j';
+import { WalletManager } from './wallet/wallet-manager.js?v=20260317j';
+import { NetworkManager } from './wallet/network-manager.js?v=20260317j';
 import { WalletPopup } from './wallet/wallet-popup.js?v=20260317a';
 import { ContractManager } from './contracts/contract-manager.js?v=20260317e';
 

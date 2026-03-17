@@ -1,5 +1,4 @@
 import { CONFIG } from '../config.js';
-import { peekReadOnlyProvider } from '../utils/read-only-provider.js';
 
 /**
  * NetworkManager (Phase 2)
@@ -31,15 +30,6 @@ export class NetworkManager {
   isTxEnabled() {
     const connected = !!this.walletManager?.isConnected?.();
     return connected && this.isOnRequiredNetwork();
-  }
-
-  getReadOnlyProvider() {
-    // Reuse the singleton read-only provider (do not create new providers here).
-    return peekReadOnlyProvider() || null;
-  }
-
-  getTxProvider() {
-    return this.walletManager?.getProvider?.() || null;
   }
 
   async ensureRequiredNetwork({ timeoutMs = 15000 } = {}) {

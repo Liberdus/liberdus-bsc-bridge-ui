@@ -1,4 +1,4 @@
-import { MetaMaskConnector } from './metamask-connector.js?v=20260317h';
+import { MetaMaskConnector } from './metamask-connector.js?v=20260317i';
 
 /**
  * WalletManager (Phase 2)
@@ -44,14 +44,6 @@ export class WalletManager {
     return !!(this.address && this.provider && this.signer);
   }
 
-  isWalletConnected() {
-    return this.isConnected();
-  }
-
-  getAccount() {
-    return this.address;
-  }
-
   getAddress() {
     return this.address;
   }
@@ -74,10 +66,6 @@ export class WalletManager {
 
   async getEip1193Provider(options = {}) {
     return await this.connector?.getEip1193Provider?.(options);
-  }
-
-  peekEip1193Provider() {
-    return this.connector?.peekEip1193Provider?.() || null;
   }
 
   subscribe(callback) {
