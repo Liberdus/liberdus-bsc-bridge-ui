@@ -3,6 +3,16 @@ export class OverviewTab {
     this.panel = null;
   }
 
+  _shortenHex(value, head = 4, tail = 4) {
+    const s = String(value || '');
+    if (!s.startsWith('0x') || s.length <= head + tail + 2) return s || '--';
+    return `${s.slice(0, 2 + head)}…${s.slice(-tail)}`;
+  }
+
+  _shortenAddress(value) {
+    return this._shortenHex(value, 4, 4);
+  }
+
   load() {
     this.panel = document.querySelector('.tab-panel[data-panel="overview"]');
     if (!this.panel) return;
@@ -81,12 +91,14 @@ export class OverviewTab {
     const contractManager = window.contractManager;
 
     const connected = !!walletManager?.isConnected?.();
-    const address = walletManager?.getAddress?.() || '--';
+    const addressRaw = walletManager?.getAddress?.() || '--';
+    const address = this._shortenAddress(addressRaw);
     const chainId = walletManager?.getChainId?.();
     const txEnabled = !!networkManager?.isTxEnabled?.();
 
     const snapshot = contractManager?.getStatusSnapshot?.() || null;
-    const contractAddress = snapshot?.configuredAddress || '--';
+    const contractAddressRaw = snapshot?.configuredAddress || '--';
+    const contractAddress = this._shortenAddress(contractAddressRaw);
     const configuredChainId = snapshot?.configuredChainId;
 
     this._setText('[data-overview-wallet-status]', connected ? 'Connected' : 'Disconnected');
