@@ -1,15 +1,16 @@
-import { CONFIG } from './config.js?v=20260318g';
-import { Header } from './components/header.js?v=20260317i';
-import { TabBar } from './components/tab-bar.js?v=20260317o';
-import { InfoTab } from './components/info-tab.js?v=20260317a';
-import { BridgeOutTab } from './components/bridge-out-tab.js?v=20260319l';
-import { OperationsTab } from './components/operations-tab.js?v=20260318b';
-import { TransactionsTab } from './components/transactions-tab.js?v=20260318d';
-import { ToastManager } from './components/toast-manager.js?v=20260317k';
-import { WalletManager } from './wallet/wallet-manager.js?v=20260317j';
-import { NetworkManager } from './wallet/network-manager.js?v=20260318e';
-import { WalletPopup } from './wallet/wallet-popup.js?v=20260318b';
-import { ContractManager } from './contracts/contract-manager.js?v=20260318b';
+import { CONFIG } from './config.js';
+import { Header } from './components/header.js';
+import { TabBar } from './components/tab-bar.js';
+import { InfoTab } from './components/info-tab.js';
+import { BridgeOutTab } from './components/bridge-out-tab.js';
+import { OperationsTab } from './components/operations-tab.js';
+import { TransactionsTab } from './components/transactions-tab.js';
+import { ToastManager } from './components/toast-manager.js';
+import { WalletManager } from './wallet/wallet-manager.js';
+import { NetworkManager } from './wallet/network-manager.js';
+import { WalletPopup } from './wallet/wallet-popup.js';
+import { ContractManager } from './contracts/contract-manager.js';
+import { versionService } from './version-service.js';
 
 const header = new Header();
 const tabBar = new TabBar();
@@ -24,6 +25,9 @@ const contractManager = new ContractManager({ walletManager, networkManager });
 const walletPopup = new WalletPopup({ walletManager, contractManager });
 
 document.addEventListener('DOMContentLoaded', async () => {
+  const updated = await versionService.initialize();
+  if (updated) return;
+
   window.CONFIG = CONFIG;
 
   const versionEl = document.querySelector('.app-version');
