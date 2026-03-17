@@ -209,15 +209,7 @@ export class WalletManager {
   _handleChainChanged(chainId) {
     this._cancelDisconnectProbe();
 
-    let cid = chainId;
-    if (typeof cid === 'string' && cid.startsWith('0x')) {
-      try {
-        cid = parseInt(cid, 16);
-      } catch {
-        cid = NaN;
-      }
-    }
-    this.chainId = Number(cid);
+    this.chainId = this._normalizeChainId(chainId);
     this.connector.chainId = this.chainId;
     if (this.address) this.connector.isConnected = true;
     this._storeConnectionInfo();
@@ -226,7 +218,7 @@ export class WalletManager {
 
   _handleDisconnected(_error) {
     // MetaMask can emit a transient provider disconnect during add/switch flows.
-    // Probe account access before treating it as a real wallet disconnect.
+    // Only keep the session if both account access and basic RPC calls recover.
     if (!this.address && !this.provider && !this.signer) {
       this._clearStateAndNotifyDisconnect();
       return;
@@ -310,7 +302,13 @@ export class WalletManager {
 
     while (probeToken === this._disconnectProbeToken) {
       try {
-        const accounts = await this.connector?.getAccounts?.();
+        const walletProvider = await this.getEip1193Provider({ waitMs: 200 });
+        if (!walletProvider?.request) throw new Error('MetaMask not available');
+
+        const [accounts, chainIdHex] = await Promise.all([
+          this.connector?.getAccounts?.(),
+          walletProvider.request({ method: 'eth_chainId' }),
+        ]);
         if (probeToken !== this._disconnectProbeToken) return;
 
         if (Array.isArray(accounts)) {
@@ -320,16 +318,23 @@ export class WalletManager {
           }
 
           const nextAddress = accounts[0];
-          const changed =
+          const nextChainId = this._normalizeChainId(chainIdHex);
+          const addressChanged =
             String(nextAddress || '').toLowerCase() !== String(this.address || '').toLowerCase();
+          const chainChanged = nextChainId != null && Number(nextChainId) !== Number(this.chainId);
 
           this.address = nextAddress;
+          if (nextChainId != null) this.chainId = nextChainId;
           this.connector.account = nextAddress;
+          if (nextChainId != null) this.connector.chainId = nextChainId;
           this.connector.isConnected = true;
           this._storeConnectionInfo();
 
-          if (changed) {
+          if (addressChanged) {
             this._notify('accountChanged', { address: this.address, chainId: this.chainId });
+          }
+          if (chainChanged) {
+            this._notify('chainChanged', { address: this.address, chainId: this.chainId });
           }
           return;
         }
@@ -344,5 +349,17 @@ export class WalletManager {
 
       await new Promise((resolve) => window.setTimeout(resolve, 250));
     }
+  }
+
+  _normalizeChainId(chainId) {
+    let cid = chainId;
+    if (typeof cid === 'string' && cid.startsWith('0x')) {
+      try {
+        cid = parseInt(cid, 16);
+      } catch {
+        cid = NaN;
+      }
+    }
+    return Number(cid);
   }
 }
