@@ -151,7 +151,7 @@ export class NetworkManager {
       // Allow data entry even when wallet connection is missing for specified inputs
       if (el.getAttribute('data-allow-input-when-locked') === 'true') {
         if ('disabled' in el) {
-          el.disabled = !connected;
+          el.disabled = false;
         }
         el.classList.toggle('is-disabled', !connected);
         return;

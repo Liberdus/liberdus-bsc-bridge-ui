@@ -1,4 +1,4 @@
-import { MetaMaskConnector } from './metamask-connector.js?v=20260317g';
+import { MetaMaskConnector } from './metamask-connector.js?v=20260317h';
 
 /**
  * WalletManager (Phase 2)
@@ -20,6 +20,7 @@ export class WalletManager {
 
     this.isConnecting = false;
     this._connectionPromise = null;
+    this._disconnectProbeToken = 0;
 
     this.listeners = new Set();
   }
@@ -29,6 +30,7 @@ export class WalletManager {
 
     // Wire connector callbacks → WalletManager events
     this.connector.onAccountsChanged = (accounts) => this._handleAccountsChanged(accounts);
+    this.connector.onConnect = (connectInfo) => this._handleProviderConnect(connectInfo);
     this.connector.onChainChanged = (chainId) => this._handleChainChanged(chainId);
     this.connector.onDisconnected = (error) => this._handleDisconnected(error);
   }
@@ -195,16 +197,30 @@ export class WalletManager {
   }
 
   _handleAccountsChanged(accounts) {
+    this._cancelDisconnectProbe();
+
     if (!accounts || accounts.length === 0) {
       this._clearStateAndNotifyDisconnect();
       return;
     }
     this.address = accounts[0];
+    this.connector.account = this.address;
+    this.connector.isConnected = true;
     this._storeConnectionInfo();
     this._notify('accountChanged', { address: this.address, chainId: this.chainId });
   }
 
+  _handleProviderConnect(_connectInfo) {
+    this._cancelDisconnectProbe();
+    if (this.address) {
+      this.connector.account = this.address;
+      this.connector.isConnected = true;
+    }
+  }
+
   _handleChainChanged(chainId) {
+    this._cancelDisconnectProbe();
+
     let cid = chainId;
     if (typeof cid === 'string' && cid.startsWith('0x')) {
       try {
@@ -214,17 +230,22 @@ export class WalletManager {
       }
     }
     this.chainId = Number(cid);
+    this.connector.chainId = this.chainId;
+    if (this.address) this.connector.isConnected = true;
     this._storeConnectionInfo();
     this._notify('chainChanged', { address: this.address, chainId: this.chainId });
   }
 
   _handleDisconnected(_error) {
     // MetaMask can emit a transient provider disconnect during add/switch flows.
-    // Keep account permission state until accountsChanged([]) or explicit disconnect proves the wallet is gone.
-    if (this.address && this.provider && this.signer) {
+    // Probe account access before treating it as a real wallet disconnect.
+    if (!this.address && !this.provider && !this.signer) {
+      this._clearStateAndNotifyDisconnect();
       return;
     }
-    this._clearStateAndNotifyDisconnect();
+
+    const probeToken = this._startDisconnectProbe();
+    this._verifyDisconnectProbe(probeToken).catch(() => {});
   }
 
   _notify(event, data) {
@@ -272,6 +293,9 @@ export class WalletManager {
   }
 
   _clearStateAndNotifyDisconnect() {
+    const wasConnected = !!(this.provider || this.signer || this.address || this.walletType || this.chainId != null);
+
+    this._cancelDisconnectProbe();
     this.provider = null;
     this.signer = null;
     this.address = null;
@@ -279,6 +303,58 @@ export class WalletManager {
     this.walletType = null;
 
     this._clearConnectionInfo();
-    this._notify('disconnected', {});
+    if (wasConnected) {
+      this._notify('disconnected', {});
+    }
+  }
+
+  _startDisconnectProbe() {
+    this._disconnectProbeToken += 1;
+    return this._disconnectProbeToken;
+  }
+
+  _cancelDisconnectProbe() {
+    this._disconnectProbeToken += 1;
+  }
+
+  async _verifyDisconnectProbe(probeToken) {
+    const deadlineAt = Date.now() + 10000;
+
+    while (probeToken === this._disconnectProbeToken) {
+      try {
+        const accounts = await this.connector?.getAccounts?.();
+        if (probeToken !== this._disconnectProbeToken) return;
+
+        if (Array.isArray(accounts)) {
+          if (accounts.length === 0) {
+            this._clearStateAndNotifyDisconnect();
+            return;
+          }
+
+          const nextAddress = accounts[0];
+          const changed =
+            String(nextAddress || '').toLowerCase() !== String(this.address || '').toLowerCase();
+
+          this.address = nextAddress;
+          this.connector.account = nextAddress;
+          this.connector.isConnected = true;
+          this._storeConnectionInfo();
+
+          if (changed) {
+            this._notify('accountChanged', { address: this.address, chainId: this.chainId });
+          }
+          return;
+        }
+      } catch {
+        // Ignore transient provider errors while MetaMask is recovering.
+      }
+
+      if (Date.now() >= deadlineAt) {
+        this._clearStateAndNotifyDisconnect();
+        return;
+      }
+
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+    }
   }
 }
