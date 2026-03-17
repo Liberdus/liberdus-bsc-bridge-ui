@@ -80,16 +80,12 @@ export class ContractManager {
 
   updateConnections({ reason = 'updated' } = {}) {
     const txEnabled = !!this.networkManager?.isTxEnabled?.();
+    // Keep read traffic on the public RPC to avoid MetaMask provider churn during chain switches.
+    const readProvider = this.readOnlyProvider || this.walletManager?.getProvider?.() || null;
+    this.provider = readProvider;
+    this.signer = txEnabled ? this.walletManager?.getSigner?.() || null : null;
 
-    if (txEnabled) {
-      this.provider = this.walletManager?.getProvider?.() || this.readOnlyProvider;
-      this.signer = this.walletManager?.getSigner?.() || null;
-    } else {
-      this.provider = this.readOnlyProvider;
-      this.signer = null;
-    }
-
-    this.contractRead = this._makeContract(this.provider);
+    this.contractRead = this._makeContract(readProvider);
     this.contractWrite = this.signer ? this._makeContract(this.signer) : null;
 
     this._emitUpdatedEvent({ reason });

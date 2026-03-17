@@ -1,16 +1,16 @@
-import { CONFIG } from './config.js?v=20260317a';
-import { Header } from './components/header.js?v=20260309n';
+import { CONFIG } from './config.js?v=20260317b';
+import { Header } from './components/header.js?v=20260317i';
 import { TabBar } from './components/tab-bar.js?v=20260309n';
 import { OverviewTab } from './components/overview-tab.js?v=20260309n';
-import { BridgeOutTab } from './components/bridge-out-tab.js?v=20260309n';
-import { OperationsTab } from './components/operations-tab.js?v=20260309n';
+import { BridgeOutTab } from './components/bridge-out-tab.js?v=20260317c';
+import { OperationsTab } from './components/operations-tab.js?v=20260317c';
 import { ContractTab } from './components/contract-tab.js?v=20260309n';
 import { TransactionsTab } from './components/transactions-tab.js?v=20260309n';
-import { ToastManager } from './components/toast-manager.js?v=20260309n';
-import { WalletManager } from './wallet/wallet-manager.js?v=20260309n';
-import { NetworkManager } from './wallet/network-manager.js?v=20260317a';
+import { ToastManager } from './components/toast-manager.js?v=20260317k';
+import { WalletManager } from './wallet/wallet-manager.js?v=20260317j';
+import { NetworkManager } from './wallet/network-manager.js?v=20260317j';
 import { WalletPopup } from './wallet/wallet-popup.js?v=20260317a';
-import { ContractManager } from './contracts/contract-manager.js?v=20260309n';
+import { ContractManager } from './contracts/contract-manager.js?v=20260317e';
 
 const header = new Header();
 const tabBar = new TabBar();
@@ -22,8 +22,8 @@ const transactionsTab = new TransactionsTab();
 const toastManager = new ToastManager();
 const walletManager = new WalletManager();
 const networkManager = new NetworkManager({ walletManager });
-const walletPopup = new WalletPopup({ walletManager, networkManager });
 const contractManager = new ContractManager({ walletManager, networkManager });
+const walletPopup = new WalletPopup({ walletManager, networkManager, contractManager });
 
 document.addEventListener('DOMContentLoaded', async () => {
   window.CONFIG = CONFIG;

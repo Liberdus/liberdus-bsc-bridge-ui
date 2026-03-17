@@ -7,9 +7,10 @@
  */
 
 export class WalletPopup {
-  constructor({ walletManager, networkManager } = {}) {
+  constructor({ walletManager, networkManager, contractManager } = {}) {
     this.walletManager = walletManager || null;
     this.networkManager = networkManager || null;
+    this.contractManager = contractManager || null;
 
     this.isOpen = false;
     this.popupEl = null;
@@ -44,7 +45,8 @@ export class WalletPopup {
 
     // Load balance (best-effort)
     try {
-      const provider = this.walletManager?.getProvider?.();
+      // Show the connected address's native balance on the app/source chain.
+      const provider = this.contractManager?.provider || null;
       if (provider && provider.getBalance && window.ethers) {
         const bal = await provider.getBalance(address);
         const formatted = window.ethers.utils.formatEther(bal);

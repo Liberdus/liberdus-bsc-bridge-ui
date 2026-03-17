@@ -23,11 +23,13 @@ export class MetaMaskConnector {
     this._boundAnnounceProvider = null;
 
     this._boundAccountsChanged = null;
+    this._boundConnect = null;
     this._boundChainChanged = null;
     this._boundDisconnect = null;
 
     // Optional callbacks (set by WalletManager)
     this.onAccountsChanged = null;
+    this.onConnect = null;
     this.onChainChanged = null;
     this.onDisconnected = null;
   }
@@ -98,7 +100,8 @@ export class MetaMaskConnector {
     this.account = accounts[0];
     this.chainId = await this._readChainId(walletProvider);
 
-    this.provider = new window.ethers.providers.Web3Provider(walletProvider);
+    // Use the "any" network so the injected provider survives wallet chain changes.
+    this.provider = new window.ethers.providers.Web3Provider(walletProvider, 'any');
     this.signer = this.provider.getSigner();
     this.isConnected = true;
 
@@ -159,22 +162,6 @@ export class MetaMaskConnector {
     return this._hexToNumber(chainIdHex);
   }
 
-  getAccount() {
-    return this.account;
-  }
-
-  getChainId() {
-    return this.chainId;
-  }
-
-  getProvider() {
-    return this.provider;
-  }
-
-  getSigner() {
-    return this.signer;
-  }
-
   _setupEventListeners() {
     const walletProvider = this.peekEip1193Provider();
     if (!walletProvider || !walletProvider.on) return;
@@ -186,7 +173,7 @@ export class MetaMaskConnector {
         // user disconnected in MetaMask UI
         this.isConnected = false;
         this.account = null;
-        if (typeof this.onDisconnected === 'function') this.onDisconnected();
+        if (typeof this.onAccountsChanged === 'function') this.onAccountsChanged([]);
         return;
       }
       this.account = accounts[0];
@@ -194,18 +181,23 @@ export class MetaMaskConnector {
       if (typeof this.onAccountsChanged === 'function') this.onAccountsChanged(accounts);
     };
 
+    this._boundConnect = (connectInfo) => {
+      this.isConnected = !!this.account;
+      if (typeof this.onConnect === 'function') this.onConnect(connectInfo);
+    };
+
     this._boundChainChanged = (chainIdHex) => {
       this.chainId = this._hexToNumber(chainIdHex);
       if (typeof this.onChainChanged === 'function') this.onChainChanged(this.chainId);
     };
 
-    this._boundDisconnect = () => {
+    this._boundDisconnect = (error) => {
       this.isConnected = false;
-      this.account = null;
-      if (typeof this.onDisconnected === 'function') this.onDisconnected();
+      if (typeof this.onDisconnected === 'function') this.onDisconnected(error);
     };
 
     walletProvider.on('accountsChanged', this._boundAccountsChanged);
+    walletProvider.on('connect', this._boundConnect);
     walletProvider.on('chainChanged', this._boundChainChanged);
     walletProvider.on('disconnect', this._boundDisconnect);
     this._eventProvider = walletProvider;
@@ -215,10 +207,12 @@ export class MetaMaskConnector {
     const walletProvider = this._eventProvider;
     if (!walletProvider || !walletProvider.removeListener) return;
     if (this._boundAccountsChanged) walletProvider.removeListener('accountsChanged', this._boundAccountsChanged);
+    if (this._boundConnect) walletProvider.removeListener('connect', this._boundConnect);
     if (this._boundChainChanged) walletProvider.removeListener('chainChanged', this._boundChainChanged);
     if (this._boundDisconnect) walletProvider.removeListener('disconnect', this._boundDisconnect);
 
     this._boundAccountsChanged = null;
+    this._boundConnect = null;
     this._boundChainChanged = null;
     this._boundDisconnect = null;
     this._eventProvider = null;

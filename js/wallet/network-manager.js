@@ -1,5 +1,4 @@
 import { CONFIG } from '../config.js';
-import { peekReadOnlyProvider } from '../utils/read-only-provider.js';
 
 /**
  * NetworkManager (Phase 2)
@@ -33,35 +32,24 @@ export class NetworkManager {
     return connected && this.isOnRequiredNetwork();
   }
 
-  getReadOnlyProvider() {
-    // Reuse the singleton read-only provider (do not create new providers here).
-    return peekReadOnlyProvider() || null;
-  }
+  async ensureRequiredNetwork({ timeoutMs = 15000 } = {}) {
+    if (this.isOnRequiredNetwork()) {
+      return { switched: false };
+    }
 
-  getTxProvider() {
-    return this.walletManager?.getProvider?.() || null;
-  }
+    await this.switchToChain(this._requiredNetworkDescriptor());
+    if (this.isOnRequiredNetwork()) {
+      return { switched: true };
+    }
 
-  async ensurePolygonNetwork() {
-    const network = this._networkConfig();
-    return await this.switchToChain({
-      chainId: network?.CHAIN_ID,
-      name: network?.NAME,
-      rpcUrl: network?.RPC_URL,
-      fallbackRpcs: network?.FALLBACK_RPCS || [],
-      blockExplorer: network?.BLOCK_EXPLORER,
-      nativeCurrency: network?.NATIVE_CURRENCY,
-    });
-  }
-
-  async addPolygonNetwork() {
-    const walletProvider = await this.walletManager?.getEip1193Provider?.({ waitMs: 200 });
-    if (!walletProvider) throw new Error('MetaMask not available');
-    const networkConfig = this.buildPolygonNetworkConfig();
-    await walletProvider.request({
-      method: 'wallet_addEthereumChain',
-      params: [networkConfig],
-    });
+    const waiter = this._createRequiredNetworkWaiter({ timeoutMs });
+    try {
+      await waiter.promise;
+      return { switched: true };
+    } catch (error) {
+      waiter.cancel();
+      throw error;
+    }
   }
 
   getAvailableNetworks() {
@@ -100,12 +88,6 @@ export class NetworkManager {
     return null;
   }
 
-  async switchToNetworkByKey(key) {
-    const target = this.getAvailableNetworks().find((n) => n.key === key);
-    if (!target) throw new Error('Unsupported network');
-    return await this.switchToChain(target);
-  }
-
   async switchToChain(chain) {
     const walletProvider = await this.walletManager?.getEip1193Provider?.({ waitMs: 200 });
     if (!walletProvider) throw new Error('MetaMask not available');
@@ -138,18 +120,6 @@ export class NetworkManager {
     }
   }
 
-  buildPolygonNetworkConfig() {
-    const network = this._networkConfig();
-    const chainId = Number(network?.CHAIN_ID || this._requiredChainId() || 80002);
-    return {
-      chainId: this._toHexChainId(chainId),
-      chainName: network?.NAME || 'Polygon Amoy',
-      rpcUrls: [network?.RPC_URL, ...(network?.FALLBACK_RPCS || [])].filter(Boolean),
-      nativeCurrency: network?.NATIVE_CURRENCY || { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
-      blockExplorerUrls: [network?.BLOCK_EXPLORER].filter(Boolean),
-    };
-  }
-
   networkSymbol() {
     return this._networkConfig()?.NATIVE_CURRENCY?.symbol || 'MATIC';
   }
@@ -160,27 +130,27 @@ export class NetworkManager {
 
   /**
    * Simple gating: any element marked data-requires-tx="true"
-   * will be disabled unless tx-enabled.
+   * will be hard-disabled unless a wallet is connected.
    */
   updateTxGatedControls() {
-    const txEnabled = this.isTxEnabled();
+    const connected = !!this.walletManager?.isConnected?.();
     const gated = Array.from(document.querySelectorAll('[data-requires-tx="true"]'));
     gated.forEach((el) => {
       // Allow permanent disable for placeholders (Phase 1/5/6 UI)
       if (el.getAttribute('data-always-disabled') === 'true') return;
-      // Allow data entry even when not tx-enabled for specified inputs
+      // Allow data entry even when wallet connection is missing for specified inputs
       if (el.getAttribute('data-allow-input-when-locked') === 'true') {
         if ('disabled' in el) {
           el.disabled = false;
         }
-        el.classList.toggle('is-disabled', !txEnabled);
+        el.classList.toggle('is-disabled', !connected);
         return;
       }
 
       if ('disabled' in el) {
-        el.disabled = !txEnabled;
+        el.disabled = !connected;
       }
-      el.classList.toggle('is-disabled', !txEnabled);
+      el.classList.toggle('is-disabled', !connected);
     });
   }
 
@@ -210,5 +180,75 @@ export class NetworkManager {
 
   _requiredChainId() {
     return Number(this._networkConfig()?.CHAIN_ID || 0) || null;
+  }
+
+  _requiredNetworkDescriptor() {
+    const network = this._networkConfig();
+    return {
+      chainId: network?.CHAIN_ID,
+      name: network?.NAME || 'Required Network',
+      rpcUrl: network?.RPC_URL || '',
+      fallbackRpcs: network?.FALLBACK_RPCS || [],
+      blockExplorer: network?.BLOCK_EXPLORER || '',
+      nativeCurrency: network?.NATIVE_CURRENCY || { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
+    };
+  }
+
+  _requiredNetworkName() {
+    return this._requiredNetworkDescriptor().name || 'the required network';
+  }
+
+  _createRequiredNetworkWaiter({ timeoutMs = 3000 } = {}) {
+    if (this.isOnRequiredNetwork()) {
+      return {
+        promise: Promise.resolve(true),
+        cancel() {},
+      };
+    }
+
+    let timeoutId = null;
+    let pollId = null;
+    let resolved = false;
+    let chainChangedHandler = null;
+
+    const cleanup = () => {
+      if (timeoutId != null) window.clearTimeout(timeoutId);
+      if (pollId != null) window.clearInterval(pollId);
+      if (chainChangedHandler) {
+        document.removeEventListener('walletChainChanged', chainChangedHandler);
+      }
+    };
+
+    const resolveIfReady = (resolve) => {
+      if (!resolved && this.isOnRequiredNetwork()) {
+        resolved = true;
+        cleanup();
+        resolve(true);
+      }
+    };
+
+    const promise = new Promise((resolve, reject) => {
+      chainChangedHandler = () => resolveIfReady(resolve);
+      document.addEventListener('walletChainChanged', chainChangedHandler);
+
+      timeoutId = window.setTimeout(() => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        reject(new Error(`Timed out waiting for wallet to switch to ${this._requiredNetworkName()}`));
+      }, timeoutMs);
+
+      pollId = window.setInterval(() => resolveIfReady(resolve), 50);
+      resolveIfReady(resolve);
+    });
+
+    return {
+      promise,
+      cancel() {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+      },
+    };
   }
 }
