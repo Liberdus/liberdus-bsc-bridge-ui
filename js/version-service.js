@@ -83,8 +83,7 @@ export class VersionService {
 
     if (storedVersion !== nextVersion) {
       debug('Version update detected, performing cache bust...');
-      await this.performUpdate(nextVersion);
-      return true;
+      return await this.performUpdate(nextVersion);
     }
 
     debug('No version update needed');
@@ -94,19 +93,21 @@ export class VersionService {
   async performUpdate(nextVersion) {
     if (this.updateInProgress) {
       debug('Update already in progress, skipping...');
-      return;
+      return false;
     }
 
     this.updateInProgress = true;
 
     try {
-      localStorage.setItem(VERSION_STORAGE_KEY, nextVersion);
       await this.forceReloadCriticalFiles();
+      localStorage.setItem(VERSION_STORAGE_KEY, nextVersion);
       debug('Update complete, reloading page...');
       window.location.replace(window.location.href.split('?')[0]);
+      return true;
     } catch (err) {
       error('Update failed:', err);
       this.updateInProgress = false;
+      return false;
     }
   }
 
@@ -147,15 +148,18 @@ export class VersionService {
 
     debug('Force reloading critical files...');
 
-    try {
-      await Promise.all(criticalFiles.map((url) => fetch(url, {
-        cache: 'reload',
-        headers: NO_CACHE_HEADERS,
-      })));
-      debug('Critical files reloaded successfully');
-    } catch (err) {
-      error('Failed to reload critical files:', err);
-    }
+    const responses = await Promise.all(criticalFiles.map((url) => fetch(url, {
+      cache: 'reload',
+      headers: NO_CACHE_HEADERS,
+    })));
+
+    responses.forEach((response, index) => {
+      if (!response.ok) {
+        throw new Error(`Failed to reload ${criticalFiles[index]}: ${response.status} ${response.statusText}`);
+      }
+    });
+
+    debug('Critical files reloaded successfully');
   }
 }
 
