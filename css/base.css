@@ -632,6 +632,27 @@ textarea:focus-visible {
   gap: 4px;
 }
 
+.tx-address-copy {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+}
+
+.tx-address-copy:hover:not(:disabled) .tx-code,
+.tx-address-copy:focus-visible .tx-code {
+  color: var(--primary-color);
+  text-decoration: underline;
+}
+
+.tx-address-copy.success .tx-code {
+  color: var(--success-color);
+  animation: copyPulse 0.3s ease;
+}
+
 .tx-ext {
   font-size: 11px;
 }
