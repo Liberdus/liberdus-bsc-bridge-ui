@@ -41,7 +41,7 @@ export class Header {
       return;
     }
 
-    // Connected → open wallet popup (network can be switched there)
+    // Connected → open wallet popup
     if (walletManager?.isConnected?.()) {
       walletPopup?.toggle?.(btn);
       return;

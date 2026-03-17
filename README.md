@@ -7,7 +7,7 @@ Skeleton UI for the Liberdus Polygon Vault bridge app.
 ### Functional now
 - Header + wallet connect button
 - MetaMask-only wallet flow (connect, restore, disconnect)
-- Polygon mainnet network gating and switch/add chain prompts
+- Config-driven source-network gating (no switch on connect; no popup network switching)
 - Read-only contract wiring to:
   - `0x1469f20C91da50BF9Cc82d7cFB9A8D9EF1dEe86a`
 - Contract status tab with live reads for:
@@ -43,8 +43,12 @@ Open `http://localhost:8080`.
 
 Edit `js/config.js` to change network/contract settings:
 
+- `CONFIG.RUNTIME.PROFILE` selects `dev` or `prod`
 - `CONFIG.NETWORK.{CHAIN_ID, NAME, RPC_URL, BLOCK_EXPLORER, NATIVE_CURRENCY}`
 - `CONFIG.CONTRACT.{ADDRESS, ABI_PATH}`
+- `CONFIG.BRIDGE.CHAINS.BSC` and `CONFIG.BRIDGE.CONTRACTS.BSC` remain destination-only bridge metadata
+
+Wallet connect only requests account access. If the wallet is on the wrong chain, the app stays connected but transaction actions remain disabled until future contract-action-specific network prompts are added.
 
 ## Next Implementation Steps
 

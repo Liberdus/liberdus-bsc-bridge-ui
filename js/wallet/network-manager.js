@@ -3,7 +3,7 @@ import { peekReadOnlyProvider } from '../utils/read-only-provider.js';
 
 /**
  * NetworkManager (Phase 2)
- * Polygon-only:
+ * Configured source-network only:
  * - Read-only mode uses CONFIG.NETWORK.RPC_URL
  * - Tx-enabled mode requires MetaMask connected AND chainId === CONFIG.NETWORK.CHAIN_ID
  */
@@ -69,6 +69,7 @@ export class NetworkManager {
     const polygon = config?.BRIDGE?.CHAINS?.POLYGON || config?.NETWORK || null;
     const bsc = config?.BRIDGE?.CHAINS?.BSC || null;
     const polygonNative = polygon?.NATIVE_CURRENCY || config?.NETWORK?.NATIVE_CURRENCY || { name: 'MATIC', symbol: 'MATIC', decimals: 18 };
+    const bscNative = bsc?.NATIVE_CURRENCY || { name: 'BNB', symbol: 'tBNB', decimals: 18 };
     return [
       {
         key: 'polygon',
@@ -86,7 +87,7 @@ export class NetworkManager {
         rpcUrl: bsc?.RPC_URL || '',
         fallbackRpcs: bsc?.FALLBACK_RPCS || [],
         blockExplorer: bsc?.BLOCK_EXPLORER || '',
-        nativeCurrency: { name: 'BNB', symbol: 'tBNB', decimals: 18 },
+        nativeCurrency: bscNative,
       },
     ];
   }
