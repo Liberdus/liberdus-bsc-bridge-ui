@@ -22,8 +22,8 @@ const transactionsTab = new TransactionsTab();
 const toastManager = new ToastManager();
 const walletManager = new WalletManager();
 const networkManager = new NetworkManager({ walletManager });
-const walletPopup = new WalletPopup({ walletManager, networkManager });
 const contractManager = new ContractManager({ walletManager, networkManager });
+const walletPopup = new WalletPopup({ walletManager, networkManager, contractManager });
 
 document.addEventListener('DOMContentLoaded', async () => {
   window.CONFIG = CONFIG;

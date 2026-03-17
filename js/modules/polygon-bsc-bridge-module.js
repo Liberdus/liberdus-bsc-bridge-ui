@@ -489,7 +489,8 @@ export class PolygonBscBridgeModule {
 
   async _refreshBalances() {
     if (!window.ethers) return;
-    const provider = this.walletManager?.getProvider?.() || this.contractManager?.provider || null;
+    // Approval and spend happen on the source chain, so read token state from the app's source-chain provider.
+    const provider = this.contractManager?.provider || null;
     const address = this.walletManager?.getAddress?.() || null;
     if (!provider || !address) {
       this._balanceCache = null;
