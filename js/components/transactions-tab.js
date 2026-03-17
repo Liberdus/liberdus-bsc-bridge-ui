@@ -518,6 +518,7 @@ export class TransactionsTab {
     this.nextBtn = null;
     this.pageInfoEl = null;
     this.pageSizeEl = null;
+    this._bridgeListenerBound = false;
   }
 
   load() {
@@ -617,6 +618,10 @@ export class TransactionsTab {
       this.page = 1;
       this.render();
     });
+    if (!this._bridgeListenerBound) {
+      document.addEventListener('bridgeOutEvent', (e) => this._onBridgeOutEvent(e));
+      this._bridgeListenerBound = true;
+    }
 
     document.addEventListener('tabActivated', (e) => {
       if (e?.detail?.tabName === 'transactions') {
@@ -713,6 +718,35 @@ export class TransactionsTab {
         `;
       })
       .join('');
+  }
+
+  _onBridgeOutEvent(e) {
+    const d = e?.detail || null;
+    if (!d) return;
+    const chains = getChainConfig();
+    const chainIdIndex = buildChainIdIndex(chains);
+    const srcChainKey = chainIdIndex.get(Number(d.sourceChainId)) || 'POLYGON';
+    const dstChainKey = chainIdIndex.get(Number(d.targetChainId)) || null;
+    const srcName = chains?.[srcChainKey]?.NAME || 'Polygon';
+    const dstName = dstChainKey ? chains?.[dstChainKey]?.NAME || `Chain ${d.targetChainId}` : `Chain ${d.targetChainId}`;
+    const exists = this._rows.some((r) => String(r.txHash || '') === String(d.txHash || ''));
+    if (exists) return;
+    const row = {
+      id: d.txHash,
+      srcChainKey,
+      dstChainKey,
+      srcName,
+      dstName,
+      from: d.from,
+      amount: d.amount,
+      timestamp: Number(d.timestamp || Math.floor(Date.now() / 1000)),
+      txHash: d.txHash,
+      receiptTxHash: '',
+      status: 'Pending',
+      type: 1,
+    };
+    this._rows.unshift(row);
+    this.render();
   }
 
   _setStatus(text) {
