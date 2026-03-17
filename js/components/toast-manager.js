@@ -91,6 +91,11 @@ export class ToastManager {
     return toastId;
   }
 
+  // Compatibility wrapper for existing loading toast call sites.
+  loading(message, { title = 'Loading', id, delayMs = 200, allowHtml = false } = {}) {
+    return this.show({ id, title, message, type: 'loading', timeoutMs: 0, dismissible: false, delayMs, allowHtml });
+  }
+
   success(message, { title = 'Done', timeoutMs = 2500, id, allowHtml = false } = {}) {
     return this.show({ id, title, message, type: 'success', timeoutMs, dismissible: true, allowHtml });
   }
