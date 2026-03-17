@@ -215,8 +215,21 @@ function renderTxLink(chainKey, txHash) {
 }
 
 function renderAddress(address) {
+  if (!address) return '<span class="tx-muted">--</span>';
   const label = shortenAddress(address);
-  return `<code class="tx-code">${label}</code>`;
+  const fullAddress = String(address);
+  return `
+    <button
+      type="button"
+      class="tx-address-copy"
+      data-copy-address
+      data-address="${fullAddress}"
+      title="${fullAddress}"
+      aria-label="Copy sender address ${fullAddress}"
+    >
+      <code class="tx-code" title="${fullAddress}">${label}</code>
+    </button>
+  `;
 }
 
 function renderChainRoute(src, dst, srcName, dstName) {
@@ -585,6 +598,7 @@ export class TransactionsTab {
     this.pageSizeEl = this.panel.querySelector('[data-tx-page-size]');
 
     this.refreshBtn?.addEventListener('click', () => this.refresh());
+    this.panel.addEventListener('click', (event) => this._handleClick(event));
     this.searchInput?.addEventListener('input', () => {
       this.page = 1;
       this.render();
@@ -707,6 +721,49 @@ export class TransactionsTab {
 
   _setLoading(isLoading) {
     if (this.refreshBtn) this.refreshBtn.disabled = !!isLoading;
+  }
+
+  async _handleClick(event) {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const copyTrigger = target.closest('[data-copy-address]');
+    if (!copyTrigger) return;
+
+    const address = copyTrigger.getAttribute('data-address') || '';
+    if (!address) return;
+
+    const copied = await this._copy(address);
+    if (!copied) {
+      window.toastManager?.error?.('Failed to copy address');
+      return;
+    }
+
+    copyTrigger.classList.add('success');
+    setTimeout(() => copyTrigger.classList.remove('success'), 900);
+    window.toastManager?.success?.('Address copied to clipboard', { timeoutMs: 1800 });
+  }
+
+  async _copy(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return !!ok;
+      } catch {
+        document.body.removeChild(ta);
+        return false;
+      }
+    }
   }
 
   _startIssuedTicker() {
