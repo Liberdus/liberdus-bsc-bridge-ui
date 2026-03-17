@@ -63,23 +63,23 @@
               class="tab-button is-active"
               role="tab"
               aria-selected="true"
+              aria-controls="tab-panel-bridge"
+              id="tab-bridge"
+              data-tab="bridge"
+              type="button"
+            >
+              Bridge
+            </button>
+            <button
+              class="tab-button"
+              role="tab"
+              aria-selected="false"
               aria-controls="tab-panel-overview"
               id="tab-overview"
               data-tab="overview"
               type="button"
             >
               Overview
-            </button>
-            <button
-              class="tab-button"
-              role="tab"
-              aria-selected="false"
-              aria-controls="tab-panel-bridge-out"
-              id="tab-bridge-out"
-              data-tab="bridge-out"
-              type="button"
-            >
-              Bridge Out
             </button>
             <button
               class="tab-button"
@@ -119,21 +119,21 @@
           <div class="tab-panels">
             <section
               class="tab-panel is-active"
-              id="tab-panel-overview"
+              id="tab-panel-bridge"
               role="tabpanel"
-              aria-labelledby="tab-overview"
+              aria-labelledby="tab-bridge"
               tabindex="0"
-              data-panel="overview"
+              data-panel="bridge"
             ></section>
 
             <section
               class="tab-panel"
-              id="tab-panel-bridge-out"
+              id="tab-panel-overview"
               role="tabpanel"
-              aria-labelledby="tab-bridge-out"
+              aria-labelledby="tab-overview"
               tabindex="0"
               hidden
-              data-panel="bridge-out"
+              data-panel="overview"
             ></section>
 
             <section

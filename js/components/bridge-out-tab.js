@@ -7,7 +7,7 @@ export class BridgeOutTab {
   }
 
   load() {
-    this.panel = document.querySelector('.tab-panel[data-panel="bridge-out"]');
+    this.panel = document.querySelector('.tab-panel[data-panel="bridge"]');
     if (!this.panel) return;
 
     this.module = new PolygonBscBridgeModule({
