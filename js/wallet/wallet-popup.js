@@ -259,7 +259,6 @@ export class WalletPopup {
   _appNetworkLabel() {
     const name = window.CONFIG?.NETWORK?.NAME || '';
     const chainId = Number(window.CONFIG?.NETWORK?.CHAIN_ID || 0) || null;
-    if (name && chainId != null) return `${name} (${chainId})`;
     if (name) return name;
     return chainId != null ? `Chain ${chainId}` : 'Unknown';
   }
