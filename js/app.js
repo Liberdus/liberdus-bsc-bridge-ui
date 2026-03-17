@@ -1,4 +1,4 @@
-import { CONFIG } from './config.js?v=20260317a';
+import { CONFIG } from './config.js?v=20260317b';
 import { Header } from './components/header.js?v=20260317i';
 import { TabBar } from './components/tab-bar.js?v=20260309n';
 import { OverviewTab } from './components/overview-tab.js?v=20260309n';
