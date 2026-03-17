@@ -7,9 +7,10 @@
  */
 
 export class WalletPopup {
-  constructor({ walletManager, networkManager } = {}) {
+  constructor({ walletManager, networkManager, contractManager } = {}) {
     this.walletManager = walletManager || null;
     this.networkManager = networkManager || null;
+    this.contractManager = contractManager || null;
 
     this.isOpen = false;
     this.popupEl = null;
@@ -44,7 +45,8 @@ export class WalletPopup {
 
     // Load balance (best-effort)
     try {
-      const provider = this.walletManager?.getProvider?.();
+      // Show the connected address's native balance on the app/source chain.
+      const provider = this.contractManager?.provider || null;
       if (provider && provider.getBalance && window.ethers) {
         const bal = await provider.getBalance(address);
         const formatted = window.ethers.utils.formatEther(bal);
@@ -131,27 +133,6 @@ export class WalletPopup {
         return;
       }
 
-      const networkBtn = target.closest('[data-wallet-switch-network]');
-      if (networkBtn) {
-        e.stopPropagation();
-        const key = networkBtn.getAttribute('data-wallet-switch-network');
-        if (!key) return;
-        try {
-          await this.networkManager?.switchToNetworkByKey?.(key);
-          this.refresh();
-          window.toastManager?.success?.('Network switched');
-        } catch (err) {
-          if (err?.code === 4001) {
-            window.toastManager?.error?.('Network switch request was rejected');
-          } else if (err?.code === -32002) {
-            window.toastManager?.error?.('Network switch request already pending in MetaMask');
-          } else {
-            window.toastManager?.error?.(err?.message || 'Failed to switch network');
-          }
-        }
-        return;
-      }
-
       // Prevent closing when clicking inside popup
       if (target.closest('.wallet-popup')) {
         e.stopPropagation();
@@ -180,14 +161,8 @@ export class WalletPopup {
   _renderHTML({ address, balanceText }) {
     const short = this._shortAddress(address);
     const currentChainId = this.networkManager?.getCurrentChainId?.();
-    const availableNetworks = this.networkManager?.getAvailableNetworks?.() || [];
-    const currentNetworkLabel = this._currentNetworkLabel(currentChainId, availableNetworks);
-    const networkButtons = availableNetworks
-      .map((net) => {
-        const isActive = Number(currentChainId) === Number(net.chainId);
-        return `<button class="network-switch-button${isActive ? ' is-active' : ''}" type="button" data-wallet-switch-network="${net.key}">${net.name}</button>`;
-      })
-      .join('');
+    const knownNetworks = this.networkManager?.getAvailableNetworks?.() || [];
+    const currentNetworkLabel = this._currentNetworkLabel(currentChainId, knownNetworks);
     return `
       <div class="wallet-popup" role="dialog" aria-label="Wallet">
         <div class="wallet-popup-content">
@@ -208,7 +183,6 @@ export class WalletPopup {
           <div class="wallet-network">
             <div class="wallet-network-label">Current Network</div>
             <div class="wallet-network-value">${currentNetworkLabel}</div>
-            <div class="wallet-network-actions">${networkButtons}</div>
           </div>
 
           <div class="wallet-actions">

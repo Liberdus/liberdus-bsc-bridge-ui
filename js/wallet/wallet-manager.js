@@ -1,4 +1,4 @@
-import { MetaMaskConnector } from './metamask-connector.js';
+import { MetaMaskConnector } from './metamask-connector.js?v=20260317i';
 
 /**
  * WalletManager (Phase 2)
@@ -20,6 +20,7 @@ export class WalletManager {
 
     this.isConnecting = false;
     this._connectionPromise = null;
+    this._disconnectProbeToken = 0;
 
     this.listeners = new Set();
   }
@@ -29,8 +30,9 @@ export class WalletManager {
 
     // Wire connector callbacks → WalletManager events
     this.connector.onAccountsChanged = (accounts) => this._handleAccountsChanged(accounts);
+    this.connector.onConnect = (connectInfo) => this._handleProviderConnect(connectInfo);
     this.connector.onChainChanged = (chainId) => this._handleChainChanged(chainId);
-    this.connector.onDisconnected = () => this._handleDisconnected();
+    this.connector.onDisconnected = (error) => this._handleDisconnected(error);
   }
 
   async init() {
@@ -40,14 +42,6 @@ export class WalletManager {
 
   isConnected() {
     return !!(this.address && this.provider && this.signer);
-  }
-
-  isWalletConnected() {
-    return this.isConnected();
-  }
-
-  getAccount() {
-    return this.address;
   }
 
   getAddress() {
@@ -72,10 +66,6 @@ export class WalletManager {
 
   async getEip1193Provider(options = {}) {
     return await this.connector?.getEip1193Provider?.(options);
-  }
-
-  peekEip1193Provider() {
-    return this.connector?.peekEip1193Provider?.() || null;
   }
 
   subscribe(callback) {
@@ -162,7 +152,8 @@ export class WalletManager {
         return false;
       }
 
-      this.provider = new window.ethers.providers.Web3Provider(eip1193Provider);
+      // Use the "any" network so restored wallet providers survive later chain changes.
+      this.provider = new window.ethers.providers.Web3Provider(eip1193Provider, 'any');
       this.signer = this.provider.getSigner();
       this.address = addr;
 
@@ -194,31 +185,47 @@ export class WalletManager {
   }
 
   _handleAccountsChanged(accounts) {
+    this._cancelDisconnectProbe();
+
     if (!accounts || accounts.length === 0) {
       this._clearStateAndNotifyDisconnect();
       return;
     }
     this.address = accounts[0];
+    this.connector.account = this.address;
+    this.connector.isConnected = true;
     this._storeConnectionInfo();
     this._notify('accountChanged', { address: this.address, chainId: this.chainId });
   }
 
-  _handleChainChanged(chainId) {
-    let cid = chainId;
-    if (typeof cid === 'string' && cid.startsWith('0x')) {
-      try {
-        cid = parseInt(cid, 16);
-      } catch {
-        cid = NaN;
-      }
+  _handleProviderConnect(_connectInfo) {
+    this._cancelDisconnectProbe();
+    if (this.address) {
+      this.connector.account = this.address;
+      this.connector.isConnected = true;
     }
-    this.chainId = Number(cid);
+  }
+
+  _handleChainChanged(chainId) {
+    this._cancelDisconnectProbe();
+
+    this.chainId = this._normalizeChainId(chainId);
+    this.connector.chainId = this.chainId;
+    if (this.address) this.connector.isConnected = true;
     this._storeConnectionInfo();
     this._notify('chainChanged', { address: this.address, chainId: this.chainId });
   }
 
-  _handleDisconnected() {
-    this._clearStateAndNotifyDisconnect();
+  _handleDisconnected(_error) {
+    // MetaMask can emit a transient provider disconnect during add/switch flows.
+    // Only keep the session if both account access and basic RPC calls recover.
+    if (!this.address && !this.provider && !this.signer) {
+      this._clearStateAndNotifyDisconnect();
+      return;
+    }
+
+    const probeToken = this._startDisconnectProbe();
+    this._verifyDisconnectProbe(probeToken).catch(() => {});
   }
 
   _notify(event, data) {
@@ -266,6 +273,9 @@ export class WalletManager {
   }
 
   _clearStateAndNotifyDisconnect() {
+    const wasConnected = !!(this.provider || this.signer || this.address || this.walletType || this.chainId != null);
+
+    this._cancelDisconnectProbe();
     this.provider = null;
     this.signer = null;
     this.address = null;
@@ -273,6 +283,83 @@ export class WalletManager {
     this.walletType = null;
 
     this._clearConnectionInfo();
-    this._notify('disconnected', {});
+    if (wasConnected) {
+      this._notify('disconnected', {});
+    }
+  }
+
+  _startDisconnectProbe() {
+    this._disconnectProbeToken += 1;
+    return this._disconnectProbeToken;
+  }
+
+  _cancelDisconnectProbe() {
+    this._disconnectProbeToken += 1;
+  }
+
+  async _verifyDisconnectProbe(probeToken) {
+    const deadlineAt = Date.now() + 10000;
+
+    while (probeToken === this._disconnectProbeToken) {
+      try {
+        const walletProvider = await this.getEip1193Provider({ waitMs: 200 });
+        if (!walletProvider?.request) throw new Error('MetaMask not available');
+
+        const [accounts, chainIdHex] = await Promise.all([
+          this.connector?.getAccounts?.(),
+          walletProvider.request({ method: 'eth_chainId' }),
+        ]);
+        if (probeToken !== this._disconnectProbeToken) return;
+
+        if (Array.isArray(accounts)) {
+          if (accounts.length === 0) {
+            this._clearStateAndNotifyDisconnect();
+            return;
+          }
+
+          const nextAddress = accounts[0];
+          const nextChainId = this._normalizeChainId(chainIdHex);
+          const addressChanged =
+            String(nextAddress || '').toLowerCase() !== String(this.address || '').toLowerCase();
+          const chainChanged = nextChainId != null && Number(nextChainId) !== Number(this.chainId);
+
+          this.address = nextAddress;
+          if (nextChainId != null) this.chainId = nextChainId;
+          this.connector.account = nextAddress;
+          if (nextChainId != null) this.connector.chainId = nextChainId;
+          this.connector.isConnected = true;
+          this._storeConnectionInfo();
+
+          if (addressChanged) {
+            this._notify('accountChanged', { address: this.address, chainId: this.chainId });
+          }
+          if (chainChanged) {
+            this._notify('chainChanged', { address: this.address, chainId: this.chainId });
+          }
+          return;
+        }
+      } catch {
+        // Ignore transient provider errors while MetaMask is recovering.
+      }
+
+      if (Date.now() >= deadlineAt) {
+        this._clearStateAndNotifyDisconnect();
+        return;
+      }
+
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+    }
+  }
+
+  _normalizeChainId(chainId) {
+    let cid = chainId;
+    if (typeof cid === 'string' && cid.startsWith('0x')) {
+      try {
+        cid = parseInt(cid, 16);
+      } catch {
+        cid = NaN;
+      }
+    }
+    return Number(cid);
   }
 }

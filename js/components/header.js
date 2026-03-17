@@ -10,7 +10,7 @@ export class Header {
 
     this._connectBtnText = this.connectWalletBtn.textContent?.trim() || this._connectBtnText;
 
-    // Phase 2: MetaMask-only connection (Polygon-only tx)
+    // Phase 2: MetaMask-only connection with config-driven tx network
     this.connectWalletBtn.addEventListener('click', () => this.onConnectWalletClick());
 
     // React to wallet events
@@ -41,7 +41,7 @@ export class Header {
       return;
     }
 
-    // Connected → open wallet popup (network can be switched there)
+    // Connected → open wallet popup
     if (walletManager?.isConnected?.()) {
       walletPopup?.toggle?.(btn);
       return;
@@ -84,15 +84,13 @@ export class Header {
 
     const isConnected = !!walletManager?.isConnected?.();
     const address = walletManager?.getAddress?.();
-    const onPolygon = !!networkManager?.isOnRequiredNetwork?.();
-
     if (!isConnected) {
       this.renderConnectButton({ text: 'Connect Wallet', disabled: false });
       return;
     }
 
     const short = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : 'Connected';
-    this.renderConnectButton({ text: short, disabled: false, connected: onPolygon });
+    this.renderConnectButton({ text: short, disabled: false, connected: isConnected });
   }
 
   renderConnectButton({ text, disabled = false, connected = false } = {}) {
