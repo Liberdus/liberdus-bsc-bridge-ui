@@ -5,7 +5,8 @@ const PROFILES = {
       NAME: 'Polygon Amoy',
       RPC_URL: 'https://polygon-amoy-bor-rpc.publicnode.com',
       FALLBACK_RPCS: [
-        'https://polygon-amoy-bor-rpc.publicnode.com',
+        'https://rpc-amoy.polygon.technology/',
+        'https://polygon-amoy.drpc.org',
       ],
       BLOCK_EXPLORER: 'https://amoy.polygonscan.com',
       NATIVE_CURRENCY: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
@@ -19,7 +20,8 @@ const PROFILES = {
       NAME: 'BNB Testnet',
       RPC_URL: 'https://bsc-testnet.publicnode.com',
       FALLBACK_RPCS: [
-        'https://rpc.ankr.com/bsc_testnet',
+        'https://bsc-testnet-dataseed.bnbchain.org',
+        'https://bsc-testnet.bnbchain.org',
       ],
       BLOCK_EXPLORER: 'https://testnet.bscscan.com',
       NATIVE_CURRENCY: { name: 'BNB', symbol: 'tBNB', decimals: 18 },
@@ -38,7 +40,8 @@ const PROFILES = {
       NAME: 'Polygon',
       RPC_URL: 'https://polygon-amoy-bor-rpc.publicnode.com',
       FALLBACK_RPCS: [
-        'https://rpc.ankr.com/bsc_testnet',
+        'https://rpc-amoy.polygon.technology/',
+        'https://polygon-amoy.drpc.org',
       ],
       BLOCK_EXPLORER: 'https://amoy.polygonscan.com',
       NATIVE_CURRENCY: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
@@ -52,7 +55,8 @@ const PROFILES = {
       NAME: 'BNB Chain',
       RPC_URL: 'https://bsc-testnet.publicnode.com',
       FALLBACK_RPCS: [
-        'https://rpc.ankr.com/bsc_testnet',
+        'https://bsc-testnet-dataseed.bnbchain.org',
+        'https://bsc-testnet.bnbchain.org',
       ],
       BLOCK_EXPLORER: 'https://testnet.bscscan.com',
       NATIVE_CURRENCY: { name: 'BNB', symbol: 'tBNB', decimals: 18 },
