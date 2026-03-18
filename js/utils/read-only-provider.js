@@ -126,19 +126,13 @@ function getEthers() {
 
 async function createReadOnlyProvider() {
   const ethers = getEthers();
-  const config = window.CONFIG || CONFIG;
-
-  const primaryRpcUrl = config?.NETWORK?.RPC_URL;
-  const fallbackRpcs = Array.isArray(config?.NETWORK?.FALLBACK_RPCS)
-    ? config.NETWORK.FALLBACK_RPCS
-    : [];
-  const chainId = Number(config?.NETWORK?.CHAIN_ID);
-  const networkName = config?.NETWORK?.NAME || 'unknown';
+  const sourceNetwork = CONFIG.BRIDGE.CHAINS.SOURCE;
+  const primaryRpcUrl = sourceNetwork.RPC_URL;
+  const fallbackRpcs = sourceNetwork.FALLBACK_RPCS;
+  const chainId = sourceNetwork.CHAIN_ID;
+  const networkName = sourceNetwork.NAME;
 
   const rpcUrls = Array.from(new Set([primaryRpcUrl, ...fallbackRpcs].filter(Boolean)));
-
-  if (rpcUrls.length === 0) throw new Error('Missing CONFIG.NETWORK.RPC_URL');
-  if (!Number.isFinite(chainId)) throw new Error('Missing/invalid CONFIG.NETWORK.CHAIN_ID');
 
   // Best practice:
   // - Prefer a static network provider (prevents repeated network detection / eth_chainId bursts).
