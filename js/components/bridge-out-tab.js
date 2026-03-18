@@ -1,4 +1,4 @@
-import { PolygonBscBridgeModule } from '../modules/polygon-bsc-bridge-module.js?v=20260318b';
+import { PolygonBscBridgeModule } from '../modules/polygon-bsc-bridge-module.js?v=20260318c';
 
 export class BridgeOutTab {
   constructor() {

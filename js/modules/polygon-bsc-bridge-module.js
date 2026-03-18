@@ -1,5 +1,3 @@
-import { toPositiveChainId } from '../utils/chain-id.js';
-
 export class PolygonBscBridgeModule {
   constructor({
     contractManager = null,
@@ -7,7 +5,6 @@ export class PolygonBscBridgeModule {
     networkManager = null,
     toastManager = null,
     config = null,
-    chainConfigUrl = './tss-signer/chain-config.json',
     abiPath = null,
   } = {}) {
     this.contractManager = contractManager || window.contractManager || null;
@@ -15,11 +12,9 @@ export class PolygonBscBridgeModule {
     this.networkManager = networkManager || window.networkManager || null;
     this.toastManager = toastManager || window.toastManager || null;
     this.config = config || window.CONFIG || null;
-    this.chainConfigUrl = chainConfigUrl;
     this.abiPath = abiPath;
 
     this.container = null;
-    this._chainConfig = null;
 
     this._els = {};
     this._lastSnapshot = null;
@@ -39,10 +34,7 @@ export class PolygonBscBridgeModule {
     this.container = container;
     this._render();
     this._bind();
-    this._loadChainConfig().finally(() => {
-      this._syncChainText();
-      this.refresh().catch(() => {});
-    });
+    this.refresh().catch(() => {});
   }
 
   destroy() {
@@ -95,7 +87,7 @@ export class PolygonBscBridgeModule {
 
   _render() {
     if (!this.container) return;
-    const destinationRecipientLabel = this._getDestChain()?.name || this.config?.BRIDGE?.CHAINS?.DESTINATION?.NAME || 'Destination';
+    const destinationRecipientLabel = this.config?.BRIDGE?.CHAINS?.DESTINATION?.NAME || 'Destination';
 
     this.container.innerHTML = `
       <div class="panel-header">
@@ -201,18 +193,21 @@ export class PolygonBscBridgeModule {
   }
 
   _syncChainText() {
-    const source = this._getSourceChain();
-    const dest = this._getDestChain();
+    const source = this.config?.BRIDGE?.CHAINS?.SOURCE ?? null;
+    const dest = this.config?.BRIDGE?.CHAINS?.DESTINATION ?? null;
 
-    const sourceLabel = source ? `${source.name} (${source.chainId})` : '-';
-    const destLabel = dest ? `${dest.name} (${dest.chainId})` : '-';
+    const sourceName = source?.NAME || '-';
+    const destName = dest?.NAME || '-';
+    const sourceLabel = Number.isInteger(source?.CHAIN_ID) ? `${sourceName} (${source.CHAIN_ID})` : sourceName;
+    const destLabel = Number.isInteger(dest?.CHAIN_ID) ? `${destName} (${dest.CHAIN_ID})` : destName;
+    const vaultAddress = this.config?.BRIDGE?.CONTRACTS?.SOURCE?.ADDRESS ?? null;
 
-    if (this._els.sourceName) this._els.sourceName.textContent = source?.name || '-';
-    if (this._els.destName) this._els.destName.textContent = dest?.name || '-';
+    if (this._els.sourceName) this._els.sourceName.textContent = sourceName;
+    if (this._els.destName) this._els.destName.textContent = destName;
     if (this._els.sourceChain) this._els.sourceChain.textContent = sourceLabel;
     if (this._els.destChain) this._els.destChain.textContent = destLabel;
-    if (this._els.destChainId) this._els.destChainId.value = dest?.chainId != null ? String(dest.chainId) : '';
-    if (this._els.vaultAddress) this._els.vaultAddress.textContent = this._shortAddress(this._getVaultAddress());
+    if (this._els.destChainId) this._els.destChainId.value = Number.isInteger(dest?.CHAIN_ID) ? String(dest.CHAIN_ID) : '';
+    if (this._els.vaultAddress) this._els.vaultAddress.textContent = this._shortAddress(vaultAddress);
   }
 
   _onWalletEvent() {
@@ -300,7 +295,7 @@ export class PolygonBscBridgeModule {
       const amountWei = this._parseAmountToWei(this._els.amount?.value);
       if (!amountWei || amountWei.lte(0)) throw new Error('Enter a valid amount');
 
-      const vault = this._getVaultAddress();
+      const vault = this.config?.BRIDGE?.CONTRACTS?.SOURCE?.ADDRESS || null;
       if (!vault) throw new Error('Vault address not configured');
 
       const switchResult = await this._ensureRequiredNetworkForAction(actionToastId);
@@ -330,7 +325,7 @@ export class PolygonBscBridgeModule {
       });
 
       const tx = await token.approve(vault, window.ethers.constants.MaxUint256);
-      this._showStatus('Approval submitted', this._txLinkHtml(this._getSourceChainExplorer(), tx.hash));
+      this._showStatus('Approval submitted', this._txLinkHtml(this.config?.BRIDGE?.CHAINS?.SOURCE?.BLOCK_EXPLORER || '', tx.hash));
 
       toastId = this._showActionToast({
         toastId,
@@ -381,8 +376,8 @@ export class PolygonBscBridgeModule {
         throw new Error('Amount exceeds max bridge out limit');
       }
 
-      const dest = this._getDestChain();
-      if (!dest?.chainId) throw new Error('Destination chain not configured');
+      const destinationChainId = this.config?.BRIDGE?.CHAINS?.DESTINATION?.CHAIN_ID || null;
+      if (!destinationChainId) throw new Error('Destination chain not configured');
       const bridgeChainId = this._getBridgeOutChainId(snapshot);
       if (!bridgeChainId) throw new Error('Bridge chain ID is not configured');
 
@@ -403,7 +398,7 @@ export class PolygonBscBridgeModule {
       });
       const tx = await contract.bridgeOut(amountWei, recipient, bridgeChainId, overrides);
 
-      this._showStatus('Bridge transaction submitted', this._txLinkHtml(this._getSourceChainExplorer(), tx.hash));
+      this._showStatus('Bridge transaction submitted', this._txLinkHtml(this.config?.BRIDGE?.CHAINS?.SOURCE?.BLOCK_EXPLORER || '', tx.hash));
       toastId = this._showActionToast({
         toastId,
         title: 'Bridge submitted',
@@ -430,21 +425,18 @@ export class PolygonBscBridgeModule {
           dismissible: true,
         });
         this._showStatus('Bridge out confirmed', this._escapeHtml(msg));
-        const src = this._getSourceChain();
-        const configuredSourceChainId = toPositiveChainId(this.config?.BRIDGE?.CHAINS?.SOURCE?.CHAIN_ID);
-        const resolvedSourceChainId = toPositiveChainId(src?.chainId);
         const detail = {
           txHash: tx.hash,
           from,
           amount,
           targetAddress,
           targetChainId: Number(chainId),
-          sourceChainId: configuredSourceChainId ?? resolvedSourceChainId ?? 0,
+          sourceChainId: this.config?.BRIDGE?.CHAINS?.SOURCE?.CHAIN_ID || 0,
           timestamp: Math.floor(Date.now() / 1000),
         };
         document.dispatchEvent(new CustomEvent('bridgeOutEvent', { detail }));
       } else {
-        const sourceName = this._getSourceChain()?.name || 'source chain';
+        const sourceName = this.config?.BRIDGE?.CHAINS?.SOURCE?.NAME || 'source chain';
         this._showActionToast({
           toastId,
           title: 'Done',
@@ -490,18 +482,7 @@ export class PolygonBscBridgeModule {
   }
 
   async _buildGasOverrides(contract, amountWei, recipient, chainId) {
-    const gasConfig = this._chainConfig?.vaultChain?.gasConfig || null;
-    if (!gasConfig || !contract?.estimateGas?.bridgeOut) return {};
-    try {
-      const est = await contract.estimateGas.bridgeOut(amountWei, recipient, chainId);
-      const padded = est.mul(120).div(100);
-      const cap = this._bn(String(gasConfig.gasLimit || 0));
-      if (cap.gt(0) && padded.gt(cap)) return { gasLimit: cap };
-      return { gasLimit: padded };
-    } catch (_) {
-      const cap = this._bn(String(gasConfig.gasLimit || 0));
-      return cap.gt(0) ? { gasLimit: cap } : {};
-    }
+    return {};
   }
 
   async _refreshBalances() {
@@ -518,7 +499,7 @@ export class PolygonBscBridgeModule {
     }
 
     const tokenAddr = await this._getTokenAddress();
-    const vaultAddr = this._getVaultAddress();
+    const vaultAddr = this.config?.BRIDGE?.CONTRACTS?.SOURCE?.ADDRESS || null;
     if (!tokenAddr || !vaultAddr) return;
 
     const token = new window.ethers.Contract(tokenAddr, this._erc20Abi(), provider);
@@ -562,61 +543,12 @@ export class PolygonBscBridgeModule {
     }
   }
 
-  async _loadChainConfig() {
-    if (!this.chainConfigUrl) return null;
-    try {
-      const res = await fetch(this.chainConfigUrl, { cache: 'no-cache' });
-      if (!res.ok) return null;
-      const json = await res.json();
-      this._chainConfig = json;
-      return json;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  _getVaultAddress() {
-    const configuredAddress = this.config?.BRIDGE?.CONTRACTS?.SOURCE?.ADDRESS ?? null;
-    const fetchedAddress = this._chainConfig?.vaultChain?.contractAddress ?? null;
-    return configuredAddress || fetchedAddress || null;
-  }
-
-  _getSourceChain() {
-    const sourceConfig = this.config?.BRIDGE?.CHAINS?.SOURCE ?? null;
-    const sourceChainId = toPositiveChainId(sourceConfig?.CHAIN_ID);
-    const fallbackChainConfig = sourceChainId != null ? this._chainConfig?.supportedChains?.[String(sourceChainId)] : null;
-    const fromChainCfg = this._chainConfig?.vaultChain || fallbackChainConfig;
-    const fetchedChainId = toPositiveChainId(fromChainCfg?.chainId);
-    if (fetchedChainId != null) return { name: fromChainCfg.name, chainId: fetchedChainId };
-    if (sourceChainId != null) return { name: sourceConfig?.NAME || 'Source Network', chainId: sourceChainId };
-    return null;
-  }
-
-  _getDestChain() {
-    const fromChainCfg = this._chainConfig?.secondaryChainConfig ?? null;
-    const fetchedChainId = toPositiveChainId(fromChainCfg?.chainId);
-    if (fetchedChainId != null) return { name: fromChainCfg.name, chainId: fetchedChainId };
-    const configuredChain = this.config?.BRIDGE?.CHAINS?.DESTINATION ?? null;
-    const configuredChainId = toPositiveChainId(configuredChain?.CHAIN_ID);
-    if (configuredChainId != null) return { name: configuredChain?.NAME || 'Destination Network', chainId: configuredChainId };
-    return null;
-  }
-
   _getBridgeOutChainId(snapshot = null) {
     const status = snapshot ?? this.contractManager?.getStatusSnapshot?.() ?? null;
-    const onChainId = toPositiveChainId(status?.onChainId);
-    if (onChainId != null) return onChainId;
-    return toPositiveChainId(this.config?.BRIDGE?.CHAINS?.SOURCE?.CHAIN_ID);
-  }
-
-  _getSourceChainExplorer() {
-    const cfg = this.config?.BRIDGE?.CHAINS?.SOURCE ?? null;
-    const explorer = cfg?.BLOCK_EXPLORER ?? '';
-    if (explorer) return explorer;
-    const name = String(cfg?.NAME ?? this._getSourceChain()?.name ?? '').toLowerCase();
-    if (name.includes('amoy')) return 'https://amoy.polygonscan.com';
-    if (name.includes('polygon')) return 'https://polygonscan.com';
-    return '';
+    const onChainId = Number(status?.onChainId);
+    if (Number.isInteger(onChainId) && onChainId > 0) return onChainId;
+    const configuredChainId = this.config?.BRIDGE?.CHAINS?.SOURCE?.CHAIN_ID;
+    return Number.isInteger(configuredChainId) && configuredChainId > 0 ? configuredChainId : null;
   }
 
   async _ensureRequiredNetworkForAction(toastId) {

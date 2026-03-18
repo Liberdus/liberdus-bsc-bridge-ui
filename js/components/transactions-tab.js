@@ -1,6 +1,5 @@
 import { CONFIG } from '../config.js';
 import { getReadOnlyProviderForNetwork } from '../utils/read-only-provider-for-network.js';
-import { toPositiveChainId } from '../utils/chain-id.js';
 
 const BRIDGE_CHAINS = CONFIG?.BRIDGE?.CHAINS ?? {};
 const BRIDGE_CONTRACTS = CONFIG?.BRIDGE?.CONTRACTS ?? {};
@@ -70,56 +69,6 @@ function linkTx(chainKey, txHash) {
   return `${explorer}/tx/${txHash}`;
 }
 
-let _chainConfigCache = null;
-
-function getDefaultCoordinatorUrl() {
-  return normalizeCoordinatorUrl(
-    CONFIG?.BRIDGE?.COORDINATOR_URL ||
-      CONFIG?.COORDINATOR?.URL ||
-      CONFIG?.COORDINATOR_URL ||
-      'https://tss-test1.liberdus.com'
-  );
-}
-
-async function fetchChainConfig() {
-  if (_chainConfigCache) return _chainConfigCache;
-
-  const defaultCoordinatorUrl = getDefaultCoordinatorUrl();
-  let remoteConfig = null;
-
-  try {
-    const response = await fetch('./tss-signer/chain-config.json', { cache: 'no-cache' });
-    if (!response.ok) throw new Error(`Failed to load chain config: ${response.status}`);
-    const json = await response.json();
-    remoteConfig = json && typeof json === 'object' ? json : null;
-  } catch {
-    remoteConfig = null;
-  }
-
-  const remoteCoordinatorUrl = normalizeCoordinatorUrl(remoteConfig?.coordinatorUrl);
-  const isLocalCoordinatorUrl = /^https?:\/\/(127\.0\.0\.1|localhost)(?::\d+)?$/i.test(remoteCoordinatorUrl);
-
-  _chainConfigCache = {
-    ...(remoteConfig || {}),
-    coordinatorUrl:
-      remoteCoordinatorUrl && !isLocalCoordinatorUrl
-        ? remoteCoordinatorUrl
-        : defaultCoordinatorUrl,
-  };
-
-  return _chainConfigCache;
-}
-
-function resolveChainConfig(chainId, chainConfig) {
-  const normalizedChainId = toPositiveChainId(chainId);
-  if (!chainConfig || normalizedChainId == null) return null;
-  const supported = chainConfig?.supportedChains?.[String(normalizedChainId)];
-  if (toPositiveChainId(supported?.chainId) != null) return supported;
-  if (toPositiveChainId(chainConfig?.vaultChain?.chainId) === normalizedChainId) return chainConfig.vaultChain;
-  if (toPositiveChainId(chainConfig?.secondaryChainConfig?.chainId) === normalizedChainId) return chainConfig.secondaryChainConfig;
-  return null;
-}
-
 async function fetchAbi() {
   const abiPath = CONFIG?.BRIDGE?.CONTRACTS?.SOURCE?.ABI_PATH;
   if (!abiPath) throw new Error('Source contract ABI path is not configured');
@@ -134,8 +83,8 @@ async function fetchAbi() {
 function buildChainIdIndex(chains) {
   const map = new Map();
   for (const [key, cfg] of Object.entries(chains || {})) {
-    const id = toPositiveChainId(cfg?.CHAIN_ID);
-    if (id != null) map.set(id, key);
+    const id = cfg?.CHAIN_ID;
+    if (Number.isInteger(id) && id > 0) map.set(id, key);
   }
   return map;
 }
@@ -250,14 +199,11 @@ function renderStatus(status) {
 
 async function loadTransactionsFromCoordinator({ limit = 200 } = {}) {
   const chains = BRIDGE_CHAINS;
-  const chainConfig = await fetchChainConfig();
   const chainIdIndex = buildChainIdIndex(chains);
-  const coordinatorUrl = normalizeCoordinatorUrl(chainConfig?.coordinatorUrl) || getDefaultCoordinatorUrl();
+  const coordinatorUrl = normalizeCoordinatorUrl(CONFIG?.BRIDGE?.COORDINATOR_URL);
   if (!coordinatorUrl) throw new Error('Coordinator URL is not configured');
 
-  const configuredDestinationChainId = toPositiveChainId(chains?.DESTINATION?.CHAIN_ID);
-  const remoteDestinationChainId = toPositiveChainId(chainConfig?.secondaryChainConfig?.chainId);
-  const secondaryChainId = configuredDestinationChainId ?? remoteDestinationChainId ?? 0;
+  const secondaryChainId = chains?.DESTINATION?.CHAIN_ID || 0;
 
   const allTransactions = [];
   let page = 1;
@@ -600,10 +546,8 @@ export class TransactionsTab {
       const sourceCfg = chains?.SOURCE ?? null;
       if (!sourceCfg?.RPC_URL) return;
 
-      const chainConfig = await fetchChainConfig();
-      const resolved = resolveChainConfig(toPositiveChainId(sourceCfg?.CHAIN_ID), chainConfig);
       const configuredSourceAddress = BRIDGE_CONTRACTS?.SOURCE?.ADDRESS ?? null;
-      const address = resolved?.contractAddress || configuredSourceAddress;
+      const address = configuredSourceAddress;
       if (!address) return;
 
       const provider = await getReadOnlyProviderForNetwork(sourceCfg);
