@@ -104,107 +104,71 @@ function profileError(profileName, message) {
   return new Error(`Invalid profile ${profileName}: ${message}`);
 }
 
-function requiredString(profileName, path, value) {
-  const normalized = String(value ?? '').trim();
-  if (!normalized) throw profileError(profileName, `missing ${path}`);
-  return normalized;
-}
-
-function requiredInteger(profileName, path, value, { min = 1 } = {}) {
-  if (value == null || value === '') {
-    throw profileError(profileName, `missing ${path}`);
-  }
-  const normalized = Number(value);
-  if (!Number.isInteger(normalized) || normalized < min) {
-    throw profileError(profileName, `invalid ${path}`);
-  }
-  return normalized;
-}
-
-function normalizeNetwork(profileName, value, path) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw profileError(profileName, `missing ${path}`);
-  }
-
-  const fallbackRpcs = value.FALLBACK_RPCS;
-  if (fallbackRpcs != null && !Array.isArray(fallbackRpcs)) {
-    throw profileError(profileName, `invalid ${path}.FALLBACK_RPCS`);
-  }
-
-  const nativeCurrency = value.NATIVE_CURRENCY;
-  if (!nativeCurrency || typeof nativeCurrency !== 'object' || Array.isArray(nativeCurrency)) {
-    throw profileError(profileName, `missing ${path}.NATIVE_CURRENCY`);
-  }
-
-  return {
-    CHAIN_ID: requiredInteger(profileName, `${path}.CHAIN_ID`, value.CHAIN_ID),
-    NAME: requiredString(profileName, `${path}.NAME`, value.NAME),
-    RPC_URL: requiredString(profileName, `${path}.RPC_URL`, value.RPC_URL),
-    FALLBACK_RPCS: (fallbackRpcs || []).map((entry, index) =>
-      requiredString(profileName, `${path}.FALLBACK_RPCS[${index}]`, entry)
-    ),
-    BLOCK_EXPLORER: requiredString(profileName, `${path}.BLOCK_EXPLORER`, value.BLOCK_EXPLORER),
-    NATIVE_CURRENCY: {
-      name: requiredString(profileName, `${path}.NATIVE_CURRENCY.name`, nativeCurrency.name),
-      symbol: requiredString(profileName, `${path}.NATIVE_CURRENCY.symbol`, nativeCurrency.symbol),
-      decimals: requiredInteger(profileName, `${path}.NATIVE_CURRENCY.decimals`, nativeCurrency.decimals, { min: 0 }),
-    },
+function assertProfile(profileName, profile) {
+  const fail = (message) => {
+    throw profileError(profileName, message);
   };
-}
-
-function normalizeContract(profileName, value, path, { requireAbiPath = false } = {}) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw profileError(profileName, `missing ${path}`);
-  }
-
-  return {
-    ADDRESS: requiredString(profileName, `${path}.ADDRESS`, value.ADDRESS),
-    ...(requireAbiPath
-      ? { ABI_PATH: requiredString(profileName, `${path}.ABI_PATH`, value.ABI_PATH) }
-      : {}),
+  const requireObject = (value, path) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) fail(`missing ${path}`);
+    return value;
   };
-}
-
-function normalizeBridge(profileName, value) {
-  if (value == null) return { COORDINATOR_URL: '' };
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    throw profileError(profileName, 'invalid BRIDGE');
-  }
-
-  const coordinatorUrl = value.COORDINATOR_URL;
-  if (coordinatorUrl == null) return { COORDINATOR_URL: '' };
-  if (typeof coordinatorUrl !== 'string') {
-    throw profileError(profileName, 'invalid BRIDGE.COORDINATOR_URL');
-  }
-
-  return {
-    COORDINATOR_URL: coordinatorUrl.trim(),
+  const requireString = (value, path) => {
+    if (!String(value ?? '').trim()) fail(`missing ${path}`);
   };
-}
-
-function normalizeProfile(profileName, profile) {
-  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
-    throw profileError(profileName, `missing ${profileName}`);
-  }
-
-  return {
-    SOURCE_NETWORK: normalizeNetwork(profileName, profile.SOURCE_NETWORK, 'SOURCE_NETWORK'),
-    SOURCE_CONTRACT: normalizeContract(profileName, profile.SOURCE_CONTRACT, 'SOURCE_CONTRACT', { requireAbiPath: true }),
-    DESTINATION_NETWORK: normalizeNetwork(profileName, profile.DESTINATION_NETWORK, 'DESTINATION_NETWORK'),
-    DESTINATION_CONTRACT: normalizeContract(profileName, profile.DESTINATION_CONTRACT, 'DESTINATION_CONTRACT'),
-    BRIDGE: normalizeBridge(profileName, profile.BRIDGE),
+  const requireInteger = (value, path, { min = 1 } = {}) => {
+    const normalized = Number(value);
+    if (!Number.isInteger(normalized) || normalized < min) fail(`invalid ${path}`);
   };
+  const assertFallbackRpcs = (value, path) => {
+    if (value != null && !Array.isArray(value)) fail(`invalid ${path}`);
+    (value || []).forEach((entry, index) => requireString(entry, `${path}[${index}]`));
+  };
+  const assertCurrency = (value, path) => {
+    const currency = requireObject(value, path);
+    requireString(currency.name, `${path}.name`);
+    requireString(currency.symbol, `${path}.symbol`);
+    requireInteger(currency.decimals, `${path}.decimals`, { min: 0 });
+  };
+  const assertNetwork = (value, path) => {
+    const network = requireObject(value, path);
+    requireInteger(network.CHAIN_ID, `${path}.CHAIN_ID`);
+    ['NAME', 'RPC_URL', 'BLOCK_EXPLORER'].forEach((field) => {
+      requireString(network[field], `${path}.${field}`);
+    });
+    assertFallbackRpcs(network.FALLBACK_RPCS, `${path}.FALLBACK_RPCS`);
+    assertCurrency(network.NATIVE_CURRENCY, `${path}.NATIVE_CURRENCY`);
+  };
+  const assertContract = (value, path, { requireAbiPath = false } = {}) => {
+    const contract = requireObject(value, path);
+    requireString(contract.ADDRESS, `${path}.ADDRESS`);
+    if (requireAbiPath) requireString(contract.ABI_PATH, `${path}.ABI_PATH`);
+  };
+
+  requireObject(profile, profileName);
+  assertNetwork(profile.SOURCE_NETWORK, 'SOURCE_NETWORK');
+  assertContract(profile.SOURCE_CONTRACT, 'SOURCE_CONTRACT', { requireAbiPath: true });
+  assertNetwork(profile.DESTINATION_NETWORK, 'DESTINATION_NETWORK');
+  assertContract(profile.DESTINATION_CONTRACT, 'DESTINATION_CONTRACT');
+
+  if (profile.BRIDGE != null) {
+    const bridge = requireObject(profile.BRIDGE, 'BRIDGE');
+    if (bridge.COORDINATOR_URL != null && typeof bridge.COORDINATOR_URL !== 'string') {
+      fail('invalid BRIDGE.COORDINATOR_URL');
+    }
+  }
 }
 
 // Apply active profile
 const RESOLVED_PROFILE = PROFILES[CONFIG.RUNTIME.PROFILE] ? CONFIG.RUNTIME.PROFILE : 'dev';
-const {
-  SOURCE_NETWORK: ACTIVE_SOURCE_NETWORK,
-  SOURCE_CONTRACT: ACTIVE_SOURCE_CONTRACT,
-  DESTINATION_NETWORK: ACTIVE_DESTINATION_NETWORK,
-  DESTINATION_CONTRACT: ACTIVE_DESTINATION_CONTRACT,
-  BRIDGE: ACTIVE_BRIDGE,
-} = normalizeProfile(RESOLVED_PROFILE, PROFILES[RESOLVED_PROFILE]);
+const ACTIVE_PROFILE = PROFILES[RESOLVED_PROFILE];
+
+assertProfile(RESOLVED_PROFILE, ACTIVE_PROFILE);
+
+const sourceNetwork = ACTIVE_PROFILE.SOURCE_NETWORK;
+const sourceContract = ACTIVE_PROFILE.SOURCE_CONTRACT;
+const destinationNetwork = ACTIVE_PROFILE.DESTINATION_NETWORK;
+const destinationContract = ACTIVE_PROFILE.DESTINATION_CONTRACT;
+const bridge = ACTIVE_PROFILE.BRIDGE || {};
 
 /**
  * Project the active profile into the runtime CONFIG object.
@@ -212,20 +176,39 @@ const {
  * CONFIG.BRIDGE.* is the canonical runtime shape.
  */
 CONFIG.RUNTIME.PROFILE = RESOLVED_PROFILE;
-CONFIG.BRIDGE.COORDINATOR_URL = ACTIVE_BRIDGE.COORDINATOR_URL || 'https://tss1-test.liberdus.com';
+CONFIG.BRIDGE.COORDINATOR_URL = String(bridge.COORDINATOR_URL || '').trim() || 'https://tss1-test.liberdus.com';
 Object.assign(CONFIG.BRIDGE.CHAINS, {
   SOURCE: {
-    ...ACTIVE_SOURCE_NETWORK,
+    CHAIN_ID: Number(sourceNetwork.CHAIN_ID),
+    NAME: String(sourceNetwork.NAME).trim(),
+    RPC_URL: String(sourceNetwork.RPC_URL).trim(),
+    FALLBACK_RPCS: (sourceNetwork.FALLBACK_RPCS || []).map((entry) => String(entry).trim()),
+    BLOCK_EXPLORER: String(sourceNetwork.BLOCK_EXPLORER).trim(),
+    NATIVE_CURRENCY: {
+      name: String(sourceNetwork.NATIVE_CURRENCY.name).trim(),
+      symbol: String(sourceNetwork.NATIVE_CURRENCY.symbol).trim(),
+      decimals: Number(sourceNetwork.NATIVE_CURRENCY.decimals),
+    },
   },
   DESTINATION: {
-    ...ACTIVE_DESTINATION_NETWORK,
+    CHAIN_ID: Number(destinationNetwork.CHAIN_ID),
+    NAME: String(destinationNetwork.NAME).trim(),
+    RPC_URL: String(destinationNetwork.RPC_URL).trim(),
+    FALLBACK_RPCS: (destinationNetwork.FALLBACK_RPCS || []).map((entry) => String(entry).trim()),
+    BLOCK_EXPLORER: String(destinationNetwork.BLOCK_EXPLORER).trim(),
+    NATIVE_CURRENCY: {
+      name: String(destinationNetwork.NATIVE_CURRENCY.name).trim(),
+      symbol: String(destinationNetwork.NATIVE_CURRENCY.symbol).trim(),
+      decimals: Number(destinationNetwork.NATIVE_CURRENCY.decimals),
+    },
   },
 });
 Object.assign(CONFIG.BRIDGE.CONTRACTS, {
   SOURCE: {
-    ...ACTIVE_SOURCE_CONTRACT,
+    ADDRESS: String(sourceContract.ADDRESS).trim(),
+    ABI_PATH: String(sourceContract.ABI_PATH).trim(),
   },
   DESTINATION: {
-    ...ACTIVE_DESTINATION_CONTRACT,
+    ADDRESS: String(destinationContract.ADDRESS).trim(),
   },
 });
