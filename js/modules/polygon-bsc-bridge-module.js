@@ -321,7 +321,7 @@ export class PolygonBscBridgeModule {
         message: 'Confirm the approval in your wallet',
       });
 
-      const tx = await token.approve(vault, window.ethers.constants.MaxUint256);
+      const tx = await token.approve(vault, amountWei);
       this._showStatus('Approval submitted', this._txLinkHtml(this.config.BRIDGE.CHAINS.SOURCE.BLOCK_EXPLORER, tx.hash));
 
       toastId = this._showActionToast({
