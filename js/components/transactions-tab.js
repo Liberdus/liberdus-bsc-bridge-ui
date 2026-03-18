@@ -215,7 +215,9 @@ function mapCoordinatorTransaction(tx, chains, chainIdIndex) {
       dstChainId = destinationChainId;
       break;
     default:
-      throw new Error(`Unknown coordinator transaction type: ${type}`);
+      srcChainId = chainId;
+      dstChainId = 0;
+      break;
   }
 
   const srcChainKey = chainIdIndex.get(srcChainId) || null;
@@ -490,7 +492,8 @@ export class TransactionsTab {
             typeLabel = 'Bridge Vault';
             break;
           default:
-            throw new Error(`Unknown row type: ${row.type}`);
+            typeLabel = 'Unknown';
+            break;
         }
         const type = `<span class="tx-type">${typeLabel}</span>`;
         const status = renderStatus(row.status);
