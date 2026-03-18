@@ -427,6 +427,17 @@ export class PolygonBscBridgeModule {
           dismissible: true,
         });
         this._showStatus('Bridge out confirmed', this._escapeHtml(msg));
+        const src = this._getSourceChain();
+        const detail = {
+          txHash: tx.hash,
+          from,
+          amount,
+          targetAddress,
+          targetChainId: Number(chainId),
+          sourceChainId: Number(src?.chainId || 0),
+          timestamp: Math.floor(Date.now() / 1000),
+        };
+        document.dispatchEvent(new CustomEvent('bridgeOutEvent', { detail }));
       } else {
         this._showActionToast({
           toastId,

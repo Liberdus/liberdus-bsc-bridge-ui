@@ -197,6 +197,46 @@ function sortByTimestampDesc(a, b) {
   return String(b?.txHash || '').localeCompare(String(a?.txHash || ''));
 }
 
+function normalizeTxHash(value) {
+  const v = String(value || '');
+  return v ? v.toLowerCase() : '';
+}
+
+function mergeTransactionRow(base, incoming) {
+  if (!base) return incoming;
+  if (!incoming) return base;
+
+  const merged = { ...base };
+  const baseStatus = String(base.status || '');
+  const incomingStatus = String(incoming.status || '');
+  const baseIsPending = baseStatus.toLowerCase() === 'pending';
+  const incomingIsPending = incomingStatus.toLowerCase() === 'pending';
+
+  if (!merged.receiptTxHash && incoming.receiptTxHash) merged.receiptTxHash = incoming.receiptTxHash;
+  if (baseIsPending && !incomingIsPending && incomingStatus) merged.status = incomingStatus;
+  if (!merged.dstChainKey && incoming.dstChainKey) merged.dstChainKey = incoming.dstChainKey;
+  if (!merged.dstName && incoming.dstName) merged.dstName = incoming.dstName;
+  if (!merged.from && incoming.from) merged.from = incoming.from;
+  if (!merged.amount && incoming.amount) merged.amount = incoming.amount;
+  if (!Number.isFinite(Number(merged.timestamp)) && Number.isFinite(Number(incoming.timestamp))) merged.timestamp = incoming.timestamp;
+
+  return merged;
+}
+
+function mergeTransactions(primary, secondary, { limit = 500 } = {}) {
+  const map = new Map();
+  for (const row of [...(primary || []), ...(secondary || [])]) {
+    const key = normalizeTxHash(row?.txHash);
+    if (!key) continue;
+    if (!map.has(key)) {
+      map.set(key, row);
+      continue;
+    }
+    map.set(key, mergeTransactionRow(map.get(key), row));
+  }
+  return Array.from(map.values()).sort(sortByTimestampDesc).slice(0, Number(limit || 500));
+}
+
 function normalizeCoordinatorUrl(url) {
   const value = String(url || '').trim();
   if (!value) return '';
@@ -518,6 +558,14 @@ export class TransactionsTab {
     this.nextBtn = null;
     this.pageInfoEl = null;
     this.pageSizeEl = null;
+    this._bridgeListenerBound = false;
+    this._bridgeOutWatchInit = false;
+    this._bridgeOutWatchStarting = false;
+    this._bridgeOutProvider = null;
+    this._bridgeOutFilter = null;
+    this._bridgeOutHandler = null;
+    this._seenBridgeOutTx = new Set();
+    this._bridgeOutWatchRetryTimer = null;
   }
 
   load() {
@@ -617,6 +665,13 @@ export class TransactionsTab {
       this.page = 1;
       this.render();
     });
+    if (!this._bridgeListenerBound) {
+      document.addEventListener('bridgeOutEvent', (e) => this._onBridgeOutEvent(e));
+      this._bridgeListenerBound = true;
+    }
+
+    this._ensureBridgeOutWatch();
+    window.addEventListener('beforeunload', () => this._teardownBridgeOutWatch());
 
     document.addEventListener('tabActivated', (e) => {
       if (e?.detail?.tabName === 'transactions') {
@@ -637,11 +692,11 @@ export class TransactionsTab {
     this._setStatus('Loading recent transactions...');
 
     try {
-      this._rows = await loadTransactionsData({ limit: 250 });
+      const fetched = await loadTransactionsData({ limit: 250 });
+      this._rows = mergeTransactions(fetched, this._rows, { limit: 500 });
       this.render();
       this._setStatus('Transactions updated.');
     } catch (error) {
-      this._rows = [];
       this.render();
       this._setStatus(error?.message || 'Failed to load transactions.');
     } finally {
@@ -713,6 +768,140 @@ export class TransactionsTab {
         `;
       })
       .join('');
+  }
+
+  _onBridgeOutEvent(e) {
+    const d = e?.detail || null;
+    if (!d) return;
+    const chains = getChainConfig();
+    const chainIdIndex = buildChainIdIndex(chains);
+    const srcChainKey = chainIdIndex.get(Number(d.sourceChainId)) || 'POLYGON';
+    const dstChainKey = chainIdIndex.get(Number(d.targetChainId)) || null;
+    const srcName = chains?.[srcChainKey]?.NAME || 'Polygon';
+    const dstName = dstChainKey ? chains?.[dstChainKey]?.NAME || `Chain ${d.targetChainId}` : `Chain ${d.targetChainId}`;
+    const row = {
+      id: d.txHash,
+      srcChainKey,
+      dstChainKey,
+      srcName,
+      dstName,
+      from: d.from,
+      amount: d.amount,
+      timestamp: Number(d.timestamp || Math.floor(Date.now() / 1000)),
+      txHash: d.txHash,
+      receiptTxHash: '',
+      status: 'Pending',
+      type: 1,
+    };
+    const next = mergeTransactions([row], this._rows, { limit: 500 });
+    this._rows = next;
+    this.render();
+  }
+
+  async _ensureBridgeOutWatch() {
+    if (this._bridgeOutWatchInit || this._bridgeOutWatchStarting) return;
+    this._bridgeOutWatchStarting = true;
+
+    try {
+      const ethers = window.ethers;
+      if (!ethers) return;
+
+      const abi = await fetchAbi();
+      const iface = new ethers.utils.Interface(abi);
+      const bridgedOutTopic = iface.getEventTopic('BridgedOut');
+
+      const chains = getChainConfig();
+      const polygonCfg = chains?.POLYGON;
+      if (!polygonCfg?.RPC_URL) return;
+
+      const contracts = getContractsConfig();
+      const chainConfig = await fetchChainConfig();
+      const resolved = resolveChainConfig(Number(polygonCfg?.CHAIN_ID), chainConfig);
+      const address = resolved?.contractAddress || contracts?.POLYGON;
+      if (!address) return;
+
+      const provider = await getReadOnlyProviderForNetwork(polygonCfg);
+      const filter = { address, topics: [bridgedOutTopic] };
+
+      const handler = (log) => {
+        try {
+          const parsed = iface.parseLog(log);
+          const txHash = log?.transactionHash;
+          if (!txHash) return;
+          const key = normalizeTxHash(txHash);
+          if (this._seenBridgeOutTx.has(key)) return;
+          this._seenBridgeOutTx.add(key);
+          if (this._seenBridgeOutTx.size > 2000) this._seenBridgeOutTx.clear();
+
+          const chainsLocal = getChainConfig();
+          const chainIdIndex = buildChainIdIndex(chainsLocal);
+          const dstChainId = Number(parsed.args?.chainId);
+          const dstChainKey = chainIdIndex.get(dstChainId) || null;
+          const srcChainKey = 'POLYGON';
+          const srcName = chainsLocal?.[srcChainKey]?.NAME || 'Polygon';
+          const dstName = dstChainKey ? chainsLocal?.[dstChainKey]?.NAME || `Chain ${dstChainId}` : `Chain ${dstChainId}`;
+
+          const row = {
+            id: txHash,
+            srcChainKey,
+            dstChainKey,
+            srcName,
+            dstName,
+            from: parsed.args?.from,
+            amount: parsed.args?.amount,
+            timestamp: Number(parsed.args?.timestamp || Math.floor(Date.now() / 1000)),
+            txHash,
+            receiptTxHash: '',
+            status: 'Pending',
+            type: 1,
+          };
+
+          const next = mergeTransactions([row], this._rows, { limit: 500 });
+          this._rows = next;
+          this.render();
+        } catch {}
+      };
+
+      provider.on(filter, handler);
+      this._bridgeOutProvider = provider;
+      this._bridgeOutFilter = filter;
+      this._bridgeOutHandler = handler;
+      this._bridgeOutWatchInit = true;
+      this._bridgeOutWatchStarting = false;
+      if (this._bridgeOutWatchRetryTimer) {
+        clearTimeout(this._bridgeOutWatchRetryTimer);
+        this._bridgeOutWatchRetryTimer = null;
+      }
+    } catch {
+      this._bridgeOutWatchStarting = false;
+      this._scheduleBridgeOutWatchRetry();
+    }
+  }
+
+  _teardownBridgeOutWatch() {
+    try {
+      const provider = this._bridgeOutProvider;
+      const filter = this._bridgeOutFilter;
+      const handler = this._bridgeOutHandler;
+      if (provider && filter && handler) provider.off(filter, handler);
+    } catch {}
+    this._bridgeOutProvider = null;
+    this._bridgeOutFilter = null;
+    this._bridgeOutHandler = null;
+    if (this._bridgeOutWatchRetryTimer) {
+      clearTimeout(this._bridgeOutWatchRetryTimer);
+      this._bridgeOutWatchRetryTimer = null;
+    }
+    this._bridgeOutWatchStarting = false;
+    this._bridgeOutWatchInit = false;
+  }
+
+  _scheduleBridgeOutWatchRetry() {
+    if (this._bridgeOutWatchRetryTimer) return;
+    this._bridgeOutWatchRetryTimer = setTimeout(() => {
+      this._bridgeOutWatchRetryTimer = null;
+      this._ensureBridgeOutWatch();
+    }, 15000);
   }
 
   _setStatus(text) {
