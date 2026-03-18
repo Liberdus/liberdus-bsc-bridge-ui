@@ -37,7 +37,7 @@ export class NetworkManager {
       return { switched: false };
     }
 
-    await this.switchToChain(this._requiredNetworkDescriptor());
+    await this.switchToChain(CONFIG.BRIDGE.CHAINS.SOURCE);
     if (this.isOnRequiredNetwork()) {
       return { switched: true };
     }
@@ -84,10 +84,10 @@ export class NetworkManager {
     return null;
   }
 
-  async switchToChain(chain) {
+  async switchToChain(network) {
     const walletProvider = await this.walletManager?.getEip1193Provider?.({ waitMs: 200 });
     if (!walletProvider) throw new Error('MetaMask not available');
-    const chainHex = this._toHexChainId(chain.chainId);
+    const chainHex = this._toHexChainId(network.CHAIN_ID);
     try {
       await walletProvider.request({
         method: 'wallet_switchEthereumChain',
@@ -100,10 +100,10 @@ export class NetworkManager {
           method: 'wallet_addEthereumChain',
           params: [{
             chainId: chainHex,
-            chainName: chain.name,
-            rpcUrls: [chain.rpcUrl, ...(chain.fallbackRpcs || [])].filter(Boolean),
-            nativeCurrency: chain.nativeCurrency,
-            blockExplorerUrls: [chain.blockExplorer].filter(Boolean),
+            chainName: network.NAME,
+            rpcUrls: [network.RPC_URL, ...network.FALLBACK_RPCS],
+            nativeCurrency: network.NATIVE_CURRENCY,
+            blockExplorerUrls: [network.BLOCK_EXPLORER],
           }],
         });
         await walletProvider.request({
@@ -170,22 +170,6 @@ export class NetworkManager {
     return CONFIG.BRIDGE.CHAINS.SOURCE.CHAIN_ID;
   }
 
-  _requiredNetworkDescriptor() {
-    const network = CONFIG.BRIDGE.CHAINS.SOURCE;
-    return {
-      chainId: network.CHAIN_ID,
-      name: network.NAME,
-      rpcUrl: network.RPC_URL,
-      fallbackRpcs: network.FALLBACK_RPCS,
-      blockExplorer: network.BLOCK_EXPLORER,
-      nativeCurrency: network.NATIVE_CURRENCY,
-    };
-  }
-
-  _requiredNetworkName() {
-    return this._requiredNetworkDescriptor().name;
-  }
-
   _createRequiredNetworkWaiter({ timeoutMs = 3000 } = {}) {
     if (this.isOnRequiredNetwork()) {
       return {
@@ -223,7 +207,7 @@ export class NetworkManager {
         if (resolved) return;
         resolved = true;
         cleanup();
-        reject(new Error(`Timed out waiting for wallet to switch to ${this._requiredNetworkName()}`));
+        reject(new Error(`Timed out waiting for wallet to switch to ${CONFIG.BRIDGE.CHAINS.SOURCE.NAME}`));
       }, timeoutMs);
 
       pollId = window.setInterval(() => resolveIfReady(resolve), 50);
