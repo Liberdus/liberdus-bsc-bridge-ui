@@ -560,10 +560,12 @@ export class TransactionsTab {
     this.pageSizeEl = null;
     this._bridgeListenerBound = false;
     this._bridgeOutWatchInit = false;
+    this._bridgeOutWatchStarting = false;
     this._bridgeOutProvider = null;
     this._bridgeOutFilter = null;
     this._bridgeOutHandler = null;
     this._seenBridgeOutTx = new Set();
+    this._bridgeOutWatchRetryTimer = null;
   }
 
   load() {
@@ -778,8 +780,6 @@ export class TransactionsTab {
     const dstChainKey = chainIdIndex.get(Number(d.targetChainId)) || null;
     const srcName = chains?.[srcChainKey]?.NAME || 'Polygon';
     const dstName = dstChainKey ? chains?.[dstChainKey]?.NAME || `Chain ${d.targetChainId}` : `Chain ${d.targetChainId}`;
-    const exists = this._rows.some((r) => String(r.txHash || '') === String(d.txHash || ''));
-    if (exists) return;
     const row = {
       id: d.txHash,
       srcChainKey,
@@ -794,13 +794,14 @@ export class TransactionsTab {
       status: 'Pending',
       type: 1,
     };
-    this._rows.unshift(row);
+    const next = mergeTransactions([row], this._rows, { limit: 500 });
+    this._rows = next;
     this.render();
   }
 
   async _ensureBridgeOutWatch() {
-    if (this._bridgeOutWatchInit) return;
-    this._bridgeOutWatchInit = true;
+    if (this._bridgeOutWatchInit || this._bridgeOutWatchStarting) return;
+    this._bridgeOutWatchStarting = true;
 
     try {
       const ethers = window.ethers;
@@ -866,7 +867,16 @@ export class TransactionsTab {
       this._bridgeOutProvider = provider;
       this._bridgeOutFilter = filter;
       this._bridgeOutHandler = handler;
-    } catch {}
+      this._bridgeOutWatchInit = true;
+      this._bridgeOutWatchStarting = false;
+      if (this._bridgeOutWatchRetryTimer) {
+        clearTimeout(this._bridgeOutWatchRetryTimer);
+        this._bridgeOutWatchRetryTimer = null;
+      }
+    } catch {
+      this._bridgeOutWatchStarting = false;
+      this._scheduleBridgeOutWatchRetry();
+    }
   }
 
   _teardownBridgeOutWatch() {
@@ -879,6 +889,20 @@ export class TransactionsTab {
     this._bridgeOutProvider = null;
     this._bridgeOutFilter = null;
     this._bridgeOutHandler = null;
+    if (this._bridgeOutWatchRetryTimer) {
+      clearTimeout(this._bridgeOutWatchRetryTimer);
+      this._bridgeOutWatchRetryTimer = null;
+    }
+    this._bridgeOutWatchStarting = false;
+    this._bridgeOutWatchInit = false;
+  }
+
+  _scheduleBridgeOutWatchRetry() {
+    if (this._bridgeOutWatchRetryTimer) return;
+    this._bridgeOutWatchRetryTimer = setTimeout(() => {
+      this._bridgeOutWatchRetryTimer = null;
+      this._ensureBridgeOutWatch();
+    }, 15000);
   }
 
   _setStatus(text) {
