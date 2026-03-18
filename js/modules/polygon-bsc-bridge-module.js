@@ -474,10 +474,6 @@ export class PolygonBscBridgeModule {
     }
   }
 
-  async _buildGasOverrides() {
-    return {};
-  }
-
   async _refreshBalances() {
     if (!window.ethers) return;
     // Approval and spend happen on the source chain, so read token state from the app's source-chain provider.
