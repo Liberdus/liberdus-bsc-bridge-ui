@@ -1,3 +1,5 @@
+import { CONFIG } from '../config.js';
+
 /**
  * WalletPopup (Phase 2)
  * Simple MetaMask popup:
@@ -7,9 +9,8 @@
  */
 
 export class WalletPopup {
-  constructor({ walletManager, networkManager, contractManager } = {}) {
+  constructor({ walletManager, contractManager } = {}) {
     this.walletManager = walletManager || null;
-    this.networkManager = networkManager || null;
     this.contractManager = contractManager || null;
 
     this.isOpen = false;
@@ -35,6 +36,7 @@ export class WalletPopup {
   async show(anchorEl) {
     const address = this.walletManager?.getAddress?.();
     if (!address) return;
+    const network = CONFIG.BRIDGE.CHAINS.SOURCE;
 
     this._ensureContainer();
     this._containerEl.innerHTML = this._renderHTML({ address, balanceText: 'Loading…' });
@@ -51,12 +53,12 @@ export class WalletPopup {
         const bal = await provider.getBalance(address);
         const formatted = window.ethers.utils.formatEther(bal);
         const display = this._formatBalance(formatted);
-        this._setBalance(`${display} ${this._nativeSymbol()}`);
+        this._setBalance(`${display} ${network.NATIVE_CURRENCY.symbol}`);
       } else {
-        this._setBalance(`-- ${this._nativeSymbol()}`);
+        this._setBalance(`-- ${network.NATIVE_CURRENCY.symbol}`);
       }
     } catch {
-      this._setBalance(`-- ${this._nativeSymbol()}`);
+      this._setBalance(`-- ${network.NATIVE_CURRENCY.symbol}`);
     }
   }
 
@@ -160,16 +162,14 @@ export class WalletPopup {
 
   _renderHTML({ address, balanceText }) {
     const short = this._shortAddress(address);
-    const currentChainId = this.networkManager?.getCurrentChainId?.();
-    const knownNetworks = this.networkManager?.getAvailableNetworks?.() || [];
-    const currentNetworkLabel = this._currentNetworkLabel(currentChainId, knownNetworks);
+    const network = CONFIG.BRIDGE.CHAINS.SOURCE;
     return `
       <div class="wallet-popup" role="dialog" aria-label="Wallet">
         <div class="wallet-popup-content">
           <button class="wallet-popup-close" type="button" title="Close" data-wallet-close>×</button>
 
           <div class="wallet-balance">
-            <div class="balance-label">${this._nativeSymbol()} Balance</div>
+            <div class="balance-label">${network.NATIVE_CURRENCY.symbol} Balance</div>
             <div class="balance-value" data-wallet-balance>${balanceText}</div>
           </div>
 
@@ -181,8 +181,8 @@ export class WalletPopup {
           </div>
 
           <div class="wallet-network">
-            <div class="wallet-network-label">Current Network</div>
-            <div class="wallet-network-value">${currentNetworkLabel}</div>
+            <div class="wallet-network-label">Source Network</div>
+            <div class="wallet-network-value">${network.NAME}</div>
           </div>
 
           <div class="wallet-actions">
@@ -252,15 +252,5 @@ export class WalletPopup {
     if (n === 0) return '0';
     if (n < 0.0001) return '<0.0001';
     return n.toLocaleString(undefined, { maximumFractionDigits: 4 });
-  }
-
-  _nativeSymbol() {
-    return this.networkManager?.networkSymbol?.() || (this.networkManager ? 'MATIC' : 'MATIC');
-  }
-
-  _currentNetworkLabel(currentChainId, networks) {
-    const found = (networks || []).find((n) => Number(n.chainId) === Number(currentChainId));
-    if (found?.name) return found.name;
-    return currentChainId ? `Chain ${currentChainId}` : 'Unknown';
   }
 }
