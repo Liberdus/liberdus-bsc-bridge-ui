@@ -77,7 +77,7 @@ export const CONFIG = {
   },
 
   RUNTIME: {
-    PROFILE: 'dev',
+    PROFILE: 'dev', // 'dev' or 'prod'
   },
 
   TOKEN: {
