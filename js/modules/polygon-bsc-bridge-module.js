@@ -1,3 +1,5 @@
+import { toPositiveChainId } from '../utils/chain-id.js';
+
 export class PolygonBscBridgeModule {
   constructor({
     contractManager = null,
@@ -93,6 +95,7 @@ export class PolygonBscBridgeModule {
 
   _render() {
     if (!this.container) return;
+    const destinationRecipientLabel = this._getDestChain()?.name || this.config?.BRIDGE?.CHAINS?.DESTINATION?.NAME || 'Destination';
 
     this.container.innerHTML = `
       <div class="panel-header">
@@ -118,7 +121,7 @@ export class PolygonBscBridgeModule {
 
         <div class="form-grid">
           <label class="field field--full">
-            <span class="field-label">Recipient Address (${this._destinationRecipientLabel()})</span>
+            <span class="field-label">Recipient Address (${destinationRecipientLabel})</span>
             <input class="field-input" type="text" placeholder="0x..." data-bridge-recipient data-requires-tx="true" data-allow-input-when-locked="true" />
           </label>
 
@@ -428,17 +431,20 @@ export class PolygonBscBridgeModule {
         });
         this._showStatus('Bridge out confirmed', this._escapeHtml(msg));
         const src = this._getSourceChain();
+        const configuredSourceChainId = toPositiveChainId(this.config?.BRIDGE?.CHAINS?.SOURCE?.CHAIN_ID);
+        const resolvedSourceChainId = toPositiveChainId(src?.chainId);
         const detail = {
           txHash: tx.hash,
           from,
           amount,
           targetAddress,
           targetChainId: Number(chainId),
-          sourceChainId: Number(this._getSourceChainConfig()?.CHAIN_ID || src?.chainId || 0),
+          sourceChainId: configuredSourceChainId ?? resolvedSourceChainId ?? 0,
           timestamp: Math.floor(Date.now() / 1000),
         };
         document.dispatchEvent(new CustomEvent('bridgeOutEvent', { detail }));
       } else {
+        const sourceName = this._getSourceChain()?.name || 'source chain';
         this._showActionToast({
           toastId,
           title: 'Done',
@@ -447,7 +453,7 @@ export class PolygonBscBridgeModule {
           timeoutMs: 2500,
           dismissible: true,
         });
-        this._showStatus('Bridge confirmed', this._escapeHtml(this._sourceChainConfirmationText()));
+        this._showStatus('Bridge confirmed', this._escapeHtml(`Transaction confirmed on ${sourceName}`));
       }
 
       await this._refreshBalances();
@@ -570,75 +576,59 @@ export class PolygonBscBridgeModule {
   }
 
   _getVaultAddress() {
-    const fromChainCfg = this._chainConfig?.vaultChain?.contractAddress || null;
-    const fromConfig = this._getSourceContractConfig()?.ADDRESS || null;
-    return fromConfig || fromChainCfg || null;
+    const configuredAddress = this.config?.BRIDGE?.CONTRACTS?.SOURCE?.ADDRESS ?? null;
+    const fetchedAddress = this._chainConfig?.vaultChain?.contractAddress ?? null;
+    return configuredAddress || fetchedAddress || null;
   }
 
   _getSourceChain() {
-    const sourceConfig = this._getSourceChainConfig();
-    const fromChainCfg = this._chainConfig?.vaultChain || this._chainConfig?.supportedChains?.[String(sourceConfig?.CHAIN_ID || '')];
-    if (fromChainCfg?.chainId) return { name: fromChainCfg.name, chainId: Number(fromChainCfg.chainId) };
-    if (sourceConfig?.CHAIN_ID) return { name: sourceConfig.NAME || 'Source Network', chainId: Number(sourceConfig.CHAIN_ID) };
+    const sourceConfig = this.config?.BRIDGE?.CHAINS?.SOURCE ?? null;
+    const sourceChainId = toPositiveChainId(sourceConfig?.CHAIN_ID);
+    const fallbackChainConfig = sourceChainId != null ? this._chainConfig?.supportedChains?.[String(sourceChainId)] : null;
+    const fromChainCfg = this._chainConfig?.vaultChain || fallbackChainConfig;
+    const fetchedChainId = toPositiveChainId(fromChainCfg?.chainId);
+    if (fetchedChainId != null) return { name: fromChainCfg.name, chainId: fetchedChainId };
+    if (sourceChainId != null) return { name: sourceConfig?.NAME || 'Source Network', chainId: sourceChainId };
     return null;
   }
 
   _getDestChain() {
-    const fromChainCfg = this._chainConfig?.secondaryChainConfig || null;
-    if (fromChainCfg?.chainId) return { name: fromChainCfg.name, chainId: Number(fromChainCfg.chainId) };
-    const cfg = this._getDestChainConfig();
-    if (cfg?.CHAIN_ID) return { name: cfg.NAME || 'Destination Network', chainId: Number(cfg.CHAIN_ID) };
+    const fromChainCfg = this._chainConfig?.secondaryChainConfig ?? null;
+    const fetchedChainId = toPositiveChainId(fromChainCfg?.chainId);
+    if (fetchedChainId != null) return { name: fromChainCfg.name, chainId: fetchedChainId };
+    const configuredChain = this.config?.BRIDGE?.CHAINS?.DESTINATION ?? null;
+    const configuredChainId = toPositiveChainId(configuredChain?.CHAIN_ID);
+    if (configuredChainId != null) return { name: configuredChain?.NAME || 'Destination Network', chainId: configuredChainId };
     return null;
   }
 
   _getBridgeOutChainId(snapshot = null) {
-    const status = snapshot || this.contractManager?.getStatusSnapshot?.() || null;
-    const onChainId = Number(status?.onChainId || 0);
-    if (Number.isFinite(onChainId) && onChainId > 0) return onChainId;
-    const configuredChainId = Number(this._getSourceChainConfig()?.CHAIN_ID || 0);
-    return Number.isFinite(configuredChainId) && configuredChainId > 0 ? configuredChainId : null;
+    const status = snapshot ?? this.contractManager?.getStatusSnapshot?.() ?? null;
+    const onChainId = toPositiveChainId(status?.onChainId);
+    if (onChainId != null) return onChainId;
+    return toPositiveChainId(this.config?.BRIDGE?.CHAINS?.SOURCE?.CHAIN_ID);
   }
 
   _getSourceChainExplorer() {
-    const cfg = this._getSourceChainConfig();
-    const explorer = cfg?.BLOCK_EXPLORER || '';
+    const cfg = this.config?.BRIDGE?.CHAINS?.SOURCE ?? null;
+    const explorer = cfg?.BLOCK_EXPLORER ?? '';
     if (explorer) return explorer;
-    const name = String(cfg?.NAME || this._getSourceChain()?.name || '').toLowerCase();
+    const name = String(cfg?.NAME ?? this._getSourceChain()?.name ?? '').toLowerCase();
     if (name.includes('amoy')) return 'https://amoy.polygonscan.com';
     if (name.includes('polygon')) return 'https://polygonscan.com';
     return '';
-  }
-
-  _getSourceChainConfig() {
-    return this.config?.BRIDGE?.CHAINS?.SOURCE || null;
-  }
-
-  _getDestChainConfig() {
-    return this.config?.BRIDGE?.CHAINS?.DESTINATION || null;
-  }
-
-  _getSourceContractConfig() {
-    return this.config?.BRIDGE?.CONTRACTS?.SOURCE || null;
-  }
-
-  _destinationRecipientLabel() {
-    return this._getDestChain()?.name || this._getDestChainConfig()?.NAME || 'Destination';
-  }
-
-  _sourceChainConfirmationText() {
-    const sourceName = this._getSourceChain()?.name || 'source chain';
-    return `Transaction confirmed on ${sourceName}`;
   }
 
   async _ensureRequiredNetworkForAction(toastId) {
     if (this.networkManager?.isOnRequiredNetwork?.()) {
       return { switched: false, toastId: null };
     }
+    const requiredNetworkName = this.config?.BRIDGE?.CHAINS?.SOURCE?.NAME || 'the required network';
 
     const activeToastId = this._showActionToast({
       toastId,
       title: 'Loading',
-      message: `Switch to ${this._requiredNetworkName()} in MetaMask to continue`,
+      message: `Switch to ${requiredNetworkName} in MetaMask to continue`,
       type: 'loading',
       timeoutMs: 0,
       dismissible: false,
@@ -690,15 +680,12 @@ export class PolygonBscBridgeModule {
     return `${base}-${Date.now()}-${this._actionToastSequence}`;
   }
 
-  _requiredNetworkName() {
-    return this._getSourceChainConfig()?.NAME || 'the required network';
-  }
-
   _actionErrorMessage(error, fallback) {
     if (error?._phase === 'networkSwitch') {
+      const requiredNetworkName = this.config?.BRIDGE?.CHAINS?.SOURCE?.NAME || 'the required network';
       if (error?.code === 4001) return 'Network switch request was rejected.';
       if (error?.code === -32002) return 'Network switch request already pending in MetaMask.';
-      return this._extractActionErrorMessage(error) || `Failed to switch to ${this._requiredNetworkName()}.`;
+      return this._extractActionErrorMessage(error) || `Failed to switch to ${requiredNetworkName}.`;
     }
     return this._extractActionErrorMessage(error) || fallback;
   }

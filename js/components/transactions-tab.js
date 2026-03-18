@@ -1,5 +1,9 @@
 import { CONFIG } from '../config.js';
 import { getReadOnlyProviderForNetwork } from '../utils/read-only-provider-for-network.js';
+import { toPositiveChainId } from '../utils/chain-id.js';
+
+const BRIDGE_CHAINS = CONFIG?.BRIDGE?.CHAINS ?? {};
+const BRIDGE_CONTRACTS = CONFIG?.BRIDGE?.CONTRACTS ?? {};
 
 function shortenHex(value, { head = 4, tail = 4 } = {}) {
   const s = String(value || '');
@@ -54,37 +58,9 @@ function formatTokenAmount(amount, decimals, symbol) {
   }
 }
 
-function getSourceChainConfig() {
-  return CONFIG?.BRIDGE?.CHAINS?.SOURCE || null;
-}
-
-function getDestinationChainConfig() {
-  return CONFIG?.BRIDGE?.CHAINS?.DESTINATION || null;
-}
-
-function getChainConfig() {
-  const normalized = {};
-  const source = getSourceChainConfig();
-  const destination = getDestinationChainConfig();
-  if (source?.CHAIN_ID) normalized.SOURCE = source;
-  if (destination?.CHAIN_ID) normalized.DESTINATION = destination;
-  return normalized;
-}
-
-function getContractsConfig() {
-  const contracts = CONFIG?.BRIDGE?.CONTRACTS || {};
-  const source = contracts.SOURCE || null;
-  const destination = contracts.DESTINATION || null;
-  return {
-    SOURCE: source?.ADDRESS || null,
-    DESTINATION: destination?.ADDRESS || null,
-  };
-}
-
 function getExplorer(chainKey) {
-  const chains = getChainConfig();
-  const base = chains?.[chainKey]?.BLOCK_EXPLORER || '';
-  return String(base || '').replace(/\/$/, '');
+  const base = BRIDGE_CHAINS?.[chainKey]?.BLOCK_EXPLORER ?? '';
+  return String(base).replace(/\/$/, '');
 }
 
 function linkTx(chainKey, txHash) {
@@ -135,11 +111,12 @@ async function fetchChainConfig() {
 }
 
 function resolveChainConfig(chainId, chainConfig) {
-  if (!chainConfig || !Number.isFinite(chainId)) return null;
-  const supported = chainConfig?.supportedChains?.[String(chainId)];
-  if (supported && supported.chainId) return supported;
-  if (Number(chainConfig?.vaultChain?.chainId) === chainId) return chainConfig.vaultChain;
-  if (Number(chainConfig?.secondaryChainConfig?.chainId) === chainId) return chainConfig.secondaryChainConfig;
+  const normalizedChainId = toPositiveChainId(chainId);
+  if (!chainConfig || normalizedChainId == null) return null;
+  const supported = chainConfig?.supportedChains?.[String(normalizedChainId)];
+  if (toPositiveChainId(supported?.chainId) != null) return supported;
+  if (toPositiveChainId(chainConfig?.vaultChain?.chainId) === normalizedChainId) return chainConfig.vaultChain;
+  if (toPositiveChainId(chainConfig?.secondaryChainConfig?.chainId) === normalizedChainId) return chainConfig.secondaryChainConfig;
   return null;
 }
 
@@ -157,8 +134,8 @@ async function fetchAbi() {
 function buildChainIdIndex(chains) {
   const map = new Map();
   for (const [key, cfg] of Object.entries(chains || {})) {
-    const id = Number(cfg?.CHAIN_ID);
-    if (Number.isFinite(id)) map.set(id, key);
+    const id = toPositiveChainId(cfg?.CHAIN_ID);
+    if (id != null) map.set(id, key);
   }
   return map;
 }
@@ -272,16 +249,15 @@ function renderStatus(status) {
 }
 
 async function loadTransactionsFromCoordinator({ limit = 200 } = {}) {
-  const chains = getChainConfig();
+  const chains = BRIDGE_CHAINS;
   const chainConfig = await fetchChainConfig();
   const chainIdIndex = buildChainIdIndex(chains);
   const coordinatorUrl = normalizeCoordinatorUrl(chainConfig?.coordinatorUrl) || getDefaultCoordinatorUrl();
   if (!coordinatorUrl) throw new Error('Coordinator URL is not configured');
 
-  const secondaryChainId =
-    Number(chains?.DESTINATION?.CHAIN_ID) ||
-    Number(chainConfig?.secondaryChainConfig?.chainId) ||
-    0;
+  const configuredDestinationChainId = toPositiveChainId(chains?.DESTINATION?.CHAIN_ID);
+  const remoteDestinationChainId = toPositiveChainId(chainConfig?.secondaryChainConfig?.chainId);
+  const secondaryChainId = configuredDestinationChainId ?? remoteDestinationChainId ?? 0;
 
   const allTransactions = [];
   let page = 1;
@@ -378,7 +354,7 @@ export class TransactionsTab {
     this.panel = document.querySelector('.tab-panel[data-panel="transactions"]');
     if (!this.panel) return;
 
-    const chains = getChainConfig();
+    const chains = BRIDGE_CHAINS;
     const sourceName = chains.SOURCE?.NAME || 'source chain';
     const destinationName = chains.DESTINATION?.NAME || 'destination chain';
 
@@ -583,7 +559,7 @@ export class TransactionsTab {
   _onBridgeOutEvent(e) {
     const d = e?.detail || null;
     if (!d) return;
-    const chains = getChainConfig();
+    const chains = BRIDGE_CHAINS;
     const chainIdIndex = buildChainIdIndex(chains);
     const srcChainKey = chainIdIndex.get(Number(d.sourceChainId)) || (chains?.SOURCE ? 'SOURCE' : null);
     const dstChainKey = chainIdIndex.get(Number(d.targetChainId)) || null;
@@ -620,14 +596,14 @@ export class TransactionsTab {
       const iface = new ethers.utils.Interface(abi);
       const bridgedOutTopic = iface.getEventTopic('BridgedOut');
 
-      const chains = getChainConfig();
-      const sourceCfg = chains?.SOURCE;
+      const chains = BRIDGE_CHAINS;
+      const sourceCfg = chains?.SOURCE ?? null;
       if (!sourceCfg?.RPC_URL) return;
 
-      const contracts = getContractsConfig();
       const chainConfig = await fetchChainConfig();
-      const resolved = resolveChainConfig(Number(sourceCfg?.CHAIN_ID), chainConfig);
-      const address = resolved?.contractAddress || contracts?.SOURCE;
+      const resolved = resolveChainConfig(toPositiveChainId(sourceCfg?.CHAIN_ID), chainConfig);
+      const configuredSourceAddress = BRIDGE_CONTRACTS?.SOURCE?.ADDRESS ?? null;
+      const address = resolved?.contractAddress || configuredSourceAddress;
       if (!address) return;
 
       const provider = await getReadOnlyProviderForNetwork(sourceCfg);
@@ -643,7 +619,7 @@ export class TransactionsTab {
           this._seenBridgeOutTx.add(key);
           if (this._seenBridgeOutTx.size > 2000) this._seenBridgeOutTx.clear();
 
-          const chainsLocal = getChainConfig();
+          const chainsLocal = BRIDGE_CHAINS;
           const chainIdIndex = buildChainIdIndex(chainsLocal);
           const dstChainId = Number(parsed.args?.chainId);
           const dstChainKey = chainIdIndex.get(dstChainId) || null;
