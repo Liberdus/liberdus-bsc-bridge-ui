@@ -553,7 +553,7 @@ export class TransactionsTab {
     this._rows = [];
     this._refreshTimer = null;
     this.page = 1;
-    this.pageSize = 25;
+    this.pageSize = 10;
     this.prevBtn = null;
     this.nextBtn = null;
     this.pageInfoEl = null;
@@ -621,8 +621,8 @@ export class TransactionsTab {
         <div class="tx-page-size">
           <label for="tx-page-size" class="sr-only">Page size</label>
           <select id="tx-page-size" data-tx-page-size class="field-input">
-            <option value="10">10</option>
-            <option value="25" selected>25</option>
+            <option value="10" selected>10</option>
+            <option value="25">25</option>
             <option value="50">50</option>
             <option value="100">100</option>
           </select>
@@ -675,7 +675,7 @@ export class TransactionsTab {
 
     document.addEventListener('tabActivated', (e) => {
       if (e?.detail?.tabName === 'transactions') {
-        if (e?.detail?.isFirstActivation) this.refresh();
+        if (e?.detail?.isFirstActivation && this._rows.length === 0) this.refresh();
         this._startIssuedTicker();
       }
     });
@@ -683,6 +683,10 @@ export class TransactionsTab {
     document.addEventListener('tabDeactivated', (e) => {
       if (e?.detail?.tabName === 'transactions') this._stopIssuedTicker();
     });
+
+    setTimeout(() => {
+      if (this._rows.length === 0) this.refresh();
+    }, 0);
   }
 
   async refresh() {
