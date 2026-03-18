@@ -569,6 +569,10 @@ export class TransactionsTab {
   }
 
   load() {
+    setTimeout(() => {
+      if (this._rows.length === 0) this.refresh();
+    }, 0);
+
     this.panel = document.querySelector('.tab-panel[data-panel="transactions"]');
     if (!this.panel) return;
 
@@ -684,9 +688,6 @@ export class TransactionsTab {
       if (e?.detail?.tabName === 'transactions') this._stopIssuedTicker();
     });
 
-    setTimeout(() => {
-      if (this._rows.length === 0) this.refresh();
-    }, 0);
   }
 
   async refresh() {
@@ -694,15 +695,24 @@ export class TransactionsTab {
     this._isLoading = true;
     this._setLoading(true);
     this._setStatus('Loading recent transactions...');
+    try {
+      console.debug?.('[Transactions] Prefetch: starting');
+    } catch {}
 
     try {
       const fetched = await loadTransactionsData({ limit: 250 });
       this._rows = mergeTransactions(fetched, this._rows, { limit: 500 });
       this.render();
       this._setStatus('Transactions updated.');
+      try {
+        console.debug?.(`[Transactions] Prefetch: completed with ${this._rows.length} rows`);
+      } catch {}
     } catch (error) {
       this.render();
       this._setStatus(error?.message || 'Failed to load transactions.');
+      try {
+        console.debug?.('[Transactions] Prefetch: failed', error);
+      } catch {}
     } finally {
       this._isLoading = false;
       this._setLoading(false);
