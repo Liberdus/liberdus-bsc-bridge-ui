@@ -787,9 +787,9 @@ export class TransactionsTab {
     if (!d) return;
     const chains = getChainConfig();
     const chainIdIndex = buildChainIdIndex(chains);
-    const srcChainKey = chainIdIndex.get(Number(d.sourceChainId)) || 'POLYGON';
+    const srcChainKey = chainIdIndex.get(Number(d.sourceChainId)) || (chains?.SOURCE ? 'SOURCE' : null);
     const dstChainKey = chainIdIndex.get(Number(d.targetChainId)) || null;
-    const srcName = chains?.[srcChainKey]?.NAME || 'Polygon';
+    const srcName = chains?.[srcChainKey]?.NAME || chains?.SOURCE?.NAME || 'source chain';
     const dstName = dstChainKey ? chains?.[dstChainKey]?.NAME || `Chain ${d.targetChainId}` : `Chain ${d.targetChainId}`;
     const row = {
       id: d.txHash,
@@ -823,16 +823,16 @@ export class TransactionsTab {
       const bridgedOutTopic = iface.getEventTopic('BridgedOut');
 
       const chains = getChainConfig();
-      const polygonCfg = chains?.POLYGON;
-      if (!polygonCfg?.RPC_URL) return;
+      const sourceCfg = chains?.SOURCE;
+      if (!sourceCfg?.RPC_URL) return;
 
       const contracts = getContractsConfig();
       const chainConfig = await fetchChainConfig();
-      const resolved = resolveChainConfig(Number(polygonCfg?.CHAIN_ID), chainConfig);
-      const address = resolved?.contractAddress || contracts?.POLYGON;
+      const resolved = resolveChainConfig(Number(sourceCfg?.CHAIN_ID), chainConfig);
+      const address = resolved?.contractAddress || contracts?.SOURCE;
       if (!address) return;
 
-      const provider = await getReadOnlyProviderForNetwork(polygonCfg);
+      const provider = await getReadOnlyProviderForNetwork(sourceCfg);
       const filter = { address, topics: [bridgedOutTopic] };
 
       const handler = (log) => {
@@ -849,8 +849,8 @@ export class TransactionsTab {
           const chainIdIndex = buildChainIdIndex(chainsLocal);
           const dstChainId = Number(parsed.args?.chainId);
           const dstChainKey = chainIdIndex.get(dstChainId) || null;
-          const srcChainKey = 'POLYGON';
-          const srcName = chainsLocal?.[srcChainKey]?.NAME || 'Polygon';
+          const srcChainKey = 'SOURCE';
+          const srcName = chainsLocal?.[srcChainKey]?.NAME || chainsLocal?.SOURCE?.NAME || 'source chain';
           const dstName = dstChainKey ? chainsLocal?.[dstChainKey]?.NAME || `Chain ${dstChainId}` : `Chain ${dstChainId}`;
 
           const row = {
