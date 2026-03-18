@@ -1,7 +1,7 @@
 const PROFILES = {
   dev: {
     SOURCE_NETWORK: {
-      CHAIN_ID: null,
+      CHAIN_ID: 80002,
       NAME: 'Polygon Amoy',
       RPC_URL: 'https://polygon-amoy-bor-rpc.publicnode.com',
       FALLBACK_RPCS: [
