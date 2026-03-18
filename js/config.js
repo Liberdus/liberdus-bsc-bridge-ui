@@ -1,7 +1,7 @@
 const PROFILES = {
   dev: {
     SOURCE_NETWORK: {
-      CHAIN_ID: 80002,
+      CHAIN_ID: null,
       NAME: 'Polygon Amoy',
       RPC_URL: 'https://polygon-amoy-bor-rpc.publicnode.com',
       FALLBACK_RPCS: [
@@ -136,8 +136,14 @@ function assertProfile(profileName, profile) {
 const profileName = CONFIG.RUNTIME.PROFILE;
 const profile = PROFILES[profileName];
 
-assert(profile, `Unknown runtime profile: ${profileName}`);
-assertProfile(profileName, profile);
+// create alert if error is thrown during assert
+try {
+  assert(profile, `Unknown runtime profile: ${profileName}`);
+  assertProfile(profileName, profile);
+} catch (error) {
+  alert(`Error: ${error.message}. Please check your profile configuration.`);
+  throw error;
+}
 
 CONFIG.BRIDGE.COORDINATOR_URL = profile.BRIDGE.COORDINATOR_URL;
 CONFIG.BRIDGE.CHAINS = {
