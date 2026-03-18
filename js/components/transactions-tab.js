@@ -566,6 +566,9 @@ export class TransactionsTab {
     this._bridgeOutHandler = null;
     this._seenBridgeOutTx = new Set();
     this._bridgeOutWatchRetryTimer = null;
+    this.onlyMine = false;
+    this.onlyMineCheckbox = null;
+    this.onlyMineHintEl = null;
   }
 
   load() {
@@ -593,6 +596,13 @@ export class TransactionsTab {
         <div class="tx-search">
           <div class="tx-search-prefix">Transaction ID</div>
           <input class="field-input tx-search-input" type="text" placeholder="Enter transaction ID..." data-tx-search />
+        </div>
+        <div class="tx-filters">
+          <label class="field-checkbox">
+            <input type="checkbox" data-tx-onlymine />
+            <span>Only my transactions</span>
+          </label>
+          <span class="tx-muted" data-tx-onlymine-hint></span>
         </div>
       </div>
 
@@ -644,6 +654,8 @@ export class TransactionsTab {
     this.nextBtn = this.panel.querySelector('[data-tx-next]');
     this.pageInfoEl = this.panel.querySelector('[data-tx-page-info]');
     this.pageSizeEl = this.panel.querySelector('[data-tx-page-size]');
+    this.onlyMineCheckbox = this.panel.querySelector('[data-tx-onlymine]');
+    this.onlyMineHintEl = this.panel.querySelector('[data-tx-onlymine-hint]');
 
     this.refreshBtn?.addEventListener('click', () => this.refresh());
     this.panel.addEventListener('click', (event) => this._handleClick(event));
@@ -665,6 +677,12 @@ export class TransactionsTab {
       this.page = 1;
       this.render();
     });
+    this.onlyMineCheckbox?.addEventListener('change', () => {
+      this.onlyMine = !!this.onlyMineCheckbox.checked;
+      this.page = 1;
+      this._updateOnlyMineUI();
+      this.render();
+    });
     if (!this._bridgeListenerBound) {
       document.addEventListener('bridgeOutEvent', (e) => this._onBridgeOutEvent(e));
       this._bridgeListenerBound = true;
@@ -683,6 +701,20 @@ export class TransactionsTab {
     document.addEventListener('tabDeactivated', (e) => {
       if (e?.detail?.tabName === 'transactions') this._stopIssuedTicker();
     });
+
+    document.addEventListener('walletConnected', () => {
+      this._updateOnlyMineUI();
+      if (this.onlyMine) this.render();
+    });
+    document.addEventListener('walletDisconnected', () => {
+      this._updateOnlyMineUI();
+      if (this.onlyMine) this.render();
+    });
+    document.addEventListener('walletAccountChanged', () => {
+      this._updateOnlyMineUI();
+      if (this.onlyMine) this.render();
+    });
+    this._updateOnlyMineUI();
   }
 
   async refresh() {
@@ -709,13 +741,24 @@ export class TransactionsTab {
     if (!this.panel || !this.tableBody) return;
     const q = String(this.searchInput?.value || '').trim().toLowerCase();
 
-    const filtered = q
-      ? this._rows.filter((r) => {
-          const a = String(r.txHash || '').toLowerCase();
-          const b = String(r.receiptTxHash || '').toLowerCase();
-          return a.includes(q) || b.includes(q);
-        })
-      : this._rows;
+    const connected = !!window.walletManager?.isConnected?.();
+    const addr = connected ? String(window.walletManager?.getAddress?.() || '').toLowerCase() : '';
+    let filtered = this._rows;
+    if (this.onlyMine) {
+      if (connected && addr) {
+        filtered = filtered.filter((r) => String(r.from || '').toLowerCase() === addr);
+        this._setStatus('Filtering: Only my transactions');
+      } else {
+        this._setStatus('Only my transactions is inactive — connect wallet');
+      }
+    }
+    if (q) {
+      filtered = filtered.filter((r) => {
+        const a = String(r.txHash || '').toLowerCase();
+        const b = String(r.receiptTxHash || '').toLowerCase();
+        return a.includes(q) || b.includes(q);
+      });
+    }
 
     if (this.totalEl) this.totalEl.textContent = String(filtered.length);
 
@@ -910,6 +953,23 @@ export class TransactionsTab {
 
   _setLoading(isLoading) {
     if (this.refreshBtn) this.refreshBtn.disabled = !!isLoading;
+  }
+
+  _updateOnlyMineUI() {
+    const connected = !!window.walletManager?.isConnected?.();
+    const addr = connected ? String(window.walletManager?.getAddress?.() || '') : '';
+    const short =
+      addr && addr.startsWith('0x') && addr.length > 10 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr || '';
+    if (this.onlyMineCheckbox) {
+      this.onlyMineCheckbox.disabled = false;
+    }
+    if (this.onlyMineHintEl) {
+      if (connected && addr) {
+        this.onlyMineHintEl.textContent = this.onlyMine ? `Filtering for ${short}` : `Connected: ${short}`;
+      } else {
+        this.onlyMineHintEl.textContent = 'Connect wallet to enable';
+      }
+    }
   }
 
   async _handleClick(event) {
