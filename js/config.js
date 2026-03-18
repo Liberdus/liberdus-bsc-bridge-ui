@@ -101,9 +101,10 @@ export const CONFIG = {
 /**
  * Normalize and validate the selected runtime profile.
  *
- * Profiles must use the SOURCE_* / DESTINATION_* shape. CONFIG.NETWORK and
- * CONFIG.CONTRACT remain derived source-chain aliases for existing source-only
- * wallet/provider/contract consumers.
+ * Profiles must use the SOURCE_* / DESTINATION_* shape.
+ * CONFIG.BRIDGE.* is canonical at runtime.
+ * CONFIG.NETWORK and CONFIG.CONTRACT are transitional source-side compatibility
+ * aliases for existing wallet/provider/contract consumers.
  */
 // Validation helpers
 function profileError(profileName, message) {
@@ -213,13 +214,12 @@ const {
 /**
  * Project the active profile into the runtime CONFIG object.
  *
- * CONFIG.NETWORK and CONFIG.CONTRACT remain derived source-chain aliases used
- * by the existing wallet, provider, and contract code. SOURCE / DESTINATION
- * are the canonical bridge aliases.
+ * CONFIG.BRIDGE.* is the canonical runtime shape.
+ * CONFIG.NETWORK and CONFIG.CONTRACT are thin source-side compatibility aliases
+ * that point at the canonical bridge config objects.
+ * TODO: Migrate remaining CONFIG.NETWORK / CONFIG.CONTRACT consumers to CONFIG.BRIDGE.*.
  */
 CONFIG.RUNTIME.PROFILE = RESOLVED_PROFILE;
-Object.assign(CONFIG.NETWORK, ACTIVE_SOURCE_NETWORK);
-Object.assign(CONFIG.CONTRACT, ACTIVE_SOURCE_CONTRACT);
 CONFIG.BRIDGE.COORDINATOR_URL = ACTIVE_BRIDGE.COORDINATOR_URL || 'https://tss1-test.liberdus.com';
 Object.assign(CONFIG.BRIDGE.CHAINS, {
   SOURCE: {
@@ -237,3 +237,5 @@ Object.assign(CONFIG.BRIDGE.CONTRACTS, {
     ...ACTIVE_DESTINATION_CONTRACT,
   },
 });
+CONFIG.NETWORK = CONFIG.BRIDGE.CHAINS.SOURCE;
+CONFIG.CONTRACT = CONFIG.BRIDGE.CONTRACTS.SOURCE;
