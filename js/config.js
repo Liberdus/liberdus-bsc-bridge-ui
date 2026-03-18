@@ -36,9 +36,9 @@ const PROFILES = {
     SOURCE_NETWORK: {
       CHAIN_ID: 80002,
       NAME: 'Polygon',
-      RPC_URL: 'https://rpc.ankr.com/polygon_amoy',
+      RPC_URL: 'https://polygon-amoy-bor-rpc.publicnode.com',
       FALLBACK_RPCS: [
-        'https://polygon-amoy-bor-rpc.publicnode.com',
+        'https://rpc.ankr.com/bsc_testnet',
       ],
       BLOCK_EXPLORER: 'https://amoy.polygonscan.com',
       NATIVE_CURRENCY: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
@@ -68,7 +68,7 @@ const PROFILES = {
 
 export const CONFIG = {
   APP: {
-    NAME: 'Liberdus Bridge UI',
+    NAME: 'Liberdus BSC Bridge UI',
     VERSION: '0.1.1',
   },
 
