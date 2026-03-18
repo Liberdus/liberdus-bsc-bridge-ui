@@ -1,9 +1,6 @@
 import { CONFIG } from '../config.js';
 import { getReadOnlyProviderForNetwork } from '../utils/read-only-provider-for-network.js';
 
-const BRIDGE_CHAINS = CONFIG?.BRIDGE?.CHAINS ?? {};
-const BRIDGE_CONTRACTS = CONFIG?.BRIDGE?.CONTRACTS ?? {};
-
 function shortenHex(value, { head = 4, tail = 4 } = {}) {
   const s = String(value || '');
   if (!s.startsWith('0x') || s.length <= head + tail + 2) return s || '--';
@@ -58,7 +55,7 @@ function formatTokenAmount(amount, decimals, symbol) {
 }
 
 function getExplorer(chainKey) {
-  const base = BRIDGE_CHAINS?.[chainKey]?.BLOCK_EXPLORER ?? '';
+  const base = CONFIG?.BRIDGE?.CHAINS?.[chainKey]?.BLOCK_EXPLORER ?? '';
   return String(base).replace(/\/$/, '');
 }
 
@@ -198,7 +195,7 @@ function renderStatus(status) {
 }
 
 async function loadTransactionsFromCoordinator({ limit = 200 } = {}) {
-  const chains = BRIDGE_CHAINS;
+  const chains = CONFIG?.BRIDGE?.CHAINS ?? {};
   const chainIdIndex = buildChainIdIndex(chains);
   const coordinatorUrl = normalizeCoordinatorUrl(CONFIG?.BRIDGE?.COORDINATOR_URL);
   if (!coordinatorUrl) throw new Error('Coordinator URL is not configured');
@@ -300,7 +297,7 @@ export class TransactionsTab {
     this.panel = document.querySelector('.tab-panel[data-panel="transactions"]');
     if (!this.panel) return;
 
-    const chains = BRIDGE_CHAINS;
+    const chains = CONFIG?.BRIDGE?.CHAINS ?? {};
     const sourceName = chains.SOURCE?.NAME || 'source chain';
     const destinationName = chains.DESTINATION?.NAME || 'destination chain';
 
@@ -505,7 +502,7 @@ export class TransactionsTab {
   _onBridgeOutEvent(e) {
     const d = e?.detail || null;
     if (!d) return;
-    const chains = BRIDGE_CHAINS;
+    const chains = CONFIG?.BRIDGE?.CHAINS ?? {};
     const chainIdIndex = buildChainIdIndex(chains);
     const srcChainKey = chainIdIndex.get(Number(d.sourceChainId)) || (chains?.SOURCE ? 'SOURCE' : null);
     const dstChainKey = chainIdIndex.get(Number(d.targetChainId)) || null;
@@ -542,11 +539,11 @@ export class TransactionsTab {
       const iface = new ethers.utils.Interface(abi);
       const bridgedOutTopic = iface.getEventTopic('BridgedOut');
 
-      const chains = BRIDGE_CHAINS;
+      const chains = CONFIG?.BRIDGE?.CHAINS ?? {};
       const sourceCfg = chains?.SOURCE ?? null;
       if (!sourceCfg?.RPC_URL) return;
 
-      const configuredSourceAddress = BRIDGE_CONTRACTS?.SOURCE?.ADDRESS ?? null;
+      const configuredSourceAddress = CONFIG?.BRIDGE?.CONTRACTS?.SOURCE?.ADDRESS ?? null;
       const address = configuredSourceAddress;
       if (!address) return;
 
@@ -563,7 +560,7 @@ export class TransactionsTab {
           this._seenBridgeOutTx.add(key);
           if (this._seenBridgeOutTx.size > 2000) this._seenBridgeOutTx.clear();
 
-          const chainsLocal = BRIDGE_CHAINS;
+          const chainsLocal = CONFIG?.BRIDGE?.CHAINS ?? {};
           const chainIdIndex = buildChainIdIndex(chainsLocal);
           const dstChainId = Number(parsed.args?.chainId);
           const dstChainKey = chainIdIndex.get(dstChainId) || null;
