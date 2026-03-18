@@ -42,8 +42,7 @@ export class ContractManager {
   }
 
   async _fetchAbi() {
-    const sourceContract = (window.CONFIG || CONFIG)?.BRIDGE?.CONTRACTS?.SOURCE || null;
-    const abiPath = sourceContract?.ABI_PATH || './abi/vault.json';
+    const abiPath = CONFIG.BRIDGE.CONTRACTS.SOURCE.ABI_PATH;
     const response = await fetch(abiPath, { cache: 'no-cache' });
     if (!response.ok) {
       throw new Error(`Failed to load ABI (${abiPath}): ${response.status}`);
@@ -74,7 +73,7 @@ export class ContractManager {
   }
 
   _makeContract(signerOrProvider) {
-    const address = (window.CONFIG || CONFIG)?.BRIDGE?.CONTRACTS?.SOURCE?.ADDRESS;
+    const address = CONFIG.BRIDGE.CONTRACTS.SOURCE.ADDRESS;
     if (!address || !this.abi || !signerOrProvider || !window.ethers) return null;
     return new window.ethers.Contract(address, this.abi, signerOrProvider);
   }
@@ -211,12 +210,9 @@ export class ContractManager {
   }
 
   _emptySnapshot() {
-    const config = window.CONFIG || CONFIG;
-    const sourceChain = config?.BRIDGE?.CHAINS?.SOURCE || null;
-    const sourceContract = config?.BRIDGE?.CONTRACTS?.SOURCE || null;
     return {
-      configuredAddress: sourceContract?.ADDRESS || null,
-      configuredChainId: Number(sourceChain?.CHAIN_ID || 0) || null,
+      configuredAddress: CONFIG.BRIDGE.CONTRACTS.SOURCE.ADDRESS,
+      configuredChainId: CONFIG.BRIDGE.CHAINS.SOURCE.CHAIN_ID,
       onChainId: null,
       onChainChainId: null,
       owner: null,
@@ -252,17 +248,14 @@ export class ContractManager {
   }
 
   _emitUpdatedEvent({ reason = 'updated' } = {}) {
-    const config = window.CONFIG || CONFIG;
-    const sourceChain = config?.BRIDGE?.CHAINS?.SOURCE || null;
-    const sourceContract = config?.BRIDGE?.CONTRACTS?.SOURCE || null;
     document.dispatchEvent(
       new CustomEvent('contractManagerUpdated', {
         detail: {
           reason,
           txEnabled: !!this.networkManager?.isTxEnabled?.(),
           ready: this.isReady(),
-          address: sourceContract?.ADDRESS || null,
-          chainId: sourceChain?.CHAIN_ID || null,
+          address: CONFIG.BRIDGE.CONTRACTS.SOURCE.ADDRESS,
+          chainId: CONFIG.BRIDGE.CHAINS.SOURCE.CHAIN_ID,
           status: this.getStatusSnapshot(),
         },
       })

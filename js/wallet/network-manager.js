@@ -53,27 +53,25 @@ export class NetworkManager {
   }
 
   getAvailableNetworks() {
-    const config = window.CONFIG || CONFIG;
-    const source = config?.BRIDGE?.CHAINS?.SOURCE || null;
-    const destination = config?.BRIDGE?.CHAINS?.DESTINATION || null;
+    const { SOURCE, DESTINATION } = CONFIG.BRIDGE.CHAINS;
     return [
       {
         key: 'source',
-        chainId: source?.CHAIN_ID ?? null,
-        name: source?.NAME || 'Source Network',
-        rpcUrl: source?.RPC_URL || '',
-        fallbackRpcs: source?.FALLBACK_RPCS || [],
-        blockExplorer: source?.BLOCK_EXPLORER || '',
-        nativeCurrency: source?.NATIVE_CURRENCY || null,
+        chainId: SOURCE.CHAIN_ID,
+        name: SOURCE.NAME,
+        rpcUrl: SOURCE.RPC_URL,
+        fallbackRpcs: SOURCE.FALLBACK_RPCS,
+        blockExplorer: SOURCE.BLOCK_EXPLORER,
+        nativeCurrency: SOURCE.NATIVE_CURRENCY,
       },
       {
         key: 'destination',
-        chainId: destination?.CHAIN_ID ?? null,
-        name: destination?.NAME || 'Destination Network',
-        rpcUrl: destination?.RPC_URL || '',
-        fallbackRpcs: destination?.FALLBACK_RPCS || [],
-        blockExplorer: destination?.BLOCK_EXPLORER || '',
-        nativeCurrency: destination?.NATIVE_CURRENCY || null,
+        chainId: DESTINATION.CHAIN_ID,
+        name: DESTINATION.NAME,
+        rpcUrl: DESTINATION.RPC_URL,
+        fallbackRpcs: DESTINATION.FALLBACK_RPCS,
+        blockExplorer: DESTINATION.BLOCK_EXPLORER,
+        nativeCurrency: DESTINATION.NATIVE_CURRENCY,
       },
     ];
   }
@@ -119,7 +117,7 @@ export class NetworkManager {
   }
 
   networkSymbol() {
-    return (window.CONFIG || CONFIG)?.BRIDGE?.CHAINS?.SOURCE?.NATIVE_CURRENCY?.symbol || 'MATIC';
+    return CONFIG.BRIDGE.CHAINS.SOURCE.NATIVE_CURRENCY.symbol;
   }
 
   updateUIState() {
@@ -169,24 +167,23 @@ export class NetworkManager {
   }
 
   _requiredChainId() {
-    const sourceNetwork = (window.CONFIG || CONFIG)?.BRIDGE?.CHAINS?.SOURCE || null;
-    return Number(sourceNetwork?.CHAIN_ID || 0) || null;
+    return CONFIG.BRIDGE.CHAINS.SOURCE.CHAIN_ID;
   }
 
   _requiredNetworkDescriptor() {
-    const network = (window.CONFIG || CONFIG)?.BRIDGE?.CHAINS?.SOURCE || null;
+    const network = CONFIG.BRIDGE.CHAINS.SOURCE;
     return {
-      chainId: network?.CHAIN_ID,
-      name: network?.NAME || 'Required Network',
-      rpcUrl: network?.RPC_URL || '',
-      fallbackRpcs: network?.FALLBACK_RPCS || [],
-      blockExplorer: network?.BLOCK_EXPLORER || '',
-      nativeCurrency: network?.NATIVE_CURRENCY || { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
+      chainId: network.CHAIN_ID,
+      name: network.NAME,
+      rpcUrl: network.RPC_URL,
+      fallbackRpcs: network.FALLBACK_RPCS,
+      blockExplorer: network.BLOCK_EXPLORER,
+      nativeCurrency: network.NATIVE_CURRENCY,
     };
   }
 
   _requiredNetworkName() {
-    return this._requiredNetworkDescriptor().name || 'the required network';
+    return this._requiredNetworkDescriptor().name;
   }
 
   _createRequiredNetworkWaiter({ timeoutMs = 3000 } = {}) {

@@ -75,17 +75,14 @@ export const CONFIG = {
     NAME: 'Liberdus BSC Bridge UI',
     VERSION: '0.1.1',
   },
-
   RUNTIME: {
     PROFILE: 'dev', // 'dev' or 'prod'
   },
-
   TOKEN: {
     SYMBOL: 'LIB',
     DECIMALS: 18,
     ADDRESS: '0xD5409531c857AfD1b2fF6Cd527038e9981ef4863',
   },
-
   BRIDGE: {
     LOOKBACK_BLOCKS: 60000,
     COORDINATOR_URL: '',
@@ -94,121 +91,60 @@ export const CONFIG = {
   },
 };
 
-/**
- * Normalize and validate the selected runtime profile.
- *
- * Profiles must use the SOURCE_* / DESTINATION_* shape.
- * CONFIG.BRIDGE.* is the canonical runtime shape consumed throughout the app.
- */
-function profileError(profileName, message) {
-  return new Error(`Invalid profile ${profileName}: ${message}`);
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+function assertString(value, path, profileName) {
+  assert(typeof value === 'string' && value.trim() !== '', `Invalid profile ${profileName}: missing ${path}`);
+}
+
+function assertInteger(value, path, profileName) {
+  assert(Number.isInteger(value) && value >= 0, `Invalid profile ${profileName}: invalid ${path}`);
+}
+
+function assertNetwork(profileName, kind, network) {
+  assert(network && typeof network === 'object' && !Array.isArray(network), `Invalid profile ${profileName}: missing ${kind}`);
+  assertInteger(network.CHAIN_ID, `${kind}.CHAIN_ID`, profileName);
+  assertString(network.NAME, `${kind}.NAME`, profileName);
+  assertString(network.RPC_URL, `${kind}.RPC_URL`, profileName);
+  assert(Array.isArray(network.FALLBACK_RPCS), `Invalid profile ${profileName}: invalid ${kind}.FALLBACK_RPCS`);
+  network.FALLBACK_RPCS.forEach((rpc, index) => assertString(rpc, `${kind}.FALLBACK_RPCS[${index}]`, profileName));
+  assertString(network.BLOCK_EXPLORER, `${kind}.BLOCK_EXPLORER`, profileName);
+  assert(network.NATIVE_CURRENCY && typeof network.NATIVE_CURRENCY === 'object', `Invalid profile ${profileName}: missing ${kind}.NATIVE_CURRENCY`);
+  assertString(network.NATIVE_CURRENCY.name, `${kind}.NATIVE_CURRENCY.name`, profileName);
+  assertString(network.NATIVE_CURRENCY.symbol, `${kind}.NATIVE_CURRENCY.symbol`, profileName);
+  assertInteger(network.NATIVE_CURRENCY.decimals, `${kind}.NATIVE_CURRENCY.decimals`, profileName);
+}
+
+function assertContract(profileName, kind, contract) {
+  assert(contract && typeof contract === 'object' && !Array.isArray(contract), `Invalid profile ${profileName}: missing ${kind}`);
+  assertString(contract.ADDRESS, `${kind}.ADDRESS`, profileName);
+  if (kind === 'SOURCE_CONTRACT') assertString(contract.ABI_PATH, `${kind}.ABI_PATH`, profileName);
 }
 
 function assertProfile(profileName, profile) {
-  const fail = (message) => {
-    throw profileError(profileName, message);
-  };
-  const requireObject = (value, path) => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) fail(`missing ${path}`);
-    return value;
-  };
-  const requireString = (value, path) => {
-    if (!String(value ?? '').trim()) fail(`missing ${path}`);
-  };
-  const requireInteger = (value, path, { min = 1 } = {}) => {
-    const normalized = Number(value);
-    if (!Number.isInteger(normalized) || normalized < min) fail(`invalid ${path}`);
-  };
-  const assertFallbackRpcs = (value, path) => {
-    if (value != null && !Array.isArray(value)) fail(`invalid ${path}`);
-    (value || []).forEach((entry, index) => requireString(entry, `${path}[${index}]`));
-  };
-  const assertCurrency = (value, path) => {
-    const currency = requireObject(value, path);
-    requireString(currency.name, `${path}.name`);
-    requireString(currency.symbol, `${path}.symbol`);
-    requireInteger(currency.decimals, `${path}.decimals`, { min: 0 });
-  };
-  const assertNetwork = (value, path) => {
-    const network = requireObject(value, path);
-    requireInteger(network.CHAIN_ID, `${path}.CHAIN_ID`);
-    ['NAME', 'RPC_URL', 'BLOCK_EXPLORER'].forEach((field) => {
-      requireString(network[field], `${path}.${field}`);
-    });
-    assertFallbackRpcs(network.FALLBACK_RPCS, `${path}.FALLBACK_RPCS`);
-    assertCurrency(network.NATIVE_CURRENCY, `${path}.NATIVE_CURRENCY`);
-  };
-  const assertContract = (value, path, { requireAbiPath = false } = {}) => {
-    const contract = requireObject(value, path);
-    requireString(contract.ADDRESS, `${path}.ADDRESS`);
-    if (requireAbiPath) requireString(contract.ABI_PATH, `${path}.ABI_PATH`);
-  };
-
-  requireObject(profile, profileName);
-  assertNetwork(profile.SOURCE_NETWORK, 'SOURCE_NETWORK');
-  assertContract(profile.SOURCE_CONTRACT, 'SOURCE_CONTRACT', { requireAbiPath: true });
-  assertNetwork(profile.DESTINATION_NETWORK, 'DESTINATION_NETWORK');
-  assertContract(profile.DESTINATION_CONTRACT, 'DESTINATION_CONTRACT');
-
-  if (profile.BRIDGE != null) {
-    const bridge = requireObject(profile.BRIDGE, 'BRIDGE');
-    if (bridge.COORDINATOR_URL != null && typeof bridge.COORDINATOR_URL !== 'string') {
-      fail('invalid BRIDGE.COORDINATOR_URL');
-    }
-  }
+  assert(profile && typeof profile === 'object' && !Array.isArray(profile), `Invalid profile ${profileName}: missing profile`);
+  assertNetwork(profileName, 'SOURCE_NETWORK', profile.SOURCE_NETWORK);
+  assertContract(profileName, 'SOURCE_CONTRACT', profile.SOURCE_CONTRACT);
+  assertNetwork(profileName, 'DESTINATION_NETWORK', profile.DESTINATION_NETWORK);
+  assertContract(profileName, 'DESTINATION_CONTRACT', profile.DESTINATION_CONTRACT);
+  assert(profile.BRIDGE && typeof profile.BRIDGE === 'object' && !Array.isArray(profile.BRIDGE), `Invalid profile ${profileName}: missing BRIDGE`);
+  assertString(profile.BRIDGE.COORDINATOR_URL, 'BRIDGE.COORDINATOR_URL', profileName);
 }
 
-// Apply active profile
-const RESOLVED_PROFILE = PROFILES[CONFIG.RUNTIME.PROFILE] ? CONFIG.RUNTIME.PROFILE : 'dev';
-const ACTIVE_PROFILE = PROFILES[RESOLVED_PROFILE];
+const profileName = CONFIG.RUNTIME.PROFILE;
+const profile = PROFILES[profileName];
 
-assertProfile(RESOLVED_PROFILE, ACTIVE_PROFILE);
+assert(profile, `Unknown runtime profile: ${profileName}`);
+assertProfile(profileName, profile);
 
-const sourceNetwork = ACTIVE_PROFILE.SOURCE_NETWORK;
-const sourceContract = ACTIVE_PROFILE.SOURCE_CONTRACT;
-const destinationNetwork = ACTIVE_PROFILE.DESTINATION_NETWORK;
-const destinationContract = ACTIVE_PROFILE.DESTINATION_CONTRACT;
-const bridge = ACTIVE_PROFILE.BRIDGE || {};
-
-/**
- * Project the active profile into the runtime CONFIG object.
- *
- * CONFIG.BRIDGE.* is the canonical runtime shape.
- */
-CONFIG.RUNTIME.PROFILE = RESOLVED_PROFILE;
-CONFIG.BRIDGE.COORDINATOR_URL = String(bridge.COORDINATOR_URL || '').trim() || 'https://tss1-test.liberdus.com';
-Object.assign(CONFIG.BRIDGE.CHAINS, {
-  SOURCE: {
-    CHAIN_ID: Number(sourceNetwork.CHAIN_ID),
-    NAME: String(sourceNetwork.NAME).trim(),
-    RPC_URL: String(sourceNetwork.RPC_URL).trim(),
-    FALLBACK_RPCS: (sourceNetwork.FALLBACK_RPCS || []).map((entry) => String(entry).trim()),
-    BLOCK_EXPLORER: String(sourceNetwork.BLOCK_EXPLORER).trim(),
-    NATIVE_CURRENCY: {
-      name: String(sourceNetwork.NATIVE_CURRENCY.name).trim(),
-      symbol: String(sourceNetwork.NATIVE_CURRENCY.symbol).trim(),
-      decimals: Number(sourceNetwork.NATIVE_CURRENCY.decimals),
-    },
-  },
-  DESTINATION: {
-    CHAIN_ID: Number(destinationNetwork.CHAIN_ID),
-    NAME: String(destinationNetwork.NAME).trim(),
-    RPC_URL: String(destinationNetwork.RPC_URL).trim(),
-    FALLBACK_RPCS: (destinationNetwork.FALLBACK_RPCS || []).map((entry) => String(entry).trim()),
-    BLOCK_EXPLORER: String(destinationNetwork.BLOCK_EXPLORER).trim(),
-    NATIVE_CURRENCY: {
-      name: String(destinationNetwork.NATIVE_CURRENCY.name).trim(),
-      symbol: String(destinationNetwork.NATIVE_CURRENCY.symbol).trim(),
-      decimals: Number(destinationNetwork.NATIVE_CURRENCY.decimals),
-    },
-  },
-});
-Object.assign(CONFIG.BRIDGE.CONTRACTS, {
-  SOURCE: {
-    ADDRESS: String(sourceContract.ADDRESS).trim(),
-    ABI_PATH: String(sourceContract.ABI_PATH).trim(),
-  },
-  DESTINATION: {
-    ADDRESS: String(destinationContract.ADDRESS).trim(),
-  },
-});
+CONFIG.BRIDGE.COORDINATOR_URL = profile.BRIDGE.COORDINATOR_URL;
+CONFIG.BRIDGE.CHAINS = {
+  SOURCE: profile.SOURCE_NETWORK,
+  DESTINATION: profile.DESTINATION_NETWORK,
+};
+CONFIG.BRIDGE.CONTRACTS = {
+  SOURCE: profile.SOURCE_CONTRACT,
+  DESTINATION: profile.DESTINATION_CONTRACT,
+};

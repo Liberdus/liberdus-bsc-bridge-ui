@@ -55,7 +55,8 @@ function formatTokenAmount(amount, decimals, symbol) {
 }
 
 function getExplorer(chainKey) {
-  const base = CONFIG?.BRIDGE?.CHAINS?.[chainKey]?.BLOCK_EXPLORER ?? '';
+  if (!chainKey) return '';
+  const base = CONFIG.BRIDGE.CHAINS[chainKey].BLOCK_EXPLORER;
   return String(base).replace(/\/$/, '');
 }
 
@@ -67,8 +68,7 @@ function linkTx(chainKey, txHash) {
 }
 
 async function fetchAbi() {
-  const abiPath = CONFIG?.BRIDGE?.CONTRACTS?.SOURCE?.ABI_PATH;
-  if (!abiPath) throw new Error('Source contract ABI path is not configured');
+  const abiPath = CONFIG.BRIDGE.CONTRACTS.SOURCE.ABI_PATH;
   const response = await fetch(abiPath, { cache: 'no-cache' });
   if (!response.ok) throw new Error(`Failed to load ABI (${abiPath}): ${response.status}`);
   const json = await response.json();
@@ -194,13 +194,55 @@ function renderStatus(status) {
   return `<span class="tx-status tx-status--unknown">Unknown</span>`;
 }
 
-async function loadTransactionsFromCoordinator({ limit = 200 } = {}) {
-  const chains = CONFIG?.BRIDGE?.CHAINS ?? {};
-  const chainIdIndex = buildChainIdIndex(chains);
-  const coordinatorUrl = normalizeCoordinatorUrl(CONFIG?.BRIDGE?.COORDINATOR_URL);
-  if (!coordinatorUrl) throw new Error('Coordinator URL is not configured');
+function mapCoordinatorTransaction(tx, chains, chainIdIndex) {
+  const type = Number(tx?.type);
+  const chainId = Number(tx?.chainId);
+  const destinationChainId = chains.DESTINATION.CHAIN_ID;
+  let srcChainId;
+  let dstChainId;
 
-  const secondaryChainId = chains?.DESTINATION?.CHAIN_ID || 0;
+  switch (type) {
+    case 0:
+      srcChainId = 0;
+      dstChainId = chainId;
+      break;
+    case 1:
+      srcChainId = chainId;
+      dstChainId = 0;
+      break;
+    case 2:
+      srcChainId = chainId;
+      dstChainId = destinationChainId;
+      break;
+    default:
+      throw new Error(`Unknown coordinator transaction type: ${type}`);
+  }
+
+  const srcChainKey = chainIdIndex.get(srcChainId) || null;
+  const dstChainKey = chainIdIndex.get(dstChainId) || null;
+  const rawTimestamp = Number(tx?.txTimestamp || 0);
+  const timestamp = rawTimestamp > 1e12 ? Math.floor(rawTimestamp / 1000) : rawTimestamp;
+
+  return {
+    id: tx?.txId,
+    srcChainKey,
+    dstChainKey,
+    srcName: srcChainId === 0 ? 'Liberdus Network' : chains[srcChainKey]?.NAME || `Chain ${srcChainId}`,
+    dstName: dstChainId === 0 ? 'Liberdus Network' : chains[dstChainKey]?.NAME || `Chain ${dstChainId}`,
+    from: tx?.sender,
+    amount: tx?.value,
+    timestamp,
+    txHash: tx?.txId,
+    receiptTxHash: tx?.receiptId || '',
+    status: tx?.status,
+    type,
+  };
+}
+
+async function loadTransactionsFromCoordinator({ limit = 200 } = {}) {
+  const chains = CONFIG.BRIDGE.CHAINS;
+  const chainIdIndex = buildChainIdIndex(chains);
+  const coordinatorUrl = normalizeCoordinatorUrl(CONFIG.BRIDGE.COORDINATOR_URL);
 
   const allTransactions = [];
   let page = 1;
@@ -219,51 +261,11 @@ async function loadTransactionsFromCoordinator({ limit = 200 } = {}) {
   }
 
   const rows = allTransactions
-    .map((tx) => {
-      const type = Number(tx?.type);
-      const chainId = Number(tx?.chainId);
-      const srcChainId = type === 0 ? 0 : chainId;
-      const dstChainId = type === 0 ? chainId : type === 2 ? secondaryChainId : 0;
-
-      const srcChainKey = chainIdIndex.get(Number(srcChainId)) || null;
-      const dstChainKey = chainIdIndex.get(Number(dstChainId)) || null;
-
-      const srcName =
-        srcChainId === 0
-          ? 'Liberdus Network'
-          : chains?.[srcChainKey]?.NAME || `Chain ${srcChainId}`;
-      const dstName =
-        dstChainId === 0
-          ? 'Liberdus Network'
-          : chains?.[dstChainKey]?.NAME || `Chain ${dstChainId}`;
-
-      const rawTimestamp = Number(tx?.txTimestamp || 0);
-      const timestamp = rawTimestamp > 1e12 ? Math.floor(rawTimestamp / 1000) : rawTimestamp;
-
-      return {
-        id: tx?.txId,
-        srcChainKey,
-        dstChainKey,
-        srcName,
-        dstName,
-        from: tx?.sender,
-        amount: tx?.value,
-        timestamp,
-        txHash: tx?.txId,
-        receiptTxHash: tx?.receiptId || '',
-        status: tx?.status,
-        type,
-      };
-    })
+    .map((tx) => mapCoordinatorTransaction(tx, chains, chainIdIndex))
     .sort(sortByTimestampDesc)
     .slice(0, Number(limit || 200));
 
   return rows;
-}
-
-
-async function loadTransactionsData({ limit = 200 } = {}) {
-  return await loadTransactionsFromCoordinator({ limit });
 }
 
 export class TransactionsTab {
@@ -297,7 +299,7 @@ export class TransactionsTab {
     this.panel = document.querySelector('.tab-panel[data-panel="transactions"]');
     if (!this.panel) return;
 
-    const chains = CONFIG?.BRIDGE?.CHAINS ?? {};
+    const chains = CONFIG.BRIDGE.CHAINS;
     const sourceName = chains.SOURCE?.NAME || 'source chain';
     const destinationName = chains.DESTINATION?.NAME || 'destination chain';
 
@@ -421,7 +423,7 @@ export class TransactionsTab {
     this._setStatus('Loading recent transactions...');
 
     try {
-      const fetched = await loadTransactionsData({ limit: 250 });
+      const fetched = await loadTransactionsFromCoordinator({ limit: 250 });
       this._rows = mergeTransactions(fetched, this._rows, { limit: 500 });
       this.render();
       this._setStatus('Transactions updated.');
@@ -476,8 +478,20 @@ export class TransactionsTab {
         const sender = renderAddress(row.from);
         const value = formatTokenAmount(row.amount, decimals, symbol);
         const route = renderChainRoute(row.srcChainKey, row.dstChainKey, row.srcName, row.dstName);
-        const typeLabel =
-          row.type === 0 ? 'Bridge In' : row.type === 1 ? 'Bridge Out' : row.type === 2 ? 'Bridge Vault' : 'Unknown';
+        let typeLabel;
+        switch (row.type) {
+          case 0:
+            typeLabel = 'Bridge In';
+            break;
+          case 1:
+            typeLabel = 'Bridge Out';
+            break;
+          case 2:
+            typeLabel = 'Bridge Vault';
+            break;
+          default:
+            throw new Error(`Unknown row type: ${row.type}`);
+        }
         const type = `<span class="tx-type">${typeLabel}</span>`;
         const status = renderStatus(row.status);
         const issued = `<span class="tx-muted">${formatRelativeTime(row.timestamp)}</span>`;
@@ -502,12 +516,12 @@ export class TransactionsTab {
   _onBridgeOutEvent(e) {
     const d = e?.detail || null;
     if (!d) return;
-    const chains = CONFIG?.BRIDGE?.CHAINS ?? {};
+    const chains = CONFIG.BRIDGE.CHAINS;
     const chainIdIndex = buildChainIdIndex(chains);
-    const srcChainKey = chainIdIndex.get(Number(d.sourceChainId)) || (chains?.SOURCE ? 'SOURCE' : null);
+    const srcChainKey = chainIdIndex.get(Number(d.sourceChainId)) || 'SOURCE';
     const dstChainKey = chainIdIndex.get(Number(d.targetChainId)) || null;
-    const srcName = chains?.[srcChainKey]?.NAME || chains?.SOURCE?.NAME || 'source chain';
-    const dstName = dstChainKey ? chains?.[dstChainKey]?.NAME || `Chain ${d.targetChainId}` : `Chain ${d.targetChainId}`;
+    const srcName = chains[srcChainKey].NAME;
+    const dstName = dstChainKey ? chains[dstChainKey]?.NAME || `Chain ${d.targetChainId}` : `Chain ${d.targetChainId}`;
     const row = {
       id: d.txHash,
       srcChainKey,
@@ -539,13 +553,9 @@ export class TransactionsTab {
       const iface = new ethers.utils.Interface(abi);
       const bridgedOutTopic = iface.getEventTopic('BridgedOut');
 
-      const chains = CONFIG?.BRIDGE?.CHAINS ?? {};
-      const sourceCfg = chains?.SOURCE ?? null;
-      if (!sourceCfg?.RPC_URL) return;
-
-      const configuredSourceAddress = CONFIG?.BRIDGE?.CONTRACTS?.SOURCE?.ADDRESS ?? null;
-      const address = configuredSourceAddress;
-      if (!address) return;
+      const chains = CONFIG.BRIDGE.CHAINS;
+      const sourceCfg = chains.SOURCE;
+      const address = CONFIG.BRIDGE.CONTRACTS.SOURCE.ADDRESS;
 
       const provider = await getReadOnlyProviderForNetwork(sourceCfg);
       const filter = { address, topics: [bridgedOutTopic] };
@@ -560,12 +570,12 @@ export class TransactionsTab {
           this._seenBridgeOutTx.add(key);
           if (this._seenBridgeOutTx.size > 2000) this._seenBridgeOutTx.clear();
 
-          const chainsLocal = CONFIG?.BRIDGE?.CHAINS ?? {};
+          const chainsLocal = CONFIG.BRIDGE.CHAINS;
           const chainIdIndex = buildChainIdIndex(chainsLocal);
           const dstChainId = Number(parsed.args?.chainId);
           const dstChainKey = chainIdIndex.get(dstChainId) || null;
           const srcChainKey = 'SOURCE';
-          const srcName = chainsLocal?.[srcChainKey]?.NAME || chainsLocal?.SOURCE?.NAME || 'source chain';
+          const srcName = chainsLocal.SOURCE.NAME;
           const dstName = dstChainKey ? chainsLocal?.[dstChainKey]?.NAME || `Chain ${dstChainId}` : `Chain ${dstChainId}`;
 
           const row = {

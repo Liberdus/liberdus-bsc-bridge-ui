@@ -5,14 +5,12 @@ export class PolygonBscBridgeModule {
     networkManager = null,
     toastManager = null,
     config = null,
-    abiPath = null,
   } = {}) {
     this.contractManager = contractManager || window.contractManager || null;
     this.walletManager = walletManager || window.walletManager || null;
     this.networkManager = networkManager || window.networkManager || null;
     this.toastManager = toastManager || window.toastManager || null;
-    this.config = config || window.CONFIG || null;
-    this.abiPath = abiPath;
+    this.config = config || window.CONFIG;
 
     this.container = null;
 
@@ -87,7 +85,7 @@ export class PolygonBscBridgeModule {
 
   _render() {
     if (!this.container) return;
-    const destinationRecipientLabel = this.config?.BRIDGE?.CHAINS?.DESTINATION?.NAME || 'Destination';
+    const destinationRecipientLabel = this.config.BRIDGE.CHAINS.DESTINATION.NAME;
 
     this.container.innerHTML = `
       <div class="panel-header">
@@ -193,20 +191,19 @@ export class PolygonBscBridgeModule {
   }
 
   _syncChainText() {
-    const source = this.config?.BRIDGE?.CHAINS?.SOURCE ?? null;
-    const dest = this.config?.BRIDGE?.CHAINS?.DESTINATION ?? null;
-
-    const sourceName = source?.NAME || '-';
-    const destName = dest?.NAME || '-';
-    const sourceLabel = Number.isInteger(source?.CHAIN_ID) ? `${sourceName} (${source.CHAIN_ID})` : sourceName;
-    const destLabel = Number.isInteger(dest?.CHAIN_ID) ? `${destName} (${dest.CHAIN_ID})` : destName;
-    const vaultAddress = this.config?.BRIDGE?.CONTRACTS?.SOURCE?.ADDRESS ?? null;
+    const source = this.config.BRIDGE.CHAINS.SOURCE;
+    const dest = this.config.BRIDGE.CHAINS.DESTINATION;
+    const sourceName = source.NAME;
+    const destName = dest.NAME;
+    const sourceLabel = `${sourceName} (${source.CHAIN_ID})`;
+    const destLabel = `${destName} (${dest.CHAIN_ID})`;
+    const vaultAddress = this.config.BRIDGE.CONTRACTS.SOURCE.ADDRESS;
 
     if (this._els.sourceName) this._els.sourceName.textContent = sourceName;
     if (this._els.destName) this._els.destName.textContent = destName;
     if (this._els.sourceChain) this._els.sourceChain.textContent = sourceLabel;
     if (this._els.destChain) this._els.destChain.textContent = destLabel;
-    if (this._els.destChainId) this._els.destChainId.value = Number.isInteger(dest?.CHAIN_ID) ? String(dest.CHAIN_ID) : '';
+    if (this._els.destChainId) this._els.destChainId.value = String(dest.CHAIN_ID);
     if (this._els.vaultAddress) this._els.vaultAddress.textContent = this._shortAddress(vaultAddress);
   }
 
@@ -295,7 +292,7 @@ export class PolygonBscBridgeModule {
       const amountWei = this._parseAmountToWei(this._els.amount?.value);
       if (!amountWei || amountWei.lte(0)) throw new Error('Enter a valid amount');
 
-      const vault = this.config?.BRIDGE?.CONTRACTS?.SOURCE?.ADDRESS || null;
+      const vault = this.config.BRIDGE.CONTRACTS.SOURCE.ADDRESS;
       if (!vault) throw new Error('Vault address not configured');
 
       const switchResult = await this._ensureRequiredNetworkForAction(actionToastId);
@@ -325,7 +322,7 @@ export class PolygonBscBridgeModule {
       });
 
       const tx = await token.approve(vault, window.ethers.constants.MaxUint256);
-      this._showStatus('Approval submitted', this._txLinkHtml(this.config?.BRIDGE?.CHAINS?.SOURCE?.BLOCK_EXPLORER || '', tx.hash));
+      this._showStatus('Approval submitted', this._txLinkHtml(this.config.BRIDGE.CHAINS.SOURCE.BLOCK_EXPLORER, tx.hash));
 
       toastId = this._showActionToast({
         toastId,
@@ -376,8 +373,6 @@ export class PolygonBscBridgeModule {
         throw new Error('Amount exceeds max bridge out limit');
       }
 
-      const destinationChainId = this.config?.BRIDGE?.CHAINS?.DESTINATION?.CHAIN_ID || null;
-      if (!destinationChainId) throw new Error('Destination chain not configured');
       const bridgeChainId = this._getBridgeOutChainId(snapshot);
       if (!bridgeChainId) throw new Error('Bridge chain ID is not configured');
 
@@ -390,15 +385,13 @@ export class PolygonBscBridgeModule {
 
       if (this._needsApproval(amountWei)) throw new Error('Approval required before bridging');
 
-      const overrides = await this._buildGasOverrides(contract, amountWei, recipient, bridgeChainId);
-
       toastId = this._showActionLoadingToast({
         toastId: toastId || actionToastId,
         message: 'Confirm the bridge transaction in your wallet',
       });
-      const tx = await contract.bridgeOut(amountWei, recipient, bridgeChainId, overrides);
+      const tx = await contract.bridgeOut(amountWei, recipient, bridgeChainId);
 
-      this._showStatus('Bridge transaction submitted', this._txLinkHtml(this.config?.BRIDGE?.CHAINS?.SOURCE?.BLOCK_EXPLORER || '', tx.hash));
+      this._showStatus('Bridge transaction submitted', this._txLinkHtml(this.config.BRIDGE.CHAINS.SOURCE.BLOCK_EXPLORER, tx.hash));
       toastId = this._showActionToast({
         toastId,
         title: 'Bridge submitted',
@@ -431,12 +424,12 @@ export class PolygonBscBridgeModule {
           amount,
           targetAddress,
           targetChainId: Number(chainId),
-          sourceChainId: this.config?.BRIDGE?.CHAINS?.SOURCE?.CHAIN_ID || 0,
+          sourceChainId: this.config.BRIDGE.CHAINS.SOURCE.CHAIN_ID,
           timestamp: Math.floor(Date.now() / 1000),
         };
         document.dispatchEvent(new CustomEvent('bridgeOutEvent', { detail }));
       } else {
-        const sourceName = this.config?.BRIDGE?.CHAINS?.SOURCE?.NAME || 'source chain';
+        const sourceName = this.config.BRIDGE.CHAINS.SOURCE.NAME;
         this._showActionToast({
           toastId,
           title: 'Done',
@@ -481,7 +474,7 @@ export class PolygonBscBridgeModule {
     }
   }
 
-  async _buildGasOverrides(contract, amountWei, recipient, chainId) {
+  async _buildGasOverrides() {
     return {};
   }
 
@@ -499,7 +492,7 @@ export class PolygonBscBridgeModule {
     }
 
     const tokenAddr = await this._getTokenAddress();
-    const vaultAddr = this.config?.BRIDGE?.CONTRACTS?.SOURCE?.ADDRESS || null;
+    const vaultAddr = this.config.BRIDGE.CONTRACTS.SOURCE.ADDRESS;
     if (!tokenAddr || !vaultAddr) return;
 
     const token = new window.ethers.Contract(tokenAddr, this._erc20Abi(), provider);
@@ -547,15 +540,14 @@ export class PolygonBscBridgeModule {
     const status = snapshot ?? this.contractManager?.getStatusSnapshot?.() ?? null;
     const onChainId = Number(status?.onChainId);
     if (Number.isInteger(onChainId) && onChainId > 0) return onChainId;
-    const configuredChainId = this.config?.BRIDGE?.CHAINS?.SOURCE?.CHAIN_ID;
-    return Number.isInteger(configuredChainId) && configuredChainId > 0 ? configuredChainId : null;
+    return this.config.BRIDGE.CHAINS.SOURCE.CHAIN_ID;
   }
 
   async _ensureRequiredNetworkForAction(toastId) {
     if (this.networkManager?.isOnRequiredNetwork?.()) {
       return { switched: false, toastId: null };
     }
-    const requiredNetworkName = this.config?.BRIDGE?.CHAINS?.SOURCE?.NAME || 'the required network';
+    const requiredNetworkName = this.config.BRIDGE.CHAINS.SOURCE.NAME;
 
     const activeToastId = this._showActionToast({
       toastId,
@@ -614,7 +606,7 @@ export class PolygonBscBridgeModule {
 
   _actionErrorMessage(error, fallback) {
     if (error?._phase === 'networkSwitch') {
-      const requiredNetworkName = this.config?.BRIDGE?.CHAINS?.SOURCE?.NAME || 'the required network';
+      const requiredNetworkName = this.config.BRIDGE.CHAINS.SOURCE.NAME;
       if (error?.code === 4001) return 'Network switch request was rejected.';
       if (error?.code === -32002) return 'Network switch request already pending in MetaMask.';
       return this._extractActionErrorMessage(error) || `Failed to switch to ${requiredNetworkName}.`;
