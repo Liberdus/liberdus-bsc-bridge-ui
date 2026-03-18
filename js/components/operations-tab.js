@@ -27,7 +27,7 @@ export class OperationsTab {
     this.panel.innerHTML = `
       <div class="panel-header">
         <div class="card-title-row">
-          <h2>Admin / Multisig</h2>
+          <h2>Admin</h2>
           <button type="button" class="btn btn--ghost btn--footer" data-ops-refresh>Refresh</button>
         </div>
         <p class="muted" data-ops-status>Connect a wallet to check access.</p>
@@ -312,7 +312,7 @@ export class OperationsTab {
       if (!this._access.connected) {
         statusEl.textContent = 'Connect a wallet to check access.';
       } else if (!this._access.isAdmin && !this._access.isMultisig) {
-        statusEl.textContent = 'Connected wallet is not allowed to access Admin/Multisig.';
+        statusEl.textContent = 'Connected wallet is not allowed to access Admin.';
       } else if (!txEnabled) {
         statusEl.textContent = `Connected on the wrong network. Transaction actions will prompt a switch to ${this._requiredNetworkName()} when used.`;
       } else {
