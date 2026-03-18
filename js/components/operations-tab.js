@@ -505,7 +505,7 @@ export class OperationsTab {
         txHash: tx?.hash ? String(tx.hash) : null,
       });
 
-      const explorer = window.CONFIG?.NETWORK?.BLOCK_EXPLORER || '';
+      const explorer = window.CONFIG?.BRIDGE?.CHAINS?.SOURCE?.BLOCK_EXPLORER || '';
       const link = tx?.hash && explorer ? `${explorer.replace(/\/$/, '')}/tx/${tx.hash}` : '';
 
       const message = link
@@ -548,7 +548,7 @@ export class OperationsTab {
       const tx = await contract.transferOwnership(normalized);
       await tx.wait?.();
 
-      const explorer = window.CONFIG?.NETWORK?.BLOCK_EXPLORER || '';
+      const explorer = window.CONFIG?.BRIDGE?.CHAINS?.SOURCE?.BLOCK_EXPLORER || '';
       const link = tx?.hash && explorer ? `${explorer.replace(/\/$/, '')}/tx/${tx.hash}` : '';
       const message = link
         ? `Transfer submitted. <a href="${link}" target="_blank">View transaction</a>`
@@ -694,7 +694,7 @@ export class OperationsTab {
       const tx = await contractWrite.submitSignature(operationId, signature);
       await tx.wait?.();
 
-      const explorer = window.CONFIG?.NETWORK?.BLOCK_EXPLORER || '';
+      const explorer = window.CONFIG?.BRIDGE?.CHAINS?.SOURCE?.BLOCK_EXPLORER || '';
       const link = tx?.hash && explorer ? `${explorer.replace(/\/$/, '')}/tx/${tx.hash}` : '';
       const message = link
         ? `Signature submitted. <a href="${link}" target="_blank">View transaction</a>`
@@ -739,7 +739,7 @@ export class OperationsTab {
   }
 
   _requiredNetworkName() {
-    return window.CONFIG?.NETWORK?.NAME || 'the required network';
+    return window.CONFIG?.BRIDGE?.CHAINS?.SOURCE?.NAME || 'the required network';
   }
 
   _showActionLoadingToast({ toastId = null, message }) {

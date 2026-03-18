@@ -3,8 +3,8 @@ import { CONFIG } from '../config.js';
 /**
  * NetworkManager (Phase 2)
  * Configured source-network only:
- * - Read-only mode uses CONFIG.NETWORK.RPC_URL
- * - Tx-enabled mode requires MetaMask connected AND chainId === CONFIG.NETWORK.CHAIN_ID
+ * - Read-only mode uses CONFIG.BRIDGE.CHAINS.SOURCE.RPC_URL
+ * - Tx-enabled mode requires MetaMask connected AND chainId === CONFIG.BRIDGE.CHAINS.SOURCE.CHAIN_ID
  */
 export class NetworkManager {
   constructor({ walletManager } = {}) {
@@ -53,7 +53,7 @@ export class NetworkManager {
   }
 
   getAvailableNetworks() {
-    const config = this._config();
+    const config = window.CONFIG || CONFIG;
     const source = config?.BRIDGE?.CHAINS?.SOURCE || null;
     const destination = config?.BRIDGE?.CHAINS?.DESTINATION || null;
     return [
@@ -119,7 +119,7 @@ export class NetworkManager {
   }
 
   networkSymbol() {
-    return this._networkConfig()?.NATIVE_CURRENCY?.symbol || 'MATIC';
+    return (window.CONFIG || CONFIG)?.BRIDGE?.CHAINS?.SOURCE?.NATIVE_CURRENCY?.symbol || 'MATIC';
   }
 
   updateUIState() {
@@ -168,20 +168,13 @@ export class NetworkManager {
     return Number(cid);
   }
 
-  _config() {
-    return window.CONFIG || CONFIG;
-  }
-
-  _networkConfig() {
-    return this._config()?.NETWORK || null;
-  }
-
   _requiredChainId() {
-    return Number(this._networkConfig()?.CHAIN_ID || 0) || null;
+    const sourceNetwork = (window.CONFIG || CONFIG)?.BRIDGE?.CHAINS?.SOURCE || null;
+    return Number(sourceNetwork?.CHAIN_ID || 0) || null;
   }
 
   _requiredNetworkDescriptor() {
-    const network = this._networkConfig();
+    const network = (window.CONFIG || CONFIG)?.BRIDGE?.CHAINS?.SOURCE || null;
     return {
       chainId: network?.CHAIN_ID,
       name: network?.NAME || 'Required Network',

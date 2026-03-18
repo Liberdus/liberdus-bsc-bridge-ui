@@ -42,7 +42,8 @@ export class ContractManager {
   }
 
   async _fetchAbi() {
-    const abiPath = this._config()?.CONTRACT?.ABI_PATH || './abi/vault.json';
+    const sourceContract = (window.CONFIG || CONFIG)?.BRIDGE?.CONTRACTS?.SOURCE || null;
+    const abiPath = sourceContract?.ABI_PATH || './abi/vault.json';
     const response = await fetch(abiPath, { cache: 'no-cache' });
     if (!response.ok) {
       throw new Error(`Failed to load ABI (${abiPath}): ${response.status}`);
@@ -73,7 +74,7 @@ export class ContractManager {
   }
 
   _makeContract(signerOrProvider) {
-    const address = this._config()?.CONTRACT?.ADDRESS;
+    const address = (window.CONFIG || CONFIG)?.BRIDGE?.CONTRACTS?.SOURCE?.ADDRESS;
     if (!address || !this.abi || !signerOrProvider || !window.ethers) return null;
     return new window.ethers.Contract(address, this.abi, signerOrProvider);
   }
@@ -210,10 +211,12 @@ export class ContractManager {
   }
 
   _emptySnapshot() {
-    const config = this._config();
+    const config = window.CONFIG || CONFIG;
+    const sourceChain = config?.BRIDGE?.CHAINS?.SOURCE || null;
+    const sourceContract = config?.BRIDGE?.CONTRACTS?.SOURCE || null;
     return {
-      configuredAddress: config?.CONTRACT?.ADDRESS || null,
-      configuredChainId: Number(config?.NETWORK?.CHAIN_ID || 0) || null,
+      configuredAddress: sourceContract?.ADDRESS || null,
+      configuredChainId: Number(sourceChain?.CHAIN_ID || 0) || null,
       onChainId: null,
       onChainChainId: null,
       owner: null,
@@ -249,22 +252,20 @@ export class ContractManager {
   }
 
   _emitUpdatedEvent({ reason = 'updated' } = {}) {
-    const config = this._config();
+    const config = window.CONFIG || CONFIG;
+    const sourceChain = config?.BRIDGE?.CHAINS?.SOURCE || null;
+    const sourceContract = config?.BRIDGE?.CONTRACTS?.SOURCE || null;
     document.dispatchEvent(
       new CustomEvent('contractManagerUpdated', {
         detail: {
           reason,
           txEnabled: !!this.networkManager?.isTxEnabled?.(),
           ready: this.isReady(),
-          address: config?.CONTRACT?.ADDRESS || null,
-          chainId: config?.NETWORK?.CHAIN_ID || null,
+          address: sourceContract?.ADDRESS || null,
+          chainId: sourceChain?.CHAIN_ID || null,
           status: this.getStatusSnapshot(),
         },
       })
     );
-  }
-
-  _config() {
-    return window.CONFIG || CONFIG;
   }
 }

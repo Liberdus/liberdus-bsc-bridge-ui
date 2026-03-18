@@ -127,18 +127,19 @@ function getEthers() {
 async function createReadOnlyProvider() {
   const ethers = getEthers();
   const config = window.CONFIG || CONFIG;
+  const sourceNetwork = config?.BRIDGE?.CHAINS?.SOURCE || null;
 
-  const primaryRpcUrl = config?.NETWORK?.RPC_URL;
-  const fallbackRpcs = Array.isArray(config?.NETWORK?.FALLBACK_RPCS)
-    ? config.NETWORK.FALLBACK_RPCS
+  const primaryRpcUrl = sourceNetwork?.RPC_URL;
+  const fallbackRpcs = Array.isArray(sourceNetwork?.FALLBACK_RPCS)
+    ? sourceNetwork.FALLBACK_RPCS
     : [];
-  const chainId = Number(config?.NETWORK?.CHAIN_ID);
-  const networkName = config?.NETWORK?.NAME || 'unknown';
+  const chainId = Number(sourceNetwork?.CHAIN_ID);
+  const networkName = sourceNetwork?.NAME || 'unknown';
 
   const rpcUrls = Array.from(new Set([primaryRpcUrl, ...fallbackRpcs].filter(Boolean)));
 
-  if (rpcUrls.length === 0) throw new Error('Missing CONFIG.NETWORK.RPC_URL');
-  if (!Number.isFinite(chainId)) throw new Error('Missing/invalid CONFIG.NETWORK.CHAIN_ID');
+  if (rpcUrls.length === 0) throw new Error('Missing CONFIG.BRIDGE.CHAINS.SOURCE.RPC_URL');
+  if (!Number.isFinite(chainId)) throw new Error('Missing/invalid CONFIG.BRIDGE.CHAINS.SOURCE.CHAIN_ID');
 
   // Best practice:
   // - Prefer a static network provider (prevents repeated network detection / eth_chainId bursts).
