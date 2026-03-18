@@ -99,50 +99,133 @@ export const CONFIG = {
 };
 
 /**
- * Resolve the selected runtime profile into a normalized source/destination view.
+ * Normalize and validate the selected runtime profile.
  *
- * The new canonical shape is SOURCE_* / DESTINATION_*, but we still accept the
- * older NETWORK / CONTRACT and BRIDGE.{CHAINS,CONTRACTS}.BSC layout as a
- * fallback so existing profile data can be migrated without breaking the app.
+ * Profiles must use the SOURCE_* / DESTINATION_* shape. CONFIG.NETWORK and
+ * CONFIG.CONTRACT remain derived source-chain aliases for existing source-only
+ * wallet/provider/contract consumers.
  */
+// Validation helpers
+function profileError(profileName, message) {
+  return new Error(`Invalid profile ${profileName}: ${message}`);
+}
+
+function requireObject(profileName, value, path) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw profileError(profileName, `missing ${path}`);
+  }
+  return value;
+}
+
+function requireString(profileName, value, path) {
+  const normalized = String(value ?? '').trim();
+  if (!normalized) throw profileError(profileName, `missing ${path}`);
+  return normalized;
+}
+
+function requireInteger(profileName, value, path, { min = 1 } = {}) {
+  if (value == null || value === '') {
+    throw profileError(profileName, `missing ${path}`);
+  }
+  const normalized = Number(value);
+  if (!Number.isInteger(normalized) || normalized < min) {
+    throw profileError(profileName, `invalid ${path}`);
+  }
+  return normalized;
+}
+
+function normalizeFallbackRpcs(profileName, value, path) {
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw profileError(profileName, `invalid ${path}`);
+
+  return value.map((entry, index) => requireString(profileName, entry, `${path}[${index}]`));
+}
+
+function normalizeNativeCurrency(profileName, value, path) {
+  const currency = requireObject(profileName, value, path);
+  return {
+    name: requireString(profileName, currency.name, `${path}.name`),
+    symbol: requireString(profileName, currency.symbol, `${path}.symbol`),
+    decimals: requireInteger(profileName, currency.decimals, `${path}.decimals`, { min: 0 }),
+  };
+}
+
+function normalizeNetwork(profileName, value, path) {
+  const network = requireObject(profileName, value, path);
+  return {
+    CHAIN_ID: requireInteger(profileName, network.CHAIN_ID, `${path}.CHAIN_ID`),
+    NAME: requireString(profileName, network.NAME, `${path}.NAME`),
+    RPC_URL: requireString(profileName, network.RPC_URL, `${path}.RPC_URL`),
+    FALLBACK_RPCS: normalizeFallbackRpcs(profileName, network.FALLBACK_RPCS, `${path}.FALLBACK_RPCS`),
+    BLOCK_EXPLORER: requireString(profileName, network.BLOCK_EXPLORER, `${path}.BLOCK_EXPLORER`),
+    NATIVE_CURRENCY: normalizeNativeCurrency(profileName, network.NATIVE_CURRENCY, `${path}.NATIVE_CURRENCY`),
+  };
+}
+
+function normalizeContract(profileName, value, path, { requireAbiPath = false } = {}) {
+  const contract = requireObject(profileName, value, path);
+  return {
+    ADDRESS: requireString(profileName, contract.ADDRESS, `${path}.ADDRESS`),
+    ...(requireAbiPath
+      ? { ABI_PATH: requireString(profileName, contract.ABI_PATH, `${path}.ABI_PATH`) }
+      : {}),
+  };
+}
+
+function normalizeBridge(profileName, value) {
+  if (value == null) return { COORDINATOR_URL: '' };
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw profileError(profileName, 'invalid BRIDGE');
+  }
+
+  const coordinatorUrl = value.COORDINATOR_URL;
+  if (coordinatorUrl == null) return { COORDINATOR_URL: '' };
+  if (typeof coordinatorUrl !== 'string') {
+    throw profileError(profileName, 'invalid BRIDGE.COORDINATOR_URL');
+  }
+
+  return {
+    COORDINATOR_URL: coordinatorUrl.trim(),
+  };
+}
+
+function normalizeProfile(profileName, profile) {
+  const normalizedProfile = requireObject(profileName, profile, profileName);
+  return {
+    SOURCE_NETWORK: normalizeNetwork(profileName, normalizedProfile.SOURCE_NETWORK, 'SOURCE_NETWORK'),
+    SOURCE_CONTRACT: normalizeContract(profileName, normalizedProfile.SOURCE_CONTRACT, 'SOURCE_CONTRACT', { requireAbiPath: true }),
+    DESTINATION_NETWORK: normalizeNetwork(profileName, normalizedProfile.DESTINATION_NETWORK, 'DESTINATION_NETWORK'),
+    DESTINATION_CONTRACT: normalizeContract(profileName, normalizedProfile.DESTINATION_CONTRACT, 'DESTINATION_CONTRACT'),
+    BRIDGE: normalizeBridge(profileName, normalizedProfile.BRIDGE),
+  };
+}
+
+// Apply active profile
 const RESOLVED_PROFILE = PROFILES[CONFIG.RUNTIME.PROFILE] ? CONFIG.RUNTIME.PROFILE : 'dev';
-const ACTIVE_PROFILE = PROFILES[RESOLVED_PROFILE];
-const ACTIVE_SOURCE_NETWORK = ACTIVE_PROFILE.SOURCE_NETWORK || ACTIVE_PROFILE.NETWORK || {};
-const ACTIVE_SOURCE_CONTRACT = ACTIVE_PROFILE.SOURCE_CONTRACT || ACTIVE_PROFILE.CONTRACT || {};
-const ACTIVE_DESTINATION_NETWORK =
-  ACTIVE_PROFILE.DESTINATION_NETWORK ||
-  ACTIVE_PROFILE.BRIDGE?.CHAINS?.DESTINATION ||
-  ACTIVE_PROFILE.BRIDGE?.CHAINS?.BSC ||
-  {};
-const ACTIVE_DESTINATION_CONTRACT =
-  ACTIVE_PROFILE.DESTINATION_CONTRACT ||
-  ACTIVE_PROFILE.BRIDGE?.CONTRACTS?.DESTINATION ||
-  ACTIVE_PROFILE.BRIDGE?.CONTRACTS?.BSC ||
-  {};
+const {
+  SOURCE_NETWORK: ACTIVE_SOURCE_NETWORK,
+  SOURCE_CONTRACT: ACTIVE_SOURCE_CONTRACT,
+  DESTINATION_NETWORK: ACTIVE_DESTINATION_NETWORK,
+  DESTINATION_CONTRACT: ACTIVE_DESTINATION_CONTRACT,
+  BRIDGE: ACTIVE_BRIDGE,
+} = normalizeProfile(RESOLVED_PROFILE, PROFILES[RESOLVED_PROFILE]);
 
 /**
  * Project the active profile into the runtime CONFIG object.
  *
- * CONFIG.NETWORK and CONFIG.CONTRACT remain the source-chain aliases used by
- * the existing wallet, provider, and contract code. SOURCE / DESTINATION are
- * the canonical bridge aliases going forward, while POLYGON / BSC are mirrored
- * compatibility aliases for older consumers that have not been renamed yet.
+ * CONFIG.NETWORK and CONFIG.CONTRACT remain derived source-chain aliases used
+ * by the existing wallet, provider, and contract code. SOURCE / DESTINATION
+ * are the canonical bridge aliases.
  */
 CONFIG.RUNTIME.PROFILE = RESOLVED_PROFILE;
 Object.assign(CONFIG.NETWORK, ACTIVE_SOURCE_NETWORK);
 Object.assign(CONFIG.CONTRACT, ACTIVE_SOURCE_CONTRACT);
-CONFIG.BRIDGE.COORDINATOR_URL = ACTIVE_PROFILE.BRIDGE?.COORDINATOR_URL || 'https://tss1-test.liberdus.com';
+CONFIG.BRIDGE.COORDINATOR_URL = ACTIVE_BRIDGE.COORDINATOR_URL || 'https://tss1-test.liberdus.com';
 Object.assign(CONFIG.BRIDGE.CHAINS, {
   SOURCE: {
     ...ACTIVE_SOURCE_NETWORK,
   },
   DESTINATION: {
-    ...ACTIVE_DESTINATION_NETWORK,
-  },
-  POLYGON: {
-    ...ACTIVE_SOURCE_NETWORK,
-  },
-  BSC: {
     ...ACTIVE_DESTINATION_NETWORK,
   },
 });
@@ -151,12 +234,6 @@ Object.assign(CONFIG.BRIDGE.CONTRACTS, {
     ...ACTIVE_SOURCE_CONTRACT,
   },
   DESTINATION: {
-    ...ACTIVE_DESTINATION_CONTRACT,
-  },
-  POLYGON: {
-    ...ACTIVE_SOURCE_CONTRACT,
-  },
-  BSC: {
     ...ACTIVE_DESTINATION_CONTRACT,
   },
 });

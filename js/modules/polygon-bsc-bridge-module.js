@@ -571,15 +571,15 @@ export class PolygonBscBridgeModule {
 
   _getVaultAddress() {
     const fromChainCfg = this._chainConfig?.vaultChain?.contractAddress || null;
-    const fromConfig = this._getSourceContractConfig()?.ADDRESS || this.config?.CONTRACT?.ADDRESS || null;
+    const fromConfig = this._getSourceContractConfig()?.ADDRESS || null;
     return fromConfig || fromChainCfg || null;
   }
 
   _getSourceChain() {
-    const fromChainCfg = this._chainConfig?.vaultChain || this._chainConfig?.supportedChains?.[String(this.config?.NETWORK?.CHAIN_ID || '')];
+    const sourceConfig = this._getSourceChainConfig();
+    const fromChainCfg = this._chainConfig?.vaultChain || this._chainConfig?.supportedChains?.[String(sourceConfig?.CHAIN_ID || '')];
     if (fromChainCfg?.chainId) return { name: fromChainCfg.name, chainId: Number(fromChainCfg.chainId) };
-    const cfg = this._getSourceChainConfig();
-    if (cfg?.CHAIN_ID) return { name: cfg.NAME || 'Source Network', chainId: Number(cfg.CHAIN_ID) };
+    if (sourceConfig?.CHAIN_ID) return { name: sourceConfig.NAME || 'Source Network', chainId: Number(sourceConfig.CHAIN_ID) };
     return null;
   }
 
@@ -595,13 +595,13 @@ export class PolygonBscBridgeModule {
     const status = snapshot || this.contractManager?.getStatusSnapshot?.() || null;
     const onChainId = Number(status?.onChainId || 0);
     if (Number.isFinite(onChainId) && onChainId > 0) return onChainId;
-    const configuredChainId = Number(this.config?.NETWORK?.CHAIN_ID || 0);
+    const configuredChainId = Number(this._getSourceChainConfig()?.CHAIN_ID || 0);
     return Number.isFinite(configuredChainId) && configuredChainId > 0 ? configuredChainId : null;
   }
 
   _getSourceChainExplorer() {
     const cfg = this._getSourceChainConfig();
-    const explorer = cfg?.BLOCK_EXPLORER || this.config?.NETWORK?.BLOCK_EXPLORER || '';
+    const explorer = cfg?.BLOCK_EXPLORER || '';
     if (explorer) return explorer;
     const name = String(cfg?.NAME || this._getSourceChain()?.name || '').toLowerCase();
     if (name.includes('amoy')) return 'https://amoy.polygonscan.com';
@@ -610,15 +610,15 @@ export class PolygonBscBridgeModule {
   }
 
   _getSourceChainConfig() {
-    return this.config?.BRIDGE?.CHAINS?.SOURCE || this.config?.BRIDGE?.CHAINS?.POLYGON || this.config?.NETWORK || null;
+    return this.config?.BRIDGE?.CHAINS?.SOURCE || null;
   }
 
   _getDestChainConfig() {
-    return this.config?.BRIDGE?.CHAINS?.DESTINATION || this.config?.BRIDGE?.CHAINS?.BSC || null;
+    return this.config?.BRIDGE?.CHAINS?.DESTINATION || null;
   }
 
   _getSourceContractConfig() {
-    return this.config?.BRIDGE?.CONTRACTS?.SOURCE || this.config?.BRIDGE?.CONTRACTS?.POLYGON || this.config?.CONTRACT || null;
+    return this.config?.BRIDGE?.CONTRACTS?.SOURCE || null;
   }
 
   _destinationRecipientLabel() {
@@ -691,7 +691,7 @@ export class PolygonBscBridgeModule {
   }
 
   _requiredNetworkName() {
-    return this._getSourceChain()?.name || this.config?.NETWORK?.NAME || 'the required network';
+    return this._getSourceChain()?.name || 'the required network';
   }
 
   _actionErrorMessage(error, fallback) {

@@ -60,13 +60,11 @@ function formatTokenAmount(amount, decimals, symbol) {
 }
 
 function getSourceChainConfig() {
-  const chains = CONFIG?.BRIDGE?.CHAINS || {};
-  return chains.SOURCE || chains.POLYGON || CONFIG?.NETWORK || null;
+  return CONFIG?.BRIDGE?.CHAINS?.SOURCE || null;
 }
 
 function getDestinationChainConfig() {
-  const chains = CONFIG?.BRIDGE?.CHAINS || {};
-  return chains.DESTINATION || chains.BSC || null;
+  return CONFIG?.BRIDGE?.CHAINS?.DESTINATION || null;
 }
 
 function getChainConfig() {
@@ -80,12 +78,11 @@ function getChainConfig() {
 
 function getContractsConfig() {
   const contracts = CONFIG?.BRIDGE?.CONTRACTS || {};
-  const fallbackAddr = CONFIG?.CONTRACT?.ADDRESS;
-  const source = contracts.SOURCE || contracts.POLYGON || null;
-  const destination = contracts.DESTINATION || contracts.BSC || null;
+  const source = contracts.SOURCE || null;
+  const destination = contracts.DESTINATION || null;
   return {
-    SOURCE: source?.ADDRESS || fallbackAddr,
-    DESTINATION: destination?.ADDRESS || fallbackAddr,
+    SOURCE: source?.ADDRESS || null,
+    DESTINATION: destination?.ADDRESS || null,
   };
 }
 
@@ -152,7 +149,8 @@ function resolveChainConfig(chainId, chainConfig) {
 }
 
 async function fetchAbi() {
-  const abiPath = CONFIG?.CONTRACT?.ABI_PATH || './abi/vault.json';
+  const abiPath = CONFIG?.BRIDGE?.CONTRACTS?.SOURCE?.ABI_PATH;
+  if (!abiPath) throw new Error('Source contract ABI path is not configured');
   const response = await fetch(abiPath, { cache: 'no-cache' });
   if (!response.ok) throw new Error(`Failed to load ABI (${abiPath}): ${response.status}`);
   const json = await response.json();

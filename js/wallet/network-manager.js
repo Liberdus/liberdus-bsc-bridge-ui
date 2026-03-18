@@ -54,7 +54,7 @@ export class NetworkManager {
 
   getAvailableNetworks() {
     const config = this._config();
-    const source = config?.BRIDGE?.CHAINS?.SOURCE || config?.NETWORK || null;
+    const source = config?.BRIDGE?.CHAINS?.SOURCE || null;
     const destination = config?.BRIDGE?.CHAINS?.DESTINATION || null;
     return [
       {
