@@ -94,6 +94,13 @@ export const CONFIG = {
   },
 };
 
+/**
+ * Resolve the selected runtime profile into a normalized source/destination view.
+ *
+ * The new canonical shape is SOURCE_* / DESTINATION_*, but we still accept the
+ * older NETWORK / CONTRACT and BRIDGE.{CHAINS,CONTRACTS}.BSC layout as a
+ * fallback so existing profile data can be migrated without breaking the app.
+ */
 const RESOLVED_PROFILE = PROFILES[CONFIG.RUNTIME.PROFILE] ? CONFIG.RUNTIME.PROFILE : 'dev';
 const ACTIVE_PROFILE = PROFILES[RESOLVED_PROFILE];
 const ACTIVE_SOURCE_NETWORK = ACTIVE_PROFILE.SOURCE_NETWORK || ACTIVE_PROFILE.NETWORK || {};
@@ -109,6 +116,14 @@ const ACTIVE_DESTINATION_CONTRACT =
   ACTIVE_PROFILE.BRIDGE?.CONTRACTS?.BSC ||
   {};
 
+/**
+ * Project the active profile into the runtime CONFIG object.
+ *
+ * CONFIG.NETWORK and CONFIG.CONTRACT remain the source-chain aliases used by
+ * the existing wallet, provider, and contract code. SOURCE / DESTINATION are
+ * the canonical bridge aliases going forward, while POLYGON / BSC are mirrored
+ * compatibility aliases for older consumers that have not been renamed yet.
+ */
 CONFIG.RUNTIME.PROFILE = RESOLVED_PROFILE;
 Object.assign(CONFIG.NETWORK, ACTIVE_SOURCE_NETWORK);
 Object.assign(CONFIG.CONTRACT, ACTIVE_SOURCE_CONTRACT);
