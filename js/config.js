@@ -100,25 +100,17 @@ export const CONFIG = {
  * Profiles must use the SOURCE_* / DESTINATION_* shape.
  * CONFIG.BRIDGE.* is the canonical runtime shape consumed throughout the app.
  */
-// Validation helpers
 function profileError(profileName, message) {
   return new Error(`Invalid profile ${profileName}: ${message}`);
 }
 
-function requireObject(profileName, value, path) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw profileError(profileName, `missing ${path}`);
-  }
-  return value;
-}
-
-function requireString(profileName, value, path) {
+function requiredString(profileName, path, value) {
   const normalized = String(value ?? '').trim();
   if (!normalized) throw profileError(profileName, `missing ${path}`);
   return normalized;
 }
 
-function requireInteger(profileName, value, path, { min = 1 } = {}) {
+function requiredInteger(profileName, path, value, { min = 1 } = {}) {
   if (value == null || value === '') {
     throw profileError(profileName, `missing ${path}`);
   }
@@ -129,40 +121,46 @@ function requireInteger(profileName, value, path, { min = 1 } = {}) {
   return normalized;
 }
 
-function normalizeFallbackRpcs(profileName, value, path) {
-  if (value == null) return [];
-  if (!Array.isArray(value)) throw profileError(profileName, `invalid ${path}`);
-
-  return value.map((entry, index) => requireString(profileName, entry, `${path}[${index}]`));
-}
-
-function normalizeNativeCurrency(profileName, value, path) {
-  const currency = requireObject(profileName, value, path);
-  return {
-    name: requireString(profileName, currency.name, `${path}.name`),
-    symbol: requireString(profileName, currency.symbol, `${path}.symbol`),
-    decimals: requireInteger(profileName, currency.decimals, `${path}.decimals`, { min: 0 }),
-  };
-}
-
 function normalizeNetwork(profileName, value, path) {
-  const network = requireObject(profileName, value, path);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw profileError(profileName, `missing ${path}`);
+  }
+
+  const fallbackRpcs = value.FALLBACK_RPCS;
+  if (fallbackRpcs != null && !Array.isArray(fallbackRpcs)) {
+    throw profileError(profileName, `invalid ${path}.FALLBACK_RPCS`);
+  }
+
+  const nativeCurrency = value.NATIVE_CURRENCY;
+  if (!nativeCurrency || typeof nativeCurrency !== 'object' || Array.isArray(nativeCurrency)) {
+    throw profileError(profileName, `missing ${path}.NATIVE_CURRENCY`);
+  }
+
   return {
-    CHAIN_ID: requireInteger(profileName, network.CHAIN_ID, `${path}.CHAIN_ID`),
-    NAME: requireString(profileName, network.NAME, `${path}.NAME`),
-    RPC_URL: requireString(profileName, network.RPC_URL, `${path}.RPC_URL`),
-    FALLBACK_RPCS: normalizeFallbackRpcs(profileName, network.FALLBACK_RPCS, `${path}.FALLBACK_RPCS`),
-    BLOCK_EXPLORER: requireString(profileName, network.BLOCK_EXPLORER, `${path}.BLOCK_EXPLORER`),
-    NATIVE_CURRENCY: normalizeNativeCurrency(profileName, network.NATIVE_CURRENCY, `${path}.NATIVE_CURRENCY`),
+    CHAIN_ID: requiredInteger(profileName, `${path}.CHAIN_ID`, value.CHAIN_ID),
+    NAME: requiredString(profileName, `${path}.NAME`, value.NAME),
+    RPC_URL: requiredString(profileName, `${path}.RPC_URL`, value.RPC_URL),
+    FALLBACK_RPCS: (fallbackRpcs || []).map((entry, index) =>
+      requiredString(profileName, `${path}.FALLBACK_RPCS[${index}]`, entry)
+    ),
+    BLOCK_EXPLORER: requiredString(profileName, `${path}.BLOCK_EXPLORER`, value.BLOCK_EXPLORER),
+    NATIVE_CURRENCY: {
+      name: requiredString(profileName, `${path}.NATIVE_CURRENCY.name`, nativeCurrency.name),
+      symbol: requiredString(profileName, `${path}.NATIVE_CURRENCY.symbol`, nativeCurrency.symbol),
+      decimals: requiredInteger(profileName, `${path}.NATIVE_CURRENCY.decimals`, nativeCurrency.decimals, { min: 0 }),
+    },
   };
 }
 
 function normalizeContract(profileName, value, path, { requireAbiPath = false } = {}) {
-  const contract = requireObject(profileName, value, path);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw profileError(profileName, `missing ${path}`);
+  }
+
   return {
-    ADDRESS: requireString(profileName, contract.ADDRESS, `${path}.ADDRESS`),
+    ADDRESS: requiredString(profileName, `${path}.ADDRESS`, value.ADDRESS),
     ...(requireAbiPath
-      ? { ABI_PATH: requireString(profileName, contract.ABI_PATH, `${path}.ABI_PATH`) }
+      ? { ABI_PATH: requiredString(profileName, `${path}.ABI_PATH`, value.ABI_PATH) }
       : {}),
   };
 }
@@ -185,13 +183,16 @@ function normalizeBridge(profileName, value) {
 }
 
 function normalizeProfile(profileName, profile) {
-  const normalizedProfile = requireObject(profileName, profile, profileName);
+  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
+    throw profileError(profileName, `missing ${profileName}`);
+  }
+
   return {
-    SOURCE_NETWORK: normalizeNetwork(profileName, normalizedProfile.SOURCE_NETWORK, 'SOURCE_NETWORK'),
-    SOURCE_CONTRACT: normalizeContract(profileName, normalizedProfile.SOURCE_CONTRACT, 'SOURCE_CONTRACT', { requireAbiPath: true }),
-    DESTINATION_NETWORK: normalizeNetwork(profileName, normalizedProfile.DESTINATION_NETWORK, 'DESTINATION_NETWORK'),
-    DESTINATION_CONTRACT: normalizeContract(profileName, normalizedProfile.DESTINATION_CONTRACT, 'DESTINATION_CONTRACT'),
-    BRIDGE: normalizeBridge(profileName, normalizedProfile.BRIDGE),
+    SOURCE_NETWORK: normalizeNetwork(profileName, profile.SOURCE_NETWORK, 'SOURCE_NETWORK'),
+    SOURCE_CONTRACT: normalizeContract(profileName, profile.SOURCE_CONTRACT, 'SOURCE_CONTRACT', { requireAbiPath: true }),
+    DESTINATION_NETWORK: normalizeNetwork(profileName, profile.DESTINATION_NETWORK, 'DESTINATION_NETWORK'),
+    DESTINATION_CONTRACT: normalizeContract(profileName, profile.DESTINATION_CONTRACT, 'DESTINATION_CONTRACT'),
+    BRIDGE: normalizeBridge(profileName, profile.BRIDGE),
   };
 }
 
