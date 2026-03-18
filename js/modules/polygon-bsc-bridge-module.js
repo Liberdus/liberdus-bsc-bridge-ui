@@ -117,20 +117,25 @@ export class PolygonBscBridgeModule {
         </div>
 
         <div class="form-grid">
-          <label class="field field--full">
-            <span class="field-label">Recipient Address (BSC)</span>
-            <input class="field-input" type="text" placeholder="0x..." data-bridge-recipient data-requires-tx="true" data-allow-input-when-locked="true" />
-          </label>
+          <div class="field field--full">
+            <div class="field-label">Recipient (Destination)</div>
+            <div class="field-readonly" data-bridge-recipient-display>—</div>
+            <div class="field-hint muted">Destination wallet is your same address on the target chain.</div>
+            <input type="hidden" data-bridge-recipient />
+          </div>
 
-          <label class="field">
-            <span class="field-label">Amount (${this._tokenSymbol()})</span>
-            <input class="field-input" type="text" placeholder="0" inputmode="decimal" data-bridge-amount data-requires-tx="true" data-allow-input-when-locked="true" />
-          </label>
+          <div class="field">
+            <div class="field-label">Amount (${this._tokenSymbol()})</div>
+            <div class="field-inline">
+              <input class="field-input" type="text" placeholder="0" inputmode="decimal" data-bridge-amount data-requires-tx="true" data-allow-input-when-locked="true" />
+              <button type="button" class="btn btn--ghost" data-bridge-set-max data-requires-tx="true">Max</button>
+            </div>
+          </div>
 
-          <label class="field">
-            <span class="field-label">Destination Chain ID</span>
-            <input class="field-input" type="text" data-bridge-dest-chainid disabled />
-          </label>
+          <div class="field">
+            <div class="field-label">Destination Chain ID</div>
+            <div class="field-readonly" data-bridge-dest-chainid-display>—</div>
+          </div>
         </div>
 
         <div class="bridge-meta">
@@ -157,7 +162,6 @@ export class PolygonBscBridgeModule {
         </div>
 
         <div class="actions bridge-actions">
-          <button type="button" class="btn" data-bridge-set-max data-requires-tx="true">Use Max</button>
           <button type="button" class="btn" data-bridge-approve data-requires-tx="true">Approve</button>
           <button type="button" class="btn btn--primary" data-bridge-submit data-requires-tx="true">Bridge Out</button>
         </div>
@@ -178,8 +182,9 @@ export class PolygonBscBridgeModule {
       destChain: this.container.querySelector('[data-bridge-dest-chain]'),
       vaultAddress: this.container.querySelector('[data-bridge-vault-address]'),
       recipient: this.container.querySelector('[data-bridge-recipient]'),
+      recipientDisplay: this.container.querySelector('[data-bridge-recipient-display]'),
       amount: this.container.querySelector('[data-bridge-amount]'),
-      destChainId: this.container.querySelector('[data-bridge-dest-chainid]'),
+      destChainIdDisplay: this.container.querySelector('[data-bridge-dest-chainid-display]'),
       userBalance: this.container.querySelector('[data-bridge-user-balance]'),
       userAllowance: this.container.querySelector('[data-bridge-user-allowance]'),
       maxAmount: this.container.querySelector('[data-bridge-max-amount]'),
@@ -208,15 +213,14 @@ export class PolygonBscBridgeModule {
     if (this._els.destName) this._els.destName.textContent = dest?.name || '-';
     if (this._els.sourceChain) this._els.sourceChain.textContent = sourceLabel;
     if (this._els.destChain) this._els.destChain.textContent = destLabel;
-    if (this._els.destChainId) this._els.destChainId.value = dest?.chainId != null ? String(dest.chainId) : '';
+    if (this._els.destChainIdDisplay) this._els.destChainIdDisplay.textContent = dest?.chainId != null ? String(dest.chainId) : '—';
     if (this._els.vaultAddress) this._els.vaultAddress.textContent = this._shortAddress(this._getVaultAddress());
   }
 
   _onWalletEvent() {
     const addr = this.walletManager?.getAddress?.() || null;
-    if (addr && this._els.recipient && !this._els.recipient.value) {
-      this._els.recipient.value = addr;
-    }
+    if (addr && this._els.recipient) this._els.recipient.value = addr;
+    if (this._els.recipientDisplay) this._els.recipientDisplay.textContent = addr ? this._shortAddress(addr) : '—';
     this._updateActionStates();
     this._scheduleRefresh();
   }
@@ -242,10 +246,10 @@ export class PolygonBscBridgeModule {
     const connected = !!this.walletManager?.isConnected?.();
     const snapshot = this._lastSnapshot;
 
-    if (this._els.recipient) this._els.recipient.disabled = false;
     if (this._els.amount) this._els.amount.disabled = false;
 
-    const recipientOk = this._isAddress(this._els.recipient?.value);
+    const recipientAddr = this.walletManager?.getAddress?.() || null;
+    const recipientOk = this._isAddress(recipientAddr);
     const amountWei = this._parseAmountToWei(this._els.amount?.value);
     const amountOk = amountWei && amountWei.gt(0);
 
@@ -365,7 +369,7 @@ export class PolygonBscBridgeModule {
       const address = this.walletManager?.getAddress?.();
       if (!address) throw new Error('Wallet not connected');
 
-      const recipient = String(this._els.recipient?.value || '').trim();
+      const recipient = String(address).trim();
       if (!this._isAddress(recipient)) throw new Error('Invalid recipient address');
 
       const amountWei = this._parseAmountToWei(this._els.amount?.value);
