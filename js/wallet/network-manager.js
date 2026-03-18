@@ -54,28 +54,28 @@ export class NetworkManager {
 
   getAvailableNetworks() {
     const config = this._config();
-    const polygon = config?.BRIDGE?.CHAINS?.POLYGON || config?.NETWORK || null;
-    const bsc = config?.BRIDGE?.CHAINS?.BSC || null;
-    const polygonNative = polygon?.NATIVE_CURRENCY || config?.NETWORK?.NATIVE_CURRENCY || { name: 'MATIC', symbol: 'MATIC', decimals: 18 };
-    const bscNative = bsc?.NATIVE_CURRENCY || { name: 'BNB', symbol: 'tBNB', decimals: 18 };
+    const source = config?.BRIDGE?.CHAINS?.SOURCE || config?.BRIDGE?.CHAINS?.POLYGON || config?.NETWORK || null;
+    const destination = config?.BRIDGE?.CHAINS?.DESTINATION || config?.BRIDGE?.CHAINS?.BSC || null;
+    const sourceNative = source?.NATIVE_CURRENCY || config?.NETWORK?.NATIVE_CURRENCY || { name: 'MATIC', symbol: 'MATIC', decimals: 18 };
+    const destinationNative = destination?.NATIVE_CURRENCY || { name: 'BNB', symbol: 'tBNB', decimals: 18 };
     return [
       {
-        key: 'polygon',
-        chainId: polygon?.CHAIN_ID || config?.NETWORK?.CHAIN_ID || 80002,
-        name: polygon?.NAME || config?.NETWORK?.NAME || 'Polygon Amoy Testnet',
-        rpcUrl: polygon?.RPC_URL || config?.NETWORK?.RPC_URL || '',
-        fallbackRpcs: polygon?.FALLBACK_RPCS || config?.NETWORK?.FALLBACK_RPCS || [],
-        blockExplorer: polygon?.BLOCK_EXPLORER || config?.NETWORK?.BLOCK_EXPLORER || '',
-        nativeCurrency: polygonNative,
+        key: 'source',
+        chainId: source?.CHAIN_ID || config?.NETWORK?.CHAIN_ID || 80002,
+        name: source?.NAME || config?.NETWORK?.NAME || 'Source Network',
+        rpcUrl: source?.RPC_URL || config?.NETWORK?.RPC_URL || '',
+        fallbackRpcs: source?.FALLBACK_RPCS || config?.NETWORK?.FALLBACK_RPCS || [],
+        blockExplorer: source?.BLOCK_EXPLORER || config?.NETWORK?.BLOCK_EXPLORER || '',
+        nativeCurrency: sourceNative,
       },
       {
-        key: 'bsc',
-        chainId: bsc?.CHAIN_ID || 97,
-        name: bsc?.NAME || 'BSC Testnet',
-        rpcUrl: bsc?.RPC_URL || '',
-        fallbackRpcs: bsc?.FALLBACK_RPCS || [],
-        blockExplorer: bsc?.BLOCK_EXPLORER || '',
-        nativeCurrency: bscNative,
+        key: 'destination',
+        chainId: destination?.CHAIN_ID || 97,
+        name: destination?.NAME || 'Destination Network',
+        rpcUrl: destination?.RPC_URL || '',
+        fallbackRpcs: destination?.FALLBACK_RPCS || [],
+        blockExplorer: destination?.BLOCK_EXPLORER || '',
+        nativeCurrency: destinationNative,
       },
     ];
   }

@@ -1,6 +1,6 @@
 const PROFILES = {
   dev: {
-    NETWORK: {
+    SOURCE_NETWORK: {
       CHAIN_ID: 80002,
       NAME: 'Polygon Amoy',
       RPC_URL: 'https://polygon-amoy-bor-rpc.publicnode.com',
@@ -10,19 +10,32 @@ const PROFILES = {
       BLOCK_EXPLORER: 'https://amoy.polygonscan.com',
       NATIVE_CURRENCY: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
     },
-    CONTRACT: {
+    SOURCE_CONTRACT: {
       ADDRESS: '0xaA2616CD3A3d3d63F8e1ac9c7d7BDc37f16709dA',
       ABI_PATH: './abi/vault.json',
+    },
+    DESTINATION_NETWORK: {
+      CHAIN_ID: 97,
+      NAME: 'BNB Testnet',
+      RPC_URL: 'https://bsc-testnet.publicnode.com',
+      FALLBACK_RPCS: [
+        'https://rpc.ankr.com/bsc_testnet',
+      ],
+      BLOCK_EXPLORER: 'https://testnet.bscscan.com',
+      NATIVE_CURRENCY: { name: 'BNB', symbol: 'tBNB', decimals: 18 },
+    },
+    DESTINATION_CONTRACT: {
+      ADDRESS: '0xf5A75e4bC827c9cC31BacD4c4d365107C698b465',
     },
     BRIDGE: {
       COORDINATOR_URL: 'https://tss1-test.liberdus.com',
     },
   },
   prod: {
-    // Replace these mirrored values with the deployed Polygon profile when available.
-    NETWORK: {
+    // Replace these placeholder deployment values with the final Polygon / BNB Chain values when available.
+    SOURCE_NETWORK: {
       CHAIN_ID: 80002,
-      NAME: 'Polygon Amoy',
+      NAME: 'Polygon',
       RPC_URL: 'https://rpc.ankr.com/polygon_amoy',
       FALLBACK_RPCS: [
         'https://polygon-amoy-bor-rpc.publicnode.com',
@@ -30,9 +43,22 @@ const PROFILES = {
       BLOCK_EXPLORER: 'https://amoy.polygonscan.com',
       NATIVE_CURRENCY: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
     },
-    CONTRACT: {
+    SOURCE_CONTRACT: {
       ADDRESS: '0xaA2616CD3A3d3d63F8e1ac9c7d7BDc37f16709dA',
       ABI_PATH: './abi/vault.json',
+    },
+    DESTINATION_NETWORK: {
+      CHAIN_ID: 97,
+      NAME: 'BNB Chain',
+      RPC_URL: 'https://bsc-testnet.publicnode.com',
+      FALLBACK_RPCS: [
+        'https://rpc.ankr.com/bsc_testnet',
+      ],
+      BLOCK_EXPLORER: 'https://testnet.bscscan.com',
+      NATIVE_CURRENCY: { name: 'BNB', symbol: 'tBNB', decimals: 18 },
+    },
+    DESTINATION_CONTRACT: {
+      ADDRESS: '0xf5A75e4bC827c9cC31BacD4c4d365107C698b465',
     },
     BRIDGE: {
       COORDINATOR_URL: 'https://tss1-test.liberdus.com',
@@ -40,24 +66,9 @@ const PROFILES = {
   },
 };
 
-const BSC_DESTINATION_CHAIN = {
-  CHAIN_ID: 97,
-  NAME: 'BSC Testnet',
-  RPC_URL: 'https://bsc-testnet.publicnode.com',
-  FALLBACK_RPCS: [
-    'https://rpc.ankr.com/bsc_testnet',
-  ],
-  BLOCK_EXPLORER: 'https://testnet.bscscan.com',
-  NATIVE_CURRENCY: { name: 'BNB', symbol: 'tBNB', decimals: 18 },
-};
-
-const BSC_DESTINATION_CONTRACT = {
-  ADDRESS: '0xf5A75e4bC827c9cC31BacD4c4d365107C698b465',
-};
-
 export const CONFIG = {
   APP: {
-    NAME: 'Liberdus BSC Bridge UI',
+    NAME: 'Liberdus Bridge UI',
     VERSION: '0.1.1',
   },
 
@@ -85,24 +96,48 @@ export const CONFIG = {
 
 const RESOLVED_PROFILE = PROFILES[CONFIG.RUNTIME.PROFILE] ? CONFIG.RUNTIME.PROFILE : 'dev';
 const ACTIVE_PROFILE = PROFILES[RESOLVED_PROFILE];
+const ACTIVE_SOURCE_NETWORK = ACTIVE_PROFILE.SOURCE_NETWORK || ACTIVE_PROFILE.NETWORK || {};
+const ACTIVE_SOURCE_CONTRACT = ACTIVE_PROFILE.SOURCE_CONTRACT || ACTIVE_PROFILE.CONTRACT || {};
+const ACTIVE_DESTINATION_NETWORK =
+  ACTIVE_PROFILE.DESTINATION_NETWORK ||
+  ACTIVE_PROFILE.BRIDGE?.CHAINS?.DESTINATION ||
+  ACTIVE_PROFILE.BRIDGE?.CHAINS?.BSC ||
+  {};
+const ACTIVE_DESTINATION_CONTRACT =
+  ACTIVE_PROFILE.DESTINATION_CONTRACT ||
+  ACTIVE_PROFILE.BRIDGE?.CONTRACTS?.DESTINATION ||
+  ACTIVE_PROFILE.BRIDGE?.CONTRACTS?.BSC ||
+  {};
 
 CONFIG.RUNTIME.PROFILE = RESOLVED_PROFILE;
-Object.assign(CONFIG.NETWORK, ACTIVE_PROFILE.NETWORK);
-Object.assign(CONFIG.CONTRACT, ACTIVE_PROFILE.CONTRACT);
+Object.assign(CONFIG.NETWORK, ACTIVE_SOURCE_NETWORK);
+Object.assign(CONFIG.CONTRACT, ACTIVE_SOURCE_CONTRACT);
 CONFIG.BRIDGE.COORDINATOR_URL = ACTIVE_PROFILE.BRIDGE?.COORDINATOR_URL || 'https://tss1-test.liberdus.com';
 Object.assign(CONFIG.BRIDGE.CHAINS, {
+  SOURCE: {
+    ...ACTIVE_SOURCE_NETWORK,
+  },
+  DESTINATION: {
+    ...ACTIVE_DESTINATION_NETWORK,
+  },
   POLYGON: {
-    ...CONFIG.NETWORK,
+    ...ACTIVE_SOURCE_NETWORK,
   },
   BSC: {
-    ...BSC_DESTINATION_CHAIN,
+    ...ACTIVE_DESTINATION_NETWORK,
   },
 });
 Object.assign(CONFIG.BRIDGE.CONTRACTS, {
+  SOURCE: {
+    ...ACTIVE_SOURCE_CONTRACT,
+  },
+  DESTINATION: {
+    ...ACTIVE_DESTINATION_CONTRACT,
+  },
   POLYGON: {
-    ADDRESS: CONFIG.CONTRACT.ADDRESS,
+    ...ACTIVE_SOURCE_CONTRACT,
   },
   BSC: {
-    ...BSC_DESTINATION_CONTRACT,
+    ...ACTIVE_DESTINATION_CONTRACT,
   },
 });

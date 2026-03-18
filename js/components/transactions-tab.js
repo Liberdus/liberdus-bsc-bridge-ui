@@ -59,23 +59,33 @@ function formatTokenAmount(amount, decimals, symbol) {
   }
 }
 
-function getChainConfig() {
+function getSourceChainConfig() {
   const chains = CONFIG?.BRIDGE?.CHAINS || {};
-  const polygon = chains.POLYGON || CONFIG?.NETWORK;
-  const bsc = chains.BSC || null;
+  return chains.SOURCE || chains.POLYGON || CONFIG?.NETWORK || null;
+}
 
+function getDestinationChainConfig() {
+  const chains = CONFIG?.BRIDGE?.CHAINS || {};
+  return chains.DESTINATION || chains.BSC || null;
+}
+
+function getChainConfig() {
   const normalized = {};
-  if (polygon?.CHAIN_ID) normalized.POLYGON = polygon;
-  if (bsc?.CHAIN_ID) normalized.BSC = bsc;
+  const source = getSourceChainConfig();
+  const destination = getDestinationChainConfig();
+  if (source?.CHAIN_ID) normalized.SOURCE = source;
+  if (destination?.CHAIN_ID) normalized.DESTINATION = destination;
   return normalized;
 }
 
 function getContractsConfig() {
   const contracts = CONFIG?.BRIDGE?.CONTRACTS || {};
   const fallbackAddr = CONFIG?.CONTRACT?.ADDRESS;
+  const source = contracts.SOURCE || contracts.POLYGON || null;
+  const destination = contracts.DESTINATION || contracts.BSC || null;
   return {
-    POLYGON: contracts.POLYGON?.ADDRESS || fallbackAddr,
-    BSC: contracts.BSC?.ADDRESS || fallbackAddr,
+    SOURCE: source?.ADDRESS || fallbackAddr,
+    DESTINATION: destination?.ADDRESS || fallbackAddr,
   };
 }
 
@@ -307,7 +317,7 @@ async function loadTransactionsFromCoordinator({ limit = 200 } = {}) {
 
   const secondaryChainId =
     Number(chainConfig?.secondaryChainConfig?.chainId) ||
-    Number(chains?.BSC?.CHAIN_ID) ||
+    Number(chains?.DESTINATION?.CHAIN_ID) ||
     0;
 
   const allTransactions = [];
@@ -572,12 +582,16 @@ export class TransactionsTab {
     this.panel = document.querySelector('.tab-panel[data-panel="transactions"]');
     if (!this.panel) return;
 
+    const chains = getChainConfig();
+    const sourceName = chains.SOURCE?.NAME || 'source chain';
+    const destinationName = chains.DESTINATION?.NAME || 'destination chain';
+
     this.panel.innerHTML = `
       <div class="tx-header card">
         <div class="tx-header-row">
           <div>
             <div class="tx-title">Search Transactions</div>
-            <div class="muted" data-tx-status>Load recent bridge transactions from Polygon and BSC.</div>
+            <div class="muted" data-tx-status>Load recent bridge transactions from ${sourceName} and ${destinationName}.</div>
           </div>
           <div class="tx-header-actions">
             <div class="tx-total"><span class="tx-total-label">Total Transactions:</span> <strong data-tx-total>0</strong></div>

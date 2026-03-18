@@ -118,7 +118,7 @@ export class PolygonBscBridgeModule {
 
         <div class="form-grid">
           <label class="field field--full">
-            <span class="field-label">Recipient Address (BSC)</span>
+            <span class="field-label">Recipient Address (${this._destinationRecipientLabel()})</span>
             <input class="field-input" type="text" placeholder="0x..." data-bridge-recipient data-requires-tx="true" data-allow-input-when-locked="true" />
           </label>
 
@@ -447,7 +447,7 @@ export class PolygonBscBridgeModule {
           timeoutMs: 2500,
           dismissible: true,
         });
-        this._showStatus('Bridge confirmed', 'Transaction confirmed on Polygon');
+        this._showStatus('Bridge confirmed', this._escapeHtml(this._sourceChainConfirmationText()));
       }
 
       await this._refreshBalances();
@@ -571,23 +571,23 @@ export class PolygonBscBridgeModule {
 
   _getVaultAddress() {
     const fromChainCfg = this._chainConfig?.vaultChain?.contractAddress || null;
-    const fromConfig = this.config?.CONTRACT?.ADDRESS || this.config?.BRIDGE?.CONTRACTS?.POLYGON?.ADDRESS || null;
+    const fromConfig = this._getSourceContractConfig()?.ADDRESS || this.config?.CONTRACT?.ADDRESS || null;
     return fromConfig || fromChainCfg || null;
   }
 
   _getSourceChain() {
     const fromChainCfg = this._chainConfig?.vaultChain || this._chainConfig?.supportedChains?.[String(this.config?.NETWORK?.CHAIN_ID || '')];
     if (fromChainCfg?.chainId) return { name: fromChainCfg.name, chainId: Number(fromChainCfg.chainId) };
-    const cfg = this.config?.NETWORK;
-    if (cfg?.CHAIN_ID) return { name: cfg.NAME || 'Polygon', chainId: Number(cfg.CHAIN_ID) };
+    const cfg = this._getSourceChainConfig();
+    if (cfg?.CHAIN_ID) return { name: cfg.NAME || 'Source Network', chainId: Number(cfg.CHAIN_ID) };
     return null;
   }
 
   _getDestChain() {
     const fromChainCfg = this._chainConfig?.secondaryChainConfig || null;
     if (fromChainCfg?.chainId) return { name: fromChainCfg.name, chainId: Number(fromChainCfg.chainId) };
-    const cfg = this.config?.BRIDGE?.CHAINS?.BSC;
-    if (cfg?.CHAIN_ID) return { name: cfg.NAME || 'BSC', chainId: Number(cfg.CHAIN_ID) };
+    const cfg = this._getDestChainConfig();
+    if (cfg?.CHAIN_ID) return { name: cfg.NAME || 'Destination Network', chainId: Number(cfg.CHAIN_ID) };
     return null;
   }
 
@@ -600,11 +600,34 @@ export class PolygonBscBridgeModule {
   }
 
   _getSourceChainExplorer() {
-    const cfg = this.config?.NETWORK?.BLOCK_EXPLORER || '';
-    if (cfg) return cfg;
-    const name = (this._getSourceChain()?.name || '').toLowerCase();
+    const cfg = this._getSourceChainConfig();
+    const explorer = cfg?.BLOCK_EXPLORER || this.config?.NETWORK?.BLOCK_EXPLORER || '';
+    if (explorer) return explorer;
+    const name = String(cfg?.NAME || this._getSourceChain()?.name || '').toLowerCase();
     if (name.includes('amoy')) return 'https://amoy.polygonscan.com';
+    if (name.includes('polygon')) return 'https://polygonscan.com';
     return '';
+  }
+
+  _getSourceChainConfig() {
+    return this.config?.BRIDGE?.CHAINS?.SOURCE || this.config?.BRIDGE?.CHAINS?.POLYGON || this.config?.NETWORK || null;
+  }
+
+  _getDestChainConfig() {
+    return this.config?.BRIDGE?.CHAINS?.DESTINATION || this.config?.BRIDGE?.CHAINS?.BSC || null;
+  }
+
+  _getSourceContractConfig() {
+    return this.config?.BRIDGE?.CONTRACTS?.SOURCE || this.config?.BRIDGE?.CONTRACTS?.POLYGON || this.config?.CONTRACT || null;
+  }
+
+  _destinationRecipientLabel() {
+    return this._getDestChain()?.name || this._getDestChainConfig()?.NAME || 'Destination';
+  }
+
+  _sourceChainConfirmationText() {
+    const sourceName = this._getSourceChain()?.name || 'source chain';
+    return `Transaction confirmed on ${sourceName}`;
   }
 
   async _ensureRequiredNetworkForAction(toastId) {
@@ -668,7 +691,7 @@ export class PolygonBscBridgeModule {
   }
 
   _requiredNetworkName() {
-    return this.config?.NETWORK?.NAME || 'the required network';
+    return this._getSourceChain()?.name || this.config?.NETWORK?.NAME || 'the required network';
   }
 
   _actionErrorMessage(error, fallback) {
