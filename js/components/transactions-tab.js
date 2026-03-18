@@ -314,8 +314,8 @@ async function loadTransactionsFromCoordinator({ limit = 200 } = {}) {
   if (!coordinatorUrl) throw new Error('Coordinator URL is not configured');
 
   const secondaryChainId =
-    Number(chainConfig?.secondaryChainConfig?.chainId) ||
     Number(chains?.DESTINATION?.CHAIN_ID) ||
+    Number(chainConfig?.secondaryChainConfig?.chainId) ||
     0;
 
   const allTransactions = [];

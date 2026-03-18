@@ -691,7 +691,7 @@ export class PolygonBscBridgeModule {
   }
 
   _requiredNetworkName() {
-    return this._getSourceChain()?.name || 'the required network';
+    return this._getSourceChainConfig()?.NAME || 'the required network';
   }
 
   _actionErrorMessage(error, fallback) {
