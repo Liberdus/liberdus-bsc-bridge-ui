@@ -697,7 +697,6 @@ export class TransactionsTab {
       this.render();
       this._setStatus('Transactions updated.');
     } catch (error) {
-      this._rows = [];
       this.render();
       this._setStatus(error?.message || 'Failed to load transactions.');
     } finally {
