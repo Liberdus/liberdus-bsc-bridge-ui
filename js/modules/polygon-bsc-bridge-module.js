@@ -120,7 +120,11 @@ export class PolygonBscBridgeModule {
               </div>
             </div>
 
-            <div class="bridge-route-arrow" aria-hidden="true">&rarr;</div>
+            <div class="bridge-route-arrow" aria-hidden="true">
+              <svg class="bridge-route-arrow-icon" viewBox="0 0 24 24" focusable="false">
+                <path d="M3 12h14m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </div>
 
             <div class="bridge-route-card">
               <div class="bridge-route-copy">

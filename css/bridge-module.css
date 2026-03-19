@@ -95,11 +95,15 @@
   display: grid;
   place-items: center;
   color: var(--primary-color);
-  font-size: 22px;
-  font-weight: var(--font-weight-bold);
   background: var(--background-color);
   border: 1px solid rgba(61, 61, 206, 0.16);
   box-shadow: 0 8px 18px rgba(61, 61, 206, 0.12);
+}
+
+.bridge-route-arrow-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 .bridge-route-address {
