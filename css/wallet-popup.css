@@ -23,16 +23,6 @@
   overflow: hidden;
 }
 
-.wallet-popup-content::before {
-  content: '';
-  display: block;
-  width: 36px;
-  height: 4px;
-  margin: 0 auto 10px;
-  border-radius: 9999px;
-  background: var(--border-color);
-}
-
 .wallet-popup-close {
   position: absolute;
   top: 10px;
