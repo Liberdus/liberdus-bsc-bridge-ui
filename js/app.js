@@ -25,8 +25,7 @@ const contractManager = new ContractManager({ walletManager, networkManager });
 const walletPopup = new WalletPopup({ walletManager, contractManager });
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const updated = await versionService.initialize();
-  if (updated) return;
+  if (await versionService.initialize()) return;
 
   window.CONFIG = CONFIG;
 

@@ -1,5 +1,6 @@
 const VERSION_STORAGE_KEY = 'app_version';
-const DEFAULT_REQUEST_TIMEOUT_MS = 3000;
+const REQUEST_TIMEOUT_MS = 3000;
+const VERSION_URL = 'version.html';
 const NO_CACHE_REQUEST = {
   cache: 'reload',
   headers: {
@@ -50,53 +51,48 @@ function getReloadUrl() {
   return window.location.href.split('?')[0];
 }
 
-function createRequestSignal(timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
+async function fetchNoCache(url) {
   const controller = new AbortController();
-  const timerId = window.setTimeout(() => controller.abort(), timeoutMs);
-  return { signal: controller.signal, timerId };
-}
+  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-async function fetchText(url, { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS } = {}) {
-  const { signal, timerId } = createRequestSignal(timeoutMs);
   try {
-    const response = await fetch(url, { ...NO_CACHE_REQUEST, signal });
-    assert(response.ok, `Failed to load ${url}: ${response.status} ${response.statusText}`);
-
-    const text = (await response.text()).trim();
-    assert(text, `${url} is empty`);
-    return text;
+    return await fetch(url, { ...NO_CACHE_REQUEST, signal: controller.signal });
   } finally {
-    window.clearTimeout(timerId);
+    window.clearTimeout(timeoutId);
   }
 }
 
-async function fetchAndDrain(url, { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS } = {}) {
-  const { signal, timerId } = createRequestSignal(timeoutMs);
-  try {
-    const response = await fetch(url, { ...NO_CACHE_REQUEST, signal });
-    assert(response.ok, `Failed to reload ${url}: ${response.status} ${response.statusText}`);
-    await response.arrayBuffer();
-  } finally {
-    window.clearTimeout(timerId);
-  }
+async function fetchVersion() {
+  const response = await fetchNoCache(VERSION_URL);
+  assert(response.ok, `Failed to load ${VERSION_URL}: ${response.status} ${response.statusText}`);
+
+  const version = (await response.text()).trim();
+  assert(version, `${VERSION_URL} is empty`);
+  return version;
 }
 
-async function reloadCriticalFiles({ timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS } = {}) {
-  const criticalFiles = [getReloadUrl(), ...STATIC_CRITICAL_FILES];
-  await Promise.all(criticalFiles.map((url) => fetchAndDrain(url, { timeoutMs })));
+async function reloadFile(url) {
+  const response = await fetchNoCache(url);
+  assert(response.ok, `Failed to reload ${url}: ${response.status} ${response.statusText}`);
+  await response.arrayBuffer();
+}
+
+async function reloadCriticalFiles() {
+  const urls = [getReloadUrl(), ...STATIC_CRITICAL_FILES];
+  await Promise.all(urls.map((url) => reloadFile(url)));
 }
 
 export const versionService = {
-  async initialize({ timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS } = {}) {
+  async initialize() {
     try {
-      const nextVersion = await fetchText('version.html', { timeoutMs });
+      const nextVersion = await fetchVersion();
       const storedVersion = localStorage.getItem(VERSION_STORAGE_KEY)?.trim() || null;
 
       if (storedVersion === nextVersion) {
         return false;
       }
 
-      await reloadCriticalFiles({ timeoutMs });
+      await reloadCriticalFiles();
       localStorage.setItem(VERSION_STORAGE_KEY, nextVersion);
       window.location.replace(getReloadUrl());
       return true;
