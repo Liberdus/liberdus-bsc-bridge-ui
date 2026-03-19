@@ -1,4 +1,4 @@
-import { MetaMaskConnector } from './metamask-connector.js?v=20260317i';
+import { MetaMaskConnector } from './metamask-connector.js';
 
 /**
  * WalletManager (Phase 2)
