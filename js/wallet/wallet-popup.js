@@ -2,7 +2,7 @@ import { CONFIG } from '../config.js';
 
 /**
  * WalletPopup (Phase 2)
- * Simple MetaMask popup:
+ * Sheet-style MetaMask popup:
  * - address (copy)
  * - balance (native, best-effort)
  * - disconnect
@@ -163,13 +163,13 @@ export class WalletPopup {
   _renderHTML({ address, balanceText }) {
     const short = this._shortAddress(address);
     const network = CONFIG.BRIDGE.CHAINS.SOURCE;
+    const explorerHref = this._addressExplorerHref(address);
     return `
       <div class="wallet-popup" role="dialog" aria-label="Wallet">
         <div class="wallet-popup-content">
           <button class="wallet-popup-close" type="button" title="Close" data-wallet-close>×</button>
 
           <div class="wallet-balance">
-            <div class="balance-label">${network.NATIVE_CURRENCY.symbol} Balance</div>
             <div class="balance-value" data-wallet-balance>${balanceText}</div>
           </div>
 
@@ -186,6 +186,12 @@ export class WalletPopup {
           </div>
 
           <div class="wallet-actions">
+            ${explorerHref ? `
+              <a class="wallet-action-link" href="${explorerHref}" target="_blank" rel="noopener">
+                <span>View on explorer</span>
+                <span class="wallet-action-link-icon" aria-hidden="true">↗</span>
+              </a>
+            ` : ''}
             <button class="disconnect-button" type="button" data-wallet-disconnect>Disconnect</button>
           </div>
         </div>
@@ -244,6 +250,12 @@ export class WalletPopup {
   _shortAddress(addr) {
     if (!addr) return '';
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+  }
+
+  _addressExplorerHref(address) {
+    const explorerBase = CONFIG.BRIDGE.CHAINS.SOURCE?.BLOCK_EXPLORER;
+    if (!explorerBase || !address) return '';
+    return `${String(explorerBase).replace(/\/$/, '')}/address/${address}`;
   }
 
   _formatBalance(str) {
