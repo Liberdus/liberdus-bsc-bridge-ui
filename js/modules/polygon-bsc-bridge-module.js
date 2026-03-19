@@ -254,12 +254,12 @@ export class PolygonBscBridgeModule {
     const recipient = this._getRecipientAddress();
     const recipientOk = this._isAddress(recipient);
     const amountWei = this._parseAmountToWei(this._els.amount?.value);
-    const amountOk = amountWei && amountWei.gt(0);
-    const exceedsBalance = !!(amountWei && balanceWei && amountWei.gt(balanceWei));
+    const hasAmount = !!amountWei && amountWei.gt(0);
+    const exceedsBalance = hasAmount && !!balanceWei && amountWei.gt(balanceWei);
+    const exceedsMax = hasAmount && !!snapshot?.maxBridgeOutAmount && amountWei.gt(this._bn(snapshot.maxBridgeOutAmount));
 
     const bridgeEnabled = snapshot?.bridgeOutEnabled !== false && snapshot?.halted !== true;
-    const maxOk = snapshot?.maxBridgeOutAmount ? amountWei && amountWei.lte(this._bn(snapshot.maxBridgeOutAmount)) : true;
-
+    const amountOk = hasAmount && !exceedsBalance && !exceedsMax;
     const needsApproval = this._needsApproval(amountWei);
 
     this._els.amountField?.classList.toggle('is-invalid', exceedsBalance);
@@ -269,7 +269,7 @@ export class PolygonBscBridgeModule {
     if (this._els.approveBtn) this._els.approveBtn.disabled = !connected || !amountOk || !needsApproval;
     if (this._els.bridgeBtn)
       this._els.bridgeBtn.disabled =
-        !connected || !recipientOk || !amountOk || !bridgeEnabled || !maxOk || needsApproval;
+        !connected || !recipientOk || !amountOk || !bridgeEnabled || needsApproval;
     if (this._els.setMaxBtn) this._els.setMaxBtn.disabled = !txEnabled;
   }
 
@@ -741,14 +741,13 @@ export class PolygonBscBridgeModule {
   }
 
   _parseAmountToWei(value) {
-    try {
-      const v = String(value || '').trim();
-      if (!v) return null;
-      const dec = Number(this.config?.TOKEN?.DECIMALS ?? 18);
-      return window.ethers.utils.parseUnits(v, dec);
-    } catch (_) {
-      return null;
-    }
+    const v = String(value || '').trim();
+    if (!v) return null;
+
+    const normalized = v.endsWith('.') ? v.slice(0, -1) : v;
+    if (!normalized) return null;
+
+    return window.ethers.utils.parseUnits(normalized, this.config.TOKEN.DECIMALS);
   }
 
   _bn(value) {
@@ -769,6 +768,8 @@ export class PolygonBscBridgeModule {
     const amount = this._els.amount;
     if (!amount) return;
 
+    amount.value = this._sanitizeAmountValue(amount.value);
+
     const maxBridgeOutAmount = this._lastSnapshot?.maxBridgeOutAmount;
     if (maxBridgeOutAmount) {
       const amountWei = this._parseAmountToWei(amount.value);
@@ -781,6 +782,34 @@ export class PolygonBscBridgeModule {
     amount.style.height = 'auto';
     const minHeight = window.innerWidth <= 720 ? 44 : 56;
     amount.style.height = `${Math.max(amount.scrollHeight, minHeight)}px`;
+  }
+
+  _sanitizeAmountValue(value) {
+    const text = String(value || '');
+    const decimals = this.config.TOKEN.DECIMALS;
+    let whole = '';
+    let fraction = '';
+    let hasDot = false;
+
+    for (const char of text) {
+      if (char >= '0' && char <= '9') {
+        if (hasDot) {
+          if (fraction.length < decimals) fraction += char;
+        } else {
+          whole += char;
+        }
+        continue;
+      }
+
+      if (char === '.' && !hasDot) {
+        hasDot = true;
+      }
+    }
+
+    if (!whole && !fraction) return '';
+    if (!whole) whole = '0';
+    if (!hasDot) return whole;
+    return `${whole}.${fraction}`;
   }
 
   _syncRouteAddresses() {
