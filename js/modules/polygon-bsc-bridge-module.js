@@ -27,6 +27,7 @@ export class PolygonBscBridgeModule {
     this._onSetMaxClicked = this._onSetMaxClicked.bind(this);
     this._onCopyAddressClicked = this._onCopyAddressClicked.bind(this);
     this._onAmountInput = this._onAmountInput.bind(this);
+    this._onAmountPaste = this._onAmountPaste.bind(this);
   }
 
   mount(container) {
@@ -68,6 +69,7 @@ export class PolygonBscBridgeModule {
       button.addEventListener('click', this._onCopyAddressClicked);
     }
     this._els.amount?.addEventListener('input', this._onAmountInput);
+    this._els.amount?.addEventListener('paste', this._onAmountPaste);
   }
 
   _unbind() {
@@ -87,6 +89,7 @@ export class PolygonBscBridgeModule {
       button.removeEventListener('click', this._onCopyAddressClicked);
     }
     this._els.amount?.removeEventListener('input', this._onAmountInput);
+    this._els.amount?.removeEventListener('paste', this._onAmountPaste);
   }
 
   _render() {
@@ -239,6 +242,26 @@ export class PolygonBscBridgeModule {
   }
 
   _onAmountInput() {
+    this._syncAmountInput();
+    this._updateActionStates();
+  }
+
+  _onAmountPaste(event) {
+    const amount = this._els.amount;
+    if (!amount) return;
+
+    const pasted = String(event.clipboardData?.getData('text') || '').trim();
+    const start = amount.selectionStart;
+    const end = amount.selectionEnd;
+    const nextValue = `${amount.value.slice(0, start)}${pasted}${amount.value.slice(end)}`;
+
+    if (!this._isEditableAmountValue(nextValue)) {
+      event.preventDefault();
+      return;
+    }
+
+    event.preventDefault();
+    amount.value = nextValue;
     this._syncAmountInput();
     this._updateActionStates();
   }
@@ -812,6 +835,22 @@ export class PolygonBscBridgeModule {
     return `${whole}.${fraction}`;
   }
 
+  _isEditableAmountValue(value) {
+    const text = String(value || '').trim();
+    if (!text) return true;
+
+    const parts = text.split('.');
+    if (parts.length > 2) return false;
+
+    const [whole, fraction = ''] = parts;
+    if (whole && !/^\d+$/.test(whole)) return false;
+    if (fraction && !/^\d+$/.test(fraction)) return false;
+    if (fraction.length > this.config.TOKEN.DECIMALS) return false;
+    if (parts.length === 2 && !whole && !fraction) return false;
+
+    return true;
+  }
+
   _syncRouteAddresses() {
     const recipient = this._getRecipientAddress();
     const hasRecipient = this._isAddress(recipient);
@@ -833,8 +872,34 @@ export class PolygonBscBridgeModule {
     const button = event.currentTarget;
     const text = button.getAttribute('data-address');
     if (!text) return;
-    await navigator.clipboard.writeText(text);
+    const copied = await this._copy(text);
+    if (!copied) {
+      this.toastManager?.error?.('Failed to copy address');
+      return;
+    }
     this.toastManager?.success?.('Address copied to clipboard', { timeoutMs: 1800 });
+  }
+
+  async _copy(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return !!ok;
+      } catch {
+        document.body.removeChild(ta);
+        return false;
+      }
+    }
   }
 
   _isAddress(address) {
