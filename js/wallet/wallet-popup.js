@@ -170,7 +170,6 @@ export class WalletPopup {
           <button class="wallet-popup-close" type="button" title="Close" data-wallet-close>×</button>
 
           <div class="wallet-balance">
-            <div class="balance-label">${network.NATIVE_CURRENCY.symbol} Balance</div>
             <div class="balance-value" data-wallet-balance>${balanceText}</div>
           </div>
 

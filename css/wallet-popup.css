@@ -91,8 +91,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 8px 0 4px;
+  padding: 8px 0 6px;
 }
 
 .balance-value {
@@ -101,14 +100,6 @@
   line-height: 1.1;
   font-weight: var(--font-weight-bold);
   letter-spacing: -0.03em;
-}
-
-.balance-label {
-  order: 2;
-  font-size: var(--font-size-xs);
-  color: var(--secondary-text-color);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
 }
 
 .wallet-address {
