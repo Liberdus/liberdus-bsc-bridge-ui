@@ -78,19 +78,24 @@ async function reloadCriticalFiles() {
 }
 
 export async function initializeVersionService() {
-  const response = await fetchNoCache(VERSION_URL);
-  assert(response.ok, `Failed to load ${VERSION_URL}: ${response.status} ${response.statusText}`);
+  try {
+    const response = await fetchNoCache(VERSION_URL);
+    assert(response.ok, `Failed to load ${VERSION_URL}: ${response.status} ${response.statusText}`);
 
-  const nextVersion = (await response.text()).trim();
-  assert(nextVersion, `${VERSION_URL} is empty`);
+    const nextVersion = (await response.text()).trim();
+    assert(nextVersion, `${VERSION_URL} is empty`);
 
-  const storedVersion = localStorage.getItem(VERSION_STORAGE_KEY);
-  if (storedVersion === nextVersion) {
+    if (localStorage.getItem(VERSION_STORAGE_KEY) === nextVersion) {
+      return false;
+    }
+
+    await reloadCriticalFiles();
+
+    localStorage.setItem(VERSION_STORAGE_KEY, nextVersion);
+    window.location.replace(getReloadUrl());
+    return true;
+  } catch (error) {
+    console.warn('Version refresh skipped, continuing with current app', error);
     return false;
   }
-
-  await reloadCriticalFiles();
-  localStorage.setItem(VERSION_STORAGE_KEY, nextVersion);
-  window.location.replace(getReloadUrl());
-  return true;
 }
