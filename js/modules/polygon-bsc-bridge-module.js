@@ -25,6 +25,9 @@ export class PolygonBscBridgeModule {
     this._onApproveClicked = this._onApproveClicked.bind(this);
     this._onBridgeClicked = this._onBridgeClicked.bind(this);
     this._onSetMaxClicked = this._onSetMaxClicked.bind(this);
+    this._onCopyAddressClicked = this._onCopyAddressClicked.bind(this);
+    this._onAmountInput = this._onAmountInput.bind(this);
+    this._onAmountPaste = this._onAmountPaste.bind(this);
   }
 
   mount(container) {
@@ -62,10 +65,11 @@ export class PolygonBscBridgeModule {
     this._els.approveBtn?.addEventListener('click', this._onApproveClicked);
     this._els.bridgeBtn?.addEventListener('click', this._onBridgeClicked);
     this._els.setMaxBtn?.addEventListener('click', this._onSetMaxClicked);
-    
-    // Listen to input changes for real-time validation
-    this._els.recipient?.addEventListener('input', () => this._updateActionStates());
-    this._els.amount?.addEventListener('input', () => this._updateActionStates());
+    for (const button of this._els.copyAddressButtons) {
+      button.addEventListener('click', this._onCopyAddressClicked);
+    }
+    this._els.amount?.addEventListener('input', this._onAmountInput);
+    this._els.amount?.addEventListener('paste', this._onAmountPaste);
   }
 
   _unbind() {
@@ -81,76 +85,99 @@ export class PolygonBscBridgeModule {
     this._els.approveBtn?.removeEventListener('click', this._onApproveClicked);
     this._els.bridgeBtn?.removeEventListener('click', this._onBridgeClicked);
     this._els.setMaxBtn?.removeEventListener('click', this._onSetMaxClicked);
+    for (const button of this._els.copyAddressButtons) {
+      button.removeEventListener('click', this._onCopyAddressClicked);
+    }
+    this._els.amount?.removeEventListener('input', this._onAmountInput);
+    this._els.amount?.removeEventListener('paste', this._onAmountPaste);
   }
 
   _render() {
     if (!this.container) return;
-    const destinationRecipientLabel = this.config.BRIDGE.CHAINS.DESTINATION.NAME;
+    const sourceName = this.config.BRIDGE.CHAINS.SOURCE.NAME;
+    const destName = this.config.BRIDGE.CHAINS.DESTINATION.NAME;
 
     this.container.innerHTML = `
       <div class="panel-header">
         <h2>Bridge</h2>
-        <p class="muted">Bridge ${this._tokenSymbol()} from <span data-bridge-source-name></span> to <span data-bridge-dest-name></span>.</p>
+        <p class="muted">Bridge ${this._tokenSymbol()} from ${sourceName} to ${destName}.</p>
       </div>
 
       <div class="card bridge-module" data-bridge-module>
-        <div class="bridge-kv">
-          <div class="bridge-kv-row">
-            <div class="bridge-kv-label">Source</div>
-            <div class="bridge-kv-value"><span data-bridge-source-chain></span></div>
-          </div>
-          <div class="bridge-kv-row">
-            <div class="bridge-kv-label">Destination</div>
-            <div class="bridge-kv-value"><span data-bridge-dest-chain></span></div>
-          </div>
-          <div class="bridge-kv-row">
-            <div class="bridge-kv-label">Vault Contract</div>
-            <div class="bridge-kv-value"><span data-bridge-vault-address></span></div>
+        <div class="bridge-route-shell">
+          <div class="bridge-route-grid">
+            <div class="bridge-route-card">
+              <div class="bridge-route-copy">
+                <div class="bridge-route-label">From</div>
+                <div class="bridge-route-name"><span data-bridge-source-name></span></div>
+                <div class="bridge-route-wallet-row">
+                  <div class="bridge-route-wallet-label">Sender</div>
+                  <button type="button" class="bridge-route-address" data-bridge-copy-address data-address="" aria-label="Copy address">
+                    <span class="bridge-route-address-full">Connect wallet</span>
+                    <span class="bridge-route-address-short">Connect wallet</span>
+                  </button>
+                </div>
+              </div>
+              <div class="bridge-route-icon">
+                <img src="${this._assetPath('chain-polygon.png')}" alt="Polygon logo" />
+              </div>
+            </div>
+
+            <div class="bridge-route-arrow" aria-hidden="true">
+              <svg class="bridge-route-arrow-icon" viewBox="0 0 24 24" focusable="false">
+                <path d="M3 12h14m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </div>
+
+            <div class="bridge-route-card">
+              <div class="bridge-route-copy">
+                <div class="bridge-route-label">To</div>
+                <div class="bridge-route-name"><span data-bridge-dest-name></span></div>
+                <div class="bridge-route-wallet-row">
+                  <div class="bridge-route-wallet-label">Recipient</div>
+                  <button type="button" class="bridge-route-address" data-bridge-copy-address data-address="" aria-label="Copy address">
+                    <span class="bridge-route-address-full">Connect wallet</span>
+                    <span class="bridge-route-address-short">Connect wallet</span>
+                  </button>
+                </div>
+              </div>
+              <div class="bridge-route-icon">
+                <img src="${this._assetPath('chain-bnb.png')}" alt="BNB Chain logo" />
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="form-grid">
-          <label class="field field--full">
-            <span class="field-label">Recipient Address (${destinationRecipientLabel})</span>
-            <input class="field-input" type="text" placeholder="0x..." data-bridge-recipient data-requires-tx="true" data-allow-input-when-locked="true" />
-          </label>
-
-          <label class="field">
-            <span class="field-label">Amount (${this._tokenSymbol()})</span>
-            <input class="field-input" type="text" placeholder="0" inputmode="decimal" data-bridge-amount data-requires-tx="true" data-allow-input-when-locked="true" />
-          </label>
-
-          <label class="field">
-            <span class="field-label">Destination Chain ID</span>
-            <input class="field-input" type="text" data-bridge-dest-chainid disabled />
-          </label>
+        <div class="field bridge-amount-field" data-bridge-amount-field>
+          <div class="bridge-amount-top">
+            <textarea class="field-input bridge-amount-input" placeholder="0" inputmode="decimal" rows="1" data-bridge-amount data-requires-tx="true" data-allow-input-when-locked="true"></textarea>
+            <div class="bridge-token-chip" aria-hidden="true">
+              <img class="bridge-token-chip-icon" src="${this._assetPath('lib-token.png')}" alt="" />
+              <span>${this._tokenSymbol()}</span>
+            </div>
+          </div>
+          <div class="bridge-amount-footer">
+            <div class="bridge-amount-available-wrap">
+              <span class="bridge-amount-available-value" data-bridge-user-balance>- ${this._tokenSymbol()} Available</span>
+            </div>
+            <button type="button" class="btn bridge-max-btn" data-bridge-set-max data-requires-tx="true">Max</button>
+          </div>
         </div>
 
         <div class="bridge-meta">
-          <div class="bridge-meta-row">
-            <div class="bridge-meta-label">Your balance</div>
-            <div class="bridge-meta-value"><span data-bridge-user-balance>-</span> ${this._tokenSymbol()}</div>
-          </div>
-          <div class="bridge-meta-row">
-            <div class="bridge-meta-label">Allowance</div>
-            <div class="bridge-meta-value"><span data-bridge-user-allowance>-</span> ${this._tokenSymbol()}</div>
-          </div>
-          <div class="bridge-meta-row">
-            <div class="bridge-meta-label">Max bridge out</div>
-            <div class="bridge-meta-value"><span data-bridge-max-amount>-</span> ${this._tokenSymbol()}</div>
-          </div>
-          <div class="bridge-meta-row">
-            <div class="bridge-meta-label">Bridge enabled</div>
-            <div class="bridge-meta-value"><span data-bridge-enabled>-</span></div>
-          </div>
-          <div class="bridge-meta-row">
-            <div class="bridge-meta-label">Vault halted</div>
-            <div class="bridge-meta-value"><span data-bridge-halted>-</span></div>
+          <div class="bridge-meta-card">
+            <div class="bridge-meta-row">
+              <div class="bridge-meta-label">Allowance</div>
+              <div class="bridge-meta-value"><span data-bridge-user-allowance>-</span> ${this._tokenSymbol()}</div>
+            </div>
+            <div class="bridge-meta-row">
+              <div class="bridge-meta-label">Max bridge out</div>
+              <div class="bridge-meta-value"><span data-bridge-max-amount>-</span> ${this._tokenSymbol()}</div>
+            </div>
           </div>
         </div>
 
         <div class="actions bridge-actions">
-          <button type="button" class="btn" data-bridge-set-max data-requires-tx="true">Use Max</button>
           <button type="button" class="btn" data-bridge-approve data-requires-tx="true">Approve</button>
           <button type="button" class="btn btn--primary" data-bridge-submit data-requires-tx="true">Bridge Out</button>
         </div>
@@ -162,22 +189,15 @@ export class PolygonBscBridgeModule {
       </div>
     `;
 
-    const root = this.container.querySelector('[data-bridge-module]');
     this._els = {
-      root,
       sourceName: this.container.querySelector('[data-bridge-source-name]'),
       destName: this.container.querySelector('[data-bridge-dest-name]'),
-      sourceChain: this.container.querySelector('[data-bridge-source-chain]'),
-      destChain: this.container.querySelector('[data-bridge-dest-chain]'),
-      vaultAddress: this.container.querySelector('[data-bridge-vault-address]'),
-      recipient: this.container.querySelector('[data-bridge-recipient]'),
+      copyAddressButtons: Array.from(this.container.querySelectorAll('[data-bridge-copy-address]')),
+      amountField: this.container.querySelector('[data-bridge-amount-field]'),
       amount: this.container.querySelector('[data-bridge-amount]'),
-      destChainId: this.container.querySelector('[data-bridge-dest-chainid]'),
       userBalance: this.container.querySelector('[data-bridge-user-balance]'),
       userAllowance: this.container.querySelector('[data-bridge-user-allowance]'),
       maxAmount: this.container.querySelector('[data-bridge-max-amount]'),
-      enabled: this.container.querySelector('[data-bridge-enabled]'),
-      halted: this.container.querySelector('[data-bridge-halted]'),
       approveBtn: this.container.querySelector('[data-bridge-approve]'),
       bridgeBtn: this.container.querySelector('[data-bridge-submit]'),
       setMaxBtn: this.container.querySelector('[data-bridge-set-max]'),
@@ -187,31 +207,21 @@ export class PolygonBscBridgeModule {
     };
 
     this._syncChainText();
+    this._syncAmountInput();
     this._updateActionStates();
   }
 
   _syncChainText() {
     const source = this.config.BRIDGE.CHAINS.SOURCE;
     const dest = this.config.BRIDGE.CHAINS.DESTINATION;
-    const sourceName = source.NAME;
-    const destName = dest.NAME;
-    const sourceLabel = `${sourceName} (${source.CHAIN_ID})`;
-    const destLabel = `${destName} (${dest.CHAIN_ID})`;
-    const vaultAddress = this.config.BRIDGE.CONTRACTS.SOURCE.ADDRESS;
 
-    if (this._els.sourceName) this._els.sourceName.textContent = sourceName;
-    if (this._els.destName) this._els.destName.textContent = destName;
-    if (this._els.sourceChain) this._els.sourceChain.textContent = sourceLabel;
-    if (this._els.destChain) this._els.destChain.textContent = destLabel;
-    if (this._els.destChainId) this._els.destChainId.value = String(dest.CHAIN_ID);
-    if (this._els.vaultAddress) this._els.vaultAddress.textContent = this._shortAddress(vaultAddress);
+    if (this._els.sourceName) this._els.sourceName.textContent = source.NAME;
+    if (this._els.destName) this._els.destName.textContent = dest.NAME;
+    this._syncRouteAddresses();
   }
 
   _onWalletEvent() {
-    const addr = this.walletManager?.getAddress?.() || null;
-    if (addr && this._els.recipient && !this._els.recipient.value) {
-      this._els.recipient.value = addr;
-    }
+    this._syncRouteAddresses();
     this._updateActionStates();
     this._scheduleRefresh();
   }
@@ -227,32 +237,62 @@ export class PolygonBscBridgeModule {
     const s = this._lastSnapshot;
     if (!s) return;
 
-    if (this._els.enabled) this._els.enabled.textContent = s.bridgeOutEnabled == null ? '-' : s.bridgeOutEnabled ? 'Yes' : 'No';
-    if (this._els.halted) this._els.halted.textContent = s.halted == null ? '-' : s.halted ? 'Yes' : 'No';
     if (this._els.maxAmount) this._els.maxAmount.textContent = s.maxBridgeOutAmount ? this._formatTokenUnits(s.maxBridgeOutAmount) : '-';
+    this._syncAmountInput();
+  }
+
+  _onAmountInput() {
+    this._syncAmountInput();
+    this._updateActionStates();
+  }
+
+  _onAmountPaste(event) {
+    const amount = this._els.amount;
+    if (!amount) return;
+
+    const pasted = String(event.clipboardData?.getData('text') || '').trim();
+    const start = amount.selectionStart;
+    const end = amount.selectionEnd;
+    const nextValue = `${amount.value.slice(0, start)}${pasted}${amount.value.slice(end)}`;
+
+    if (!this._isEditableAmountValue(nextValue)) {
+      event.preventDefault();
+      return;
+    }
+
+    event.preventDefault();
+    amount.value = nextValue;
+    this._syncAmountInput();
+    this._updateActionStates();
   }
 
   _updateActionStates() {
     const txEnabled = !!this.networkManager?.isTxEnabled?.();
     const connected = !!this.walletManager?.isConnected?.();
     const snapshot = this._lastSnapshot;
+    const balanceWei = this._balanceCache?.balanceWei || null;
 
-    if (this._els.recipient) this._els.recipient.disabled = false;
     if (this._els.amount) this._els.amount.disabled = false;
 
-    const recipientOk = this._isAddress(this._els.recipient?.value);
+    const recipient = this._getRecipientAddress();
+    const recipientOk = this._isAddress(recipient);
     const amountWei = this._parseAmountToWei(this._els.amount?.value);
-    const amountOk = amountWei && amountWei.gt(0);
+    const hasAmount = !!amountWei && amountWei.gt(0);
+    const exceedsBalance = hasAmount && !!balanceWei && amountWei.gt(balanceWei);
+    const exceedsMax = hasAmount && !!snapshot?.maxBridgeOutAmount && amountWei.gt(this._bn(snapshot.maxBridgeOutAmount));
 
     const bridgeEnabled = snapshot?.bridgeOutEnabled !== false && snapshot?.halted !== true;
-    const maxOk = snapshot?.maxBridgeOutAmount ? amountWei && amountWei.lte(this._bn(snapshot.maxBridgeOutAmount)) : true;
-
+    const amountOk = hasAmount && !exceedsBalance && !exceedsMax;
     const needsApproval = this._needsApproval(amountWei);
+
+    this._els.amountField?.classList.toggle('is-invalid', exceedsBalance);
+    this._els.amount?.classList.toggle('is-invalid', exceedsBalance);
+    this._els.userBalance?.classList.toggle('is-invalid', exceedsBalance);
 
     if (this._els.approveBtn) this._els.approveBtn.disabled = !connected || !amountOk || !needsApproval;
     if (this._els.bridgeBtn)
       this._els.bridgeBtn.disabled =
-        !connected || !recipientOk || !amountOk || !bridgeEnabled || !maxOk || needsApproval;
+        !connected || !recipientOk || !amountOk || !bridgeEnabled || needsApproval;
     if (this._els.setMaxBtn) this._els.setMaxBtn.disabled = !txEnabled;
   }
 
@@ -275,7 +315,8 @@ export class PolygonBscBridgeModule {
     const maxWei = this._bn(maxStr);
     const userBalWei = this._balanceCache?.balanceWei || null;
     const setWei = userBalWei && userBalWei.lt(maxWei) ? userBalWei : maxWei;
-    this._els.amount.value = this._formatTokenUnits(setWei.toString());
+    this._els.amount.value = this._formatEditableTokenUnits(setWei.toString());
+    this._syncAmountInput();
     this._updateActionStates();
   }
 
@@ -360,7 +401,7 @@ export class PolygonBscBridgeModule {
       const address = this.walletManager?.getAddress?.();
       if (!address) throw new Error('Wallet not connected');
 
-      const recipient = String(this._els.recipient?.value || '').trim();
+      const recipient = this._getRecipientAddress();
       if (!this._isAddress(recipient)) throw new Error('Invalid recipient address');
 
       const amountWei = this._parseAmountToWei(this._els.amount?.value);
@@ -481,7 +522,7 @@ export class PolygonBscBridgeModule {
     const address = this.walletManager?.getAddress?.() || null;
     if (!provider || !address) {
       this._balanceCache = null;
-      if (this._els.userBalance) this._els.userBalance.textContent = '-';
+      if (this._els.userBalance) this._els.userBalance.textContent = `- ${this._tokenSymbol()} Available`;
       if (this._els.userAllowance) this._els.userAllowance.textContent = '-';
       this._updateActionStates();
       return;
@@ -502,7 +543,8 @@ export class PolygonBscBridgeModule {
     const allowanceWei = allowance ? this._bn(allowance.toString()) : null;
 
     this._balanceCache = { balanceWei, allowanceWei };
-    if (this._els.userBalance) this._els.userBalance.textContent = balanceWei ? this._formatTokenUnits(balanceWei.toString()) : '-';
+    if (this._els.userBalance)
+      this._els.userBalance.textContent = balanceWei ? `${this._formatTokenUnits(balanceWei.toString())} ${this._tokenSymbol()} Available` : `- ${this._tokenSymbol()} Available`;
     if (this._els.userAllowance)
       this._els.userAllowance.textContent = allowanceWei ? this._formatTokenUnits(allowanceWei.toString()) : '-';
 
@@ -714,15 +756,21 @@ export class PolygonBscBridgeModule {
     }
   }
 
+  _formatEditableTokenUnits(valueWeiStr) {
+    const dec = Number(this.config?.TOKEN?.DECIMALS ?? 18);
+    const formatted = window.ethers.utils.formatUnits(valueWeiStr, dec);
+    if (!formatted.includes('.')) return formatted;
+    return formatted.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '').replace(/\.$/, '');
+  }
+
   _parseAmountToWei(value) {
-    try {
-      const v = String(value || '').trim();
-      if (!v) return null;
-      const dec = Number(this.config?.TOKEN?.DECIMALS ?? 18);
-      return window.ethers.utils.parseUnits(v, dec);
-    } catch (_) {
-      return null;
-    }
+    const v = String(value || '').trim();
+    if (!v) return null;
+
+    const normalized = v.endsWith('.') ? v.slice(0, -1) : v;
+    if (!normalized) return null;
+
+    return window.ethers.utils.parseUnits(normalized, this.config.TOKEN.DECIMALS);
   }
 
   _bn(value) {
@@ -732,7 +780,126 @@ export class PolygonBscBridgeModule {
   _shortAddress(address) {
     const a = String(address || '');
     if (!/^0x[a-fA-F0-9]{40}$/.test(a)) return a || '-';
-    return `${a.slice(0, 6)}…${a.slice(-4)}`;
+    return `${a.slice(0, 6)}...${a.slice(-4)}`;
+  }
+
+  _getRecipientAddress() {
+    return String(this.walletManager?.getAddress?.() || '').trim();
+  }
+
+  _syncAmountInput() {
+    const amount = this._els.amount;
+    if (!amount) return;
+
+    amount.value = this._sanitizeAmountValue(amount.value);
+
+    const maxBridgeOutAmount = this._lastSnapshot?.maxBridgeOutAmount;
+    if (maxBridgeOutAmount) {
+      const amountWei = this._parseAmountToWei(amount.value);
+      const maxWei = this._bn(maxBridgeOutAmount);
+      if (amountWei && amountWei.gt(maxWei)) {
+        amount.value = this._formatEditableTokenUnits(maxWei.toString());
+      }
+    }
+
+    amount.style.height = 'auto';
+    const minHeight = window.innerWidth <= 720 ? 44 : 56;
+    amount.style.height = `${Math.max(amount.scrollHeight, minHeight)}px`;
+  }
+
+  _sanitizeAmountValue(value) {
+    const text = String(value || '');
+    const decimals = this.config.TOKEN.DECIMALS;
+    let whole = '';
+    let fraction = '';
+    let hasDot = false;
+
+    for (const char of text) {
+      if (char >= '0' && char <= '9') {
+        if (hasDot) {
+          if (fraction.length < decimals) fraction += char;
+        } else {
+          whole += char;
+        }
+        continue;
+      }
+
+      if (char === '.' && !hasDot) {
+        hasDot = true;
+      }
+    }
+
+    if (!whole && !fraction) return '';
+    if (!whole) whole = '0';
+    if (!hasDot) return whole;
+    return `${whole}.${fraction}`;
+  }
+
+  _isEditableAmountValue(value) {
+    const text = String(value || '').trim();
+    if (!text) return true;
+
+    const parts = text.split('.');
+    if (parts.length > 2) return false;
+
+    const [whole, fraction = ''] = parts;
+    if (whole && !/^\d+$/.test(whole)) return false;
+    if (fraction && !/^\d+$/.test(fraction)) return false;
+    if (fraction.length > this.config.TOKEN.DECIMALS) return false;
+    if (parts.length === 2 && !whole && !fraction) return false;
+
+    return true;
+  }
+
+  _syncRouteAddresses() {
+    const recipient = this._getRecipientAddress();
+    const hasRecipient = this._isAddress(recipient);
+    const fullText = hasRecipient ? recipient : 'Connect wallet';
+    const shortText = hasRecipient ? this._shortAddress(recipient) : 'Connect wallet';
+    for (const button of this._els.copyAddressButtons) {
+      button.querySelector('.bridge-route-address-full').textContent = fullText;
+      button.querySelector('.bridge-route-address-short').textContent = shortText;
+      button.setAttribute('data-address', hasRecipient ? recipient : '');
+      button.disabled = !hasRecipient;
+    }
+  }
+
+  _assetPath(filename) {
+    return `./assets/${filename}`;
+  }
+
+  async _onCopyAddressClicked(event) {
+    const button = event.currentTarget;
+    const text = button.getAttribute('data-address');
+    if (!text) return;
+    const copied = await this._copy(text);
+    if (!copied) {
+      this.toastManager?.error?.('Failed to copy address');
+      return;
+    }
+    this.toastManager?.success?.('Address copied to clipboard', { timeoutMs: 1800 });
+  }
+
+  async _copy(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return !!ok;
+      } catch {
+        document.body.removeChild(ta);
+        return false;
+      }
+    }
   }
 
   _isAddress(address) {
