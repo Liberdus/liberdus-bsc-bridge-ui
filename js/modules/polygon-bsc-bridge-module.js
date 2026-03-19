@@ -153,12 +153,14 @@ export class PolygonBscBridgeModule {
 
         <div class="bridge-meta">
           <div class="bridge-meta-card">
-            <div class="bridge-meta-label">Allowance</div>
-            <div class="bridge-meta-value"><span data-bridge-user-allowance>-</span> ${this._tokenSymbol()}</div>
-          </div>
-          <div class="bridge-meta-card">
-            <div class="bridge-meta-label">Max bridge out</div>
-            <div class="bridge-meta-value"><span data-bridge-max-amount>-</span> ${this._tokenSymbol()}</div>
+            <div class="bridge-meta-row">
+              <div class="bridge-meta-label">Allowance</div>
+              <div class="bridge-meta-value"><span data-bridge-user-allowance>-</span> ${this._tokenSymbol()}</div>
+            </div>
+            <div class="bridge-meta-row">
+              <div class="bridge-meta-label">Max bridge out</div>
+              <div class="bridge-meta-value"><span data-bridge-max-amount>-</span> ${this._tokenSymbol()}</div>
+            </div>
           </div>
         </div>
 
@@ -767,7 +769,7 @@ export class PolygonBscBridgeModule {
     }
 
     amount.style.height = 'auto';
-    const minHeight = window.innerWidth <= 720 ? 56 : 72;
+    const minHeight = window.innerWidth <= 720 ? 44 : 56;
     amount.style.height = `${Math.max(amount.scrollHeight, minHeight)}px`;
   }
 
