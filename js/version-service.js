@@ -1,6 +1,7 @@
 const VERSION_STORAGE_KEY = 'app_version';
 const REQUEST_TIMEOUT_MS = 3000;
 const VERSION_URL = 'version.html';
+const RELOAD_BATCH_SIZE = 4;
 const NO_CACHE_REQUEST = {
   cache: 'reload',
   headers: {
@@ -79,7 +80,11 @@ async function reloadFile(url) {
 
 async function reloadCriticalFiles() {
   const urls = [getReloadUrl(), ...STATIC_CRITICAL_FILES];
-  await Promise.all(urls.map((url) => reloadFile(url)));
+
+  for (let i = 0; i < urls.length; i += RELOAD_BATCH_SIZE) {
+    const batch = urls.slice(i, i + RELOAD_BATCH_SIZE);
+    await Promise.all(batch.map((url) => reloadFile(url)));
+  }
 }
 
 export const versionService = {
@@ -87,6 +92,11 @@ export const versionService = {
     try {
       const nextVersion = await fetchVersion();
       const storedVersion = localStorage.getItem(VERSION_STORAGE_KEY)?.trim() || null;
+
+      if (!storedVersion) {
+        localStorage.setItem(VERSION_STORAGE_KEY, nextVersion);
+        return false;
+      }
 
       if (storedVersion === nextVersion) {
         return false;
