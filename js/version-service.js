@@ -5,6 +5,9 @@ const RELOAD_BATCH_SIZE = 4;
 const CRITICAL_FILES = [
   'index.html',
   'version.html',
+  'assets/chain-bnb.png',
+  'assets/chain-polygon.png',
+  'assets/lib-token.png',
   'assets/logo.png',
   'abi/vault.json',
   'css/base.css',
