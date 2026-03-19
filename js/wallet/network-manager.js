@@ -116,10 +116,6 @@ export class NetworkManager {
     }
   }
 
-  networkSymbol() {
-    return CONFIG.BRIDGE.CHAINS.SOURCE.NATIVE_CURRENCY.symbol;
-  }
-
   updateUIState() {
     this.updateTxGatedControls();
   }

@@ -7,8 +7,8 @@ import { OperationsTab } from './components/operations-tab.js?v=20260318b';
 import { TransactionsTab } from './components/transactions-tab.js?v=20260318d';
 import { ToastManager } from './components/toast-manager.js?v=20260317k';
 import { WalletManager } from './wallet/wallet-manager.js?v=20260317j';
-import { NetworkManager } from './wallet/network-manager.js?v=20260318d';
-import { WalletPopup } from './wallet/wallet-popup.js?v=20260317a';
+import { NetworkManager } from './wallet/network-manager.js?v=20260318e';
+import { WalletPopup } from './wallet/wallet-popup.js?v=20260318b';
 import { ContractManager } from './contracts/contract-manager.js?v=20260318b';
 
 const header = new Header();
@@ -21,7 +21,7 @@ const toastManager = new ToastManager();
 const walletManager = new WalletManager();
 const networkManager = new NetworkManager({ walletManager });
 const contractManager = new ContractManager({ walletManager, networkManager });
-const walletPopup = new WalletPopup({ walletManager, networkManager, contractManager });
+const walletPopup = new WalletPopup({ walletManager, contractManager });
 
 document.addEventListener('DOMContentLoaded', async () => {
   window.CONFIG = CONFIG;
