@@ -282,7 +282,7 @@ export class TransactionsTab {
     this._rows = [];
     this._refreshTimer = null;
     this.page = 1;
-    this.pageSize = 25;
+    this.pageSize = 10;
     this.prevBtn = null;
     this.nextBtn = null;
     this.pageInfoEl = null;
@@ -301,6 +301,10 @@ export class TransactionsTab {
   }
 
   load() {
+    setTimeout(() => {
+      if (this._rows.length === 0) this.refresh();
+    }, 0);
+
     this.panel = document.querySelector('.tab-panel[data-panel="transactions"]');
     if (!this.panel) return;
 
@@ -364,8 +368,8 @@ export class TransactionsTab {
         <div class="tx-page-size">
           <label for="tx-page-size" class="sr-only">Page size</label>
           <select id="tx-page-size" data-tx-page-size class="field-input">
-            <option value="10">10</option>
-            <option value="25" selected>25</option>
+            <option value="10" selected>10</option>
+            <option value="25">25</option>
             <option value="50">50</option>
             <option value="100">100</option>
           </select>
@@ -426,7 +430,7 @@ export class TransactionsTab {
 
     document.addEventListener('tabActivated', (e) => {
       if (e?.detail?.tabName === 'transactions') {
-        if (e?.detail?.isFirstActivation) this.refresh();
+        if (e?.detail?.isFirstActivation && this._rows.length === 0) this.refresh();
         this._startIssuedTicker();
       }
     });
@@ -435,6 +439,8 @@ export class TransactionsTab {
       if (e?.detail?.tabName === 'transactions') this._stopIssuedTicker();
     });
 
+<<<<<<< transactions-background-prefetch
+=======
     document.addEventListener('walletConnected', () => {
       this._updateOnlyMineUI();
       if (this.onlyMine) this.render();
@@ -448,6 +454,7 @@ export class TransactionsTab {
       if (this.onlyMine) this.render();
     });
     this._updateOnlyMineUI();
+>>>>>>> main
   }
 
   async refresh() {
@@ -455,15 +462,24 @@ export class TransactionsTab {
     this._isLoading = true;
     this._setLoading(true);
     this._setStatus('Loading recent transactions...');
+    try {
+      console.debug?.('[Transactions] Prefetch: starting');
+    } catch {}
 
     try {
       const fetched = await loadTransactionsFromCoordinator({ limit: 250 });
       this._rows = mergeTransactions(fetched, this._rows, { limit: 500 });
       this.render();
       this._setStatus('Transactions updated.');
+      try {
+        console.debug?.(`[Transactions] Prefetch: completed with ${this._rows.length} rows`);
+      } catch {}
     } catch (error) {
       this.render();
       this._setStatus(error?.message || 'Failed to load transactions.');
+      try {
+        console.debug?.('[Transactions] Prefetch: failed', error);
+      } catch {}
     } finally {
       this._isLoading = false;
       this._setLoading(false);
