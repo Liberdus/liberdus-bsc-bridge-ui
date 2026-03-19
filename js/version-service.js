@@ -1,4 +1,5 @@
 const VERSION_STORAGE_KEY = 'app_version';
+const DEFAULT_REQUEST_TIMEOUT_MS = 3000;
 const NO_CACHE_REQUEST = {
   cache: 'reload',
   headers: {
@@ -49,40 +50,53 @@ function getReloadUrl() {
   return window.location.href.split('?')[0];
 }
 
-async function fetchText(url) {
-  const response = await fetch(url, NO_CACHE_REQUEST);
-  assert(response.ok, `Failed to load ${url}: ${response.status} ${response.statusText}`);
-
-  const text = (await response.text()).trim();
-  assert(text, `${url} is empty`);
-  return text;
+function createRequestSignal(timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timerId = window.setTimeout(() => controller.abort(), timeoutMs);
+  return { signal: controller.signal, timerId };
 }
 
-async function reloadCriticalFiles() {
-  const criticalFiles = [getReloadUrl(), ...STATIC_CRITICAL_FILES];
-  const responses = await Promise.all(
-    criticalFiles.map((url) => fetch(url, NO_CACHE_REQUEST)),
-  );
+async function fetchText(url, { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS } = {}) {
+  const { signal, timerId } = createRequestSignal(timeoutMs);
+  try {
+    const response = await fetch(url, { ...NO_CACHE_REQUEST, signal });
+    assert(response.ok, `Failed to load ${url}: ${response.status} ${response.statusText}`);
 
-  for (const [index, response] of responses.entries()) {
-    assert(
-      response.ok,
-      `Failed to reload ${criticalFiles[index]}: ${response.status} ${response.statusText}`,
-    );
+    const text = (await response.text()).trim();
+    assert(text, `${url} is empty`);
+    return text;
+  } finally {
+    window.clearTimeout(timerId);
   }
 }
 
+async function fetchAndDrain(url, { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS } = {}) {
+  const { signal, timerId } = createRequestSignal(timeoutMs);
+  try {
+    const response = await fetch(url, { ...NO_CACHE_REQUEST, signal });
+    assert(response.ok, `Failed to reload ${url}: ${response.status} ${response.statusText}`);
+    await response.arrayBuffer();
+  } finally {
+    window.clearTimeout(timerId);
+  }
+}
+
+async function reloadCriticalFiles({ timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS } = {}) {
+  const criticalFiles = [getReloadUrl(), ...STATIC_CRITICAL_FILES];
+  await Promise.all(criticalFiles.map((url) => fetchAndDrain(url, { timeoutMs })));
+}
+
 export const versionService = {
-  async initialize() {
+  async initialize({ timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS } = {}) {
     try {
-      const nextVersion = await fetchText('version.html');
+      const nextVersion = await fetchText('version.html', { timeoutMs });
       const storedVersion = localStorage.getItem(VERSION_STORAGE_KEY)?.trim() || null;
 
       if (storedVersion === nextVersion) {
         return false;
       }
 
-      await reloadCriticalFiles();
+      await reloadCriticalFiles({ timeoutMs });
       localStorage.setItem(VERSION_STORAGE_KEY, nextVersion);
       window.location.replace(getReloadUrl());
       return true;
