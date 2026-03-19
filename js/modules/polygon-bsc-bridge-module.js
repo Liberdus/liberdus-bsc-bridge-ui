@@ -91,11 +91,13 @@ export class PolygonBscBridgeModule {
 
   _render() {
     if (!this.container) return;
+    const sourceName = this.config.BRIDGE.CHAINS.SOURCE.NAME;
+    const destName = this.config.BRIDGE.CHAINS.DESTINATION.NAME;
 
     this.container.innerHTML = `
       <div class="panel-header">
         <h2>Bridge</h2>
-        <p class="muted">Bridge ${this._tokenSymbol()} from Polygon to BNB.</p>
+        <p class="muted">Bridge ${this._tokenSymbol()} from ${sourceName} to ${destName}.</p>
       </div>
 
       <div class="card bridge-module" data-bridge-module>
@@ -105,11 +107,13 @@ export class PolygonBscBridgeModule {
               <div class="bridge-route-copy">
                 <div class="bridge-route-label">From</div>
                 <div class="bridge-route-name"><span data-bridge-source-name></span></div>
-                <div class="bridge-route-wallet-label">Sender</div>
-                <button type="button" class="bridge-route-address" data-bridge-copy-address data-address="" aria-label="Copy address">
-                  <span class="bridge-route-address-full">Connect wallet</span>
-                  <span class="bridge-route-address-short">Connect wallet</span>
-                </button>
+                <div class="bridge-route-wallet-row">
+                  <div class="bridge-route-wallet-label">Sender</div>
+                  <button type="button" class="bridge-route-address" data-bridge-copy-address data-address="" aria-label="Copy address">
+                    <span class="bridge-route-address-full">Connect wallet</span>
+                    <span class="bridge-route-address-short">Connect wallet</span>
+                  </button>
+                </div>
               </div>
               <div class="bridge-route-icon">
                 <img src="${this._assetPath('chain-polygon.png')}" alt="Polygon logo" />
@@ -122,11 +126,13 @@ export class PolygonBscBridgeModule {
               <div class="bridge-route-copy">
                 <div class="bridge-route-label">To</div>
                 <div class="bridge-route-name"><span data-bridge-dest-name></span></div>
-                <div class="bridge-route-wallet-label">Recipient</div>
-                <button type="button" class="bridge-route-address" data-bridge-copy-address data-address="" aria-label="Copy address">
-                  <span class="bridge-route-address-full">Connect wallet</span>
-                  <span class="bridge-route-address-short">Connect wallet</span>
-                </button>
+                <div class="bridge-route-wallet-row">
+                  <div class="bridge-route-wallet-label">Recipient</div>
+                  <button type="button" class="bridge-route-address" data-bridge-copy-address data-address="" aria-label="Copy address">
+                    <span class="bridge-route-address-full">Connect wallet</span>
+                    <span class="bridge-route-address-short">Connect wallet</span>
+                  </button>
+                </div>
               </div>
               <div class="bridge-route-icon">
                 <img src="${this._assetPath('chain-bnb.png')}" alt="BNB Chain logo" />
@@ -329,7 +335,7 @@ export class PolygonBscBridgeModule {
         message: 'Confirm the approval in your wallet',
       });
 
-      const tx = await token.approve(vault, window.ethers.constants.MaxUint256);
+      const tx = await token.approve(vault, amountWei);
       this._showStatus('Approval submitted', this._txLinkHtml(this.config.BRIDGE.CHAINS.SOURCE.BLOCK_EXPLORER, tx.hash));
 
       toastId = this._showActionToast({

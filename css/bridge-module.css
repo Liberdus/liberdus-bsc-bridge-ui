@@ -84,6 +84,10 @@
   text-transform: uppercase;
 }
 
+.bridge-route-wallet-row {
+  width: 100%;
+}
+
 .bridge-route-arrow {
   width: 44px;
   height: 44px;
@@ -383,7 +387,22 @@
     font-size: 10px;
   }
 
+  .bridge-route-wallet-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .bridge-route-wallet-label {
+    margin-top: 0;
+    flex: 0 0 auto;
+  }
+
   .bridge-route-address {
+    width: auto;
+    margin-top: 0;
+    flex: 1 1 auto;
     font-size: clamp(11px, 3vw, 12px);
   }
 
