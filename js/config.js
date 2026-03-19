@@ -88,7 +88,6 @@ export const CONFIG = {
   RUNTIME: {
     PROFILE: 'dev', // 'dev' or 'prod'
   },
-  TOKEN: {},
   BRIDGE: {
     LOOKBACK_BLOCKS: 60000,
     COORDINATOR_URL: '',
