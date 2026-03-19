@@ -11,23 +11,23 @@ import { NetworkManager } from './wallet/network-manager.js';
 import { WalletPopup } from './wallet/wallet-popup.js';
 import { ContractManager } from './contracts/contract-manager.js';
 
-const header = new Header();
-const tabBar = new TabBar();
-const infoTab = new InfoTab();
-const bridgeOutTab = new BridgeOutTab();
-const operationsTab = new OperationsTab();
-const transactionsTab = new TransactionsTab();
-const toastManager = new ToastManager();
-const walletManager = new WalletManager();
-const networkManager = new NetworkManager({ walletManager });
-const contractManager = new ContractManager({ walletManager, networkManager });
-const walletPopup = new WalletPopup({ walletManager, contractManager });
-
 export async function startApp() {
+  const header = new Header();
+  const tabBar = new TabBar();
+  const infoTab = new InfoTab();
+  const bridgeOutTab = new BridgeOutTab();
+  const operationsTab = new OperationsTab();
+  const transactionsTab = new TransactionsTab();
+  const toastManager = new ToastManager();
+  const walletManager = new WalletManager();
+  const networkManager = new NetworkManager({ walletManager });
+  const contractManager = new ContractManager({ walletManager, networkManager });
+  const walletPopup = new WalletPopup({ walletManager, contractManager });
+
   window.CONFIG = CONFIG;
 
   const versionEl = document.querySelector('.app-version');
-  if (versionEl && CONFIG?.APP?.VERSION) {
+  if (versionEl && CONFIG.APP.VERSION) {
     versionEl.textContent = `(${CONFIG.APP.VERSION})`;
   }
 

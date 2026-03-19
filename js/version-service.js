@@ -2,15 +2,7 @@ const VERSION_STORAGE_KEY = 'app_version';
 const REQUEST_TIMEOUT_MS = 3000;
 const VERSION_URL = 'version.html';
 const RELOAD_BATCH_SIZE = 4;
-const NO_CACHE_REQUEST = {
-  cache: 'reload',
-  headers: {
-    'Cache-Control': 'no-cache',
-    Pragma: 'no-cache',
-  },
-};
-
-const STATIC_CRITICAL_FILES = [
+const CRITICAL_FILES = [
   'index.html',
   'version.html',
   'assets/logo.png',
@@ -58,52 +50,47 @@ async function fetchNoCache(url) {
   const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    return await fetch(url, { ...NO_CACHE_REQUEST, signal: controller.signal });
+    return await fetch(url, {
+      cache: 'reload',
+      headers: {
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+      signal: controller.signal,
+    });
   } finally {
     window.clearTimeout(timeoutId);
   }
 }
 
-async function fetchVersion() {
-  const response = await fetchNoCache(VERSION_URL);
-  assert(response.ok, `Failed to load ${VERSION_URL}: ${response.status} ${response.statusText}`);
-
-  const version = (await response.text()).trim();
-  assert(version, `${VERSION_URL} is empty`);
-  return version;
-}
-
-async function reloadFile(url) {
-  const response = await fetchNoCache(url);
-  assert(response.ok, `Failed to reload ${url}: ${response.status} ${response.statusText}`);
-  await response.arrayBuffer();
-}
-
 async function reloadCriticalFiles() {
-  const urls = [getReloadUrl(), ...STATIC_CRITICAL_FILES];
+  const urls = [getReloadUrl(), ...CRITICAL_FILES];
 
   for (let i = 0; i < urls.length; i += RELOAD_BATCH_SIZE) {
-    const batch = urls.slice(i, i + RELOAD_BATCH_SIZE);
-    await Promise.all(batch.map((url) => reloadFile(url)));
+    await Promise.all(
+      urls.slice(i, i + RELOAD_BATCH_SIZE).map(async (url) => {
+        const response = await fetchNoCache(url);
+        assert(response.ok, `Failed to reload ${url}: ${response.status} ${response.statusText}`);
+        await response.arrayBuffer();
+      })
+    );
   }
 }
 
-export const versionService = {
-  async initialize() {
-    try {
-      const nextVersion = await fetchVersion();
-      const storedVersion = localStorage.getItem(VERSION_STORAGE_KEY)?.trim() || null;
+export async function initializeVersionService() {
+  const response = await fetchNoCache(VERSION_URL);
+  assert(response.ok, `Failed to load ${VERSION_URL}: ${response.status} ${response.statusText}`);
 
-      if (storedVersion === nextVersion) {
-        return false;
-      }
+  const nextVersion = (await response.text()).trim();
+  assert(nextVersion, `${VERSION_URL} is empty`);
 
-      await reloadCriticalFiles();
-      localStorage.setItem(VERSION_STORAGE_KEY, nextVersion);
-      window.location.replace(getReloadUrl());
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
+  const storedVersion = localStorage.getItem(VERSION_STORAGE_KEY);
+  if (storedVersion === nextVersion) {
+    return false;
+  }
+
+  await reloadCriticalFiles();
+  localStorage.setItem(VERSION_STORAGE_KEY, nextVersion);
+  window.location.replace(getReloadUrl());
+  return true;
+}

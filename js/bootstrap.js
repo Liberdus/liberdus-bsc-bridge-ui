@@ -1,10 +1,10 @@
-import { versionService } from './version-service.js';
+import { initializeVersionService } from './version-service.js';
 
-async function bootstrap() {
-  if (await versionService.initialize()) return;
+async function start() {
+  if (await initializeVersionService()) return;
 
   const { startApp } = await import('./app.js');
   await startApp();
 }
 
-bootstrap().catch(() => {});
+start();
