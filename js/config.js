@@ -1,5 +1,10 @@
 const PROFILES = {
   dev: {
+    TOKEN: {
+      SYMBOL: 'LIB',
+      DECIMALS: 18,
+      ADDRESS: '0xD5409531c857AfD1b2fF6Cd527038e9981ef4863',
+    },
     SOURCE_NETWORK: {
       CHAIN_ID: 80002,
       NAME: 'Polygon Amoy',
@@ -35,6 +40,11 @@ const PROFILES = {
   },
   prod: {
     // Replace these placeholder deployment values with the final Polygon / BNB Chain values when available.
+    TOKEN: {
+      SYMBOL: 'LIB',
+      DECIMALS: 18,
+      ADDRESS: '0x693ed886545970F0a3ADf8C59af5cCdb6dDF0a76',
+    },
     SOURCE_NETWORK: {
       CHAIN_ID: 80002,
       NAME: 'Polygon',
@@ -78,11 +88,7 @@ export const CONFIG = {
   RUNTIME: {
     PROFILE: 'dev', // 'dev' or 'prod'
   },
-  TOKEN: {
-    SYMBOL: 'LIB',
-    DECIMALS: 18,
-    ADDRESS: '0xD5409531c857AfD1b2fF6Cd527038e9981ef4863',
-  },
+  TOKEN: {},
   BRIDGE: {
     LOOKBACK_BLOCKS: 60000,
     COORDINATOR_URL: '',
@@ -101,6 +107,13 @@ function assertString(value, path, profileName) {
 
 function assertInteger(value, path, profileName) {
   assert(Number.isInteger(value) && value >= 0, `Invalid profile ${profileName}: invalid ${path}`);
+}
+
+function assertToken(profileName, token) {
+  assert(token && typeof token === 'object' && !Array.isArray(token), `Invalid profile ${profileName}: missing TOKEN`);
+  assertString(token.SYMBOL, 'TOKEN.SYMBOL', profileName);
+  assertInteger(token.DECIMALS, 'TOKEN.DECIMALS', profileName);
+  assertString(token.ADDRESS, 'TOKEN.ADDRESS', profileName);
 }
 
 function assertNetwork(profileName, kind, network) {
@@ -125,6 +138,7 @@ function assertContract(profileName, kind, contract) {
 
 function assertProfile(profileName, profile) {
   assert(profile && typeof profile === 'object' && !Array.isArray(profile), `Invalid profile ${profileName}: missing profile`);
+  assertToken(profileName, profile.TOKEN);
   assertNetwork(profileName, 'SOURCE_NETWORK', profile.SOURCE_NETWORK);
   assertContract(profileName, 'SOURCE_CONTRACT', profile.SOURCE_CONTRACT);
   assertNetwork(profileName, 'DESTINATION_NETWORK', profile.DESTINATION_NETWORK);
@@ -145,6 +159,7 @@ try {
   throw error;
 }
 
+CONFIG.TOKEN = profile.TOKEN;
 CONFIG.BRIDGE.COORDINATOR_URL = profile.BRIDGE.COORDINATOR_URL;
 CONFIG.BRIDGE.CHAINS = {
   SOURCE: profile.SOURCE_NETWORK,
