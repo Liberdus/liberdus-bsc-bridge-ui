@@ -93,11 +93,6 @@ export const versionService = {
       const nextVersion = await fetchVersion();
       const storedVersion = localStorage.getItem(VERSION_STORAGE_KEY)?.trim() || null;
 
-      if (!storedVersion) {
-        localStorage.setItem(VERSION_STORAGE_KEY, nextVersion);
-        return false;
-      }
-
       if (storedVersion === nextVersion) {
         return false;
       }
