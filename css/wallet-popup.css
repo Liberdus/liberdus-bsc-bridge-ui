@@ -5,7 +5,7 @@
 
 .wallet-popup {
   position: fixed;
-  width: min(360px, calc(100vw - 24px));
+  width: 280px;
   z-index: var(--overlay-z-index-high);
   color: var(--text-color);
 }
