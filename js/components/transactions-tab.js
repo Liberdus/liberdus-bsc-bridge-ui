@@ -439,8 +439,6 @@ export class TransactionsTab {
       if (e?.detail?.tabName === 'transactions') this._stopIssuedTicker();
     });
 
-<<<<<<< transactions-background-prefetch
-=======
     document.addEventListener('walletConnected', () => {
       this._updateOnlyMineUI();
       if (this.onlyMine) this.render();
@@ -454,7 +452,6 @@ export class TransactionsTab {
       if (this.onlyMine) this.render();
     });
     this._updateOnlyMineUI();
->>>>>>> main
   }
 
   async refresh() {
