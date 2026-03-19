@@ -1,0 +1,165 @@
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+function copyStep(step) {
+  return {
+    id: step.id,
+    label: step.label,
+    status: step.status,
+    detail: step.detail,
+  };
+}
+
+function applyPhase(controller, phase) {
+  switch (phase.type) {
+    case 'active':
+      return;
+    case 'success':
+      controller.finishSuccess(phase.message);
+      return;
+    case 'failure':
+      controller.finishFailure(phase.message);
+      return;
+    case 'cancelled':
+      controller.finishCancelled(phase.message);
+      return;
+    default:
+      throw new Error(`Unknown progress phase: ${phase.type}`);
+  }
+}
+
+export function createTransactionProgressSession(toastApi, options) {
+  assert(toastApi, 'toastApi is required');
+  assert(typeof toastApi.createTransactionProgress === 'function', 'toastApi.createTransactionProgress is required');
+  assert(Array.isArray(options.steps), 'Progress steps are required');
+
+  const visibilityListeners = new Set();
+  const state = {
+    title: options.title,
+    successTitle: options.successTitle,
+    failureTitle: options.failureTitle,
+    cancelledTitle: options.cancelledTitle,
+    summary: options.summary,
+    steps: options.steps.map(copyStep),
+    transactionLink: null,
+    phase: { type: 'active' },
+    controller: null,
+    hidden: false,
+  };
+
+  function notifyVisibility() {
+    const nextVisibility = {
+      hidden: state.hidden,
+      active: state.phase.type === 'active',
+    };
+
+    visibilityListeners.forEach((listener) => {
+      listener(nextVisibility);
+    });
+  }
+
+  function createController() {
+    const controller = toastApi.createTransactionProgress({
+      title: state.title,
+      successTitle: state.successTitle,
+      failureTitle: state.failureTitle,
+      cancelledTitle: state.cancelledTitle,
+      summary: state.summary,
+      steps: state.steps.map(copyStep),
+    });
+
+    controller.onClose(() => {
+      state.hidden = true;
+      state.controller = null;
+      notifyVisibility();
+    });
+
+    state.controller = controller;
+    state.hidden = false;
+
+    if (state.transactionLink !== null) {
+      controller.setTransactionLink(state.transactionLink);
+    }
+
+    applyPhase(controller, state.phase);
+    notifyVisibility();
+    return controller;
+  }
+
+  function getController() {
+    if (state.controller !== null) {
+      return state.controller;
+    }
+    return createController();
+  }
+
+  function getStep(stepId) {
+    const step = state.steps.find((item) => item.id === stepId);
+    assert(step, `Unknown progress step: ${stepId}`);
+    return step;
+  }
+
+  createController();
+
+  return {
+    updateStep(stepId, update) {
+      const step = getStep(stepId);
+      if (update.status) {
+        step.status = update.status;
+      }
+      if (Object.prototype.hasOwnProperty.call(update, 'detail')) {
+        step.detail = update.detail;
+      }
+      if (state.controller !== null) {
+        state.controller.updateStep(stepId, update);
+      }
+    },
+    setSummary(message) {
+      state.summary = message;
+      if (state.controller !== null) {
+        state.controller.setSummary(state.summary);
+      }
+    },
+    setTransactionLink(transactionLink) {
+      state.transactionLink = transactionLink;
+      if (state.controller !== null) {
+        state.controller.setTransactionLink(transactionLink);
+      }
+    },
+    finishSuccess(message) {
+      state.phase = { type: 'success', message };
+      getController().finishSuccess(message);
+      notifyVisibility();
+    },
+    finishFailure(message) {
+      state.phase = { type: 'failure', message };
+      getController().finishFailure(message);
+      notifyVisibility();
+    },
+    finishCancelled(message) {
+      state.phase = { type: 'cancelled', message };
+      getController().finishCancelled(message);
+      notifyVisibility();
+    },
+    reopen() {
+      getController();
+    },
+    isHidden() {
+      return state.hidden;
+    },
+    isVisible() {
+      return !state.hidden;
+    },
+    isActive() {
+      return state.phase.type === 'active';
+    },
+    onVisibilityChange(listener) {
+      assert(typeof listener === 'function', 'Progress visibility listener is required');
+      visibilityListeners.add(listener);
+      return () => visibilityListeners.delete(listener);
+    },
+  };
+}

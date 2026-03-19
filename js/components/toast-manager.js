@@ -1,8 +1,22 @@
+const TYPE_ICONS = {
+  success: '\u2713',
+  error: '\u2715',
+  warning: '\u26A0',
+  info: '\u2139',
+  loading: '',
+};
+
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
 export class ToastManager {
   constructor({ containerId = 'notification-container' } = {}) {
     this.containerId = containerId;
     this.container = null;
-    this._toasts = new Map(); // id -> { el, timeoutId, showTimerId }
+    this._toasts = new Map();
     this._nextId = 1;
   }
 
@@ -11,9 +25,8 @@ export class ToastManager {
     if (!this.container) {
       this.container = document.createElement('div');
       this.container.id = this.containerId;
-      // Append to #app container (for relative positioning)
-      const appContainer = document.getElementById('app');
-      (appContainer || document.body).appendChild(this.container);
+      const app = document.getElementById('app');
+      (app || document.body).appendChild(this.container);
     }
 
     this.container.classList.add('notification-container');
@@ -21,172 +34,477 @@ export class ToastManager {
     this.container.setAttribute('aria-relevant', 'additions');
   }
 
-  show({ title, message, type = 'info', timeoutMs, id, dismissible = true, delayMs = 0, allowHtml = false } = {}) {
+  show({
+    title,
+    message,
+    type = 'info',
+    timeoutMs,
+    id,
+    dismissible = true,
+    delayMs = 0,
+    allowHtml = false,
+  } = {}) {
     const toastId = id || `t${this._nextId++}`;
-
-    // If already exists, update instead.
     if (this._toasts.has(toastId)) {
       this.update(toastId, { title, message, type, timeoutMs, dismissible, allowHtml });
       return toastId;
     }
 
-    const create = () => {
-      const el = document.createElement('div');
-      el.className = 'notification';
-      this._applyTypeClass(el, type);
-      el.setAttribute('data-toast-id', toastId);
-      el.setAttribute('role', type === 'error' ? 'alert' : 'status');
-
-      // Icon based on type
-      const iconMap = {
-        success: '✓',
-        error: '✕',
-        warning: '⚠',
-        info: 'ℹ',
-        loading: '', // Loading uses CSS spinner instead of character
-      };
-      const icon = iconMap[type] || 'ℹ';
-
-      el.innerHTML = `
-        <div class="notification-icon" aria-hidden="true">${type === 'loading' ? '<span class="spinner"></span>' : icon}</div>
-        <div class="notification-content">
-          ${title ? `<div class="notification-title"></div>` : ''}
-          <div class="notification-message"></div>
-        </div>
-        ${dismissible ? `<button type="button" class="notification-close" aria-label="Dismiss">×</button>` : ''}
-      `;
-
-      if (title) el.querySelector('.notification-title').textContent = String(title);
-      const messageEl = el.querySelector('.notification-message');
-      if (messageEl) {
-        if (allowHtml) {
-          messageEl.innerHTML = this._sanitizeMessageHtml(message);
-        } else {
-          messageEl.textContent = String(message || '');
-        }
-      }
-
-      const closeBtn = el.querySelector('.notification-close');
-      closeBtn?.addEventListener('click', () => this.dismiss(toastId));
-
-      this.container.prepend(el);
-      // Trigger entry animation (match lib-lp-staking-frontend style).
-      requestAnimationFrame(() => el.classList.add('show'));
-
-      const rec = { el, timeoutId: null, showTimerId: null };
-      this._toasts.set(toastId, rec);
-
-      if (typeof timeoutMs === 'number' && timeoutMs > 0) {
-        rec.timeoutId = window.setTimeout(() => this.dismiss(toastId), timeoutMs);
-      }
-    };
-
-    if (delayMs && delayMs > 0) {
-      const showTimerId = window.setTimeout(create, delayMs);
-      this._toasts.set(toastId, { el: null, timeoutId: null, showTimerId });
-    } else {
-      create();
+    if (delayMs > 0) {
+      const showTimerId = window.setTimeout(() => {
+        this._toasts.delete(toastId);
+        this._showNow(toastId, { title, message, type, timeoutMs, dismissible, allowHtml });
+      }, delayMs);
+      this._toasts.set(toastId, {
+        el: null,
+        timeoutId: null,
+        showTimerId,
+        onClose: null,
+        closeHandled: false,
+      });
+      return toastId;
     }
 
+    this._showNow(toastId, { title, message, type, timeoutMs, dismissible, allowHtml });
     return toastId;
   }
 
-  // Compatibility wrapper for existing loading toast call sites.
   loading(message, { title = 'Loading', id, delayMs = 200, allowHtml = false } = {}) {
-    return this.show({ id, title, message, type: 'loading', timeoutMs: 0, dismissible: false, delayMs, allowHtml });
+    return this.show({
+      id,
+      title,
+      message,
+      type: 'loading',
+      timeoutMs: 0,
+      dismissible: false,
+      delayMs,
+      allowHtml,
+    });
   }
 
   success(message, { title = 'Done', timeoutMs = 2500, id, allowHtml = false } = {}) {
-    return this.show({ id, title, message, type: 'success', timeoutMs, dismissible: true, allowHtml });
+    return this.show({
+      id,
+      title,
+      message,
+      type: 'success',
+      timeoutMs,
+      dismissible: true,
+      allowHtml,
+    });
   }
 
   error(message, { title = 'Error', timeoutMs = 0, id, allowHtml = false } = {}) {
-    // Error toasts stay until user dismisses them (timeoutMs = 0 means no auto-dismiss)
-    return this.show({ id, title, message, type: 'error', timeoutMs, dismissible: true, allowHtml });
+    return this.show({
+      id,
+      title,
+      message,
+      type: 'error',
+      timeoutMs,
+      dismissible: true,
+      allowHtml,
+    });
   }
 
   update(id, { title, message, type, timeoutMs, dismissible, allowHtml = false } = {}) {
     const rec = this._toasts.get(id);
-    if (!rec) return false;
+    if (!rec) {
+      return false;
+    }
 
-    // If pending delayed show, cancel and show immediately with updated content.
-    if (!rec.el && rec.showTimerId) {
+    if (rec.el === null) {
       window.clearTimeout(rec.showTimerId);
       this._toasts.delete(id);
-      this.show({ id, title, message, type, timeoutMs, dismissible, delayMs: 0, allowHtml });
+      this._showNow(id, { title, message, type, timeoutMs, dismissible, allowHtml });
       return true;
     }
 
-    const el = rec.el;
-    if (!el) return false;
-
+    const toast = rec.el;
     if (type) {
-      this._applyTypeClass(el, type);
-      el.setAttribute('role', type === 'error' ? 'alert' : 'status');
-      // Update icon
-      const iconMap = {
-        success: '✓',
-        error: '✕',
-        warning: '⚠',
-        info: 'ℹ',
-        loading: '',
-      };
-      const iconEl = el.querySelector('.notification-icon');
-      if (iconEl) {
-        if (type === 'loading') {
-          iconEl.innerHTML = '<span class="spinner"></span>';
-        } else {
-          iconEl.textContent = iconMap[type] || 'ℹ';
-        }
-      }
-    }
-    el.classList.remove('hide');
-    el.classList.add('show');
-    if (this.container && el.parentElement === this.container && this.container.firstChild !== el) {
-      this.container.prepend(el);
+      this._setToastType(toast, type);
     }
     if (typeof title === 'string') {
-      const titleEl = el.querySelector('.notification-title');
-      if (titleEl) titleEl.textContent = title;
+      this._setToastTitle(toast, title);
     }
     if (typeof message === 'string') {
-      const msgEl = el.querySelector('.notification-message');
-      if (msgEl) {
-        if (allowHtml) {
-          msgEl.innerHTML = this._sanitizeMessageHtml(message);
-        } else {
-          msgEl.textContent = message;
-        }
-      }
+      this._setToastMessage(toast, message, allowHtml);
     }
-
-    if (rec.timeoutId) window.clearTimeout(rec.timeoutId);
-    rec.timeoutId = null;
-    if (typeof timeoutMs === 'number' && timeoutMs > 0) {
-      rec.timeoutId = window.setTimeout(() => this.dismiss(id), timeoutMs);
-    }
-
     if (typeof dismissible === 'boolean') {
-      const closeBtn = el.querySelector('.notification-close');
-      if (!dismissible && closeBtn) closeBtn.remove();
-      if (dismissible && !closeBtn) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'notification-close';
-        btn.setAttribute('aria-label', 'Dismiss');
-        btn.textContent = '×';
-        btn.addEventListener('click', () => this.dismiss(id));
-        el.appendChild(btn);
-      }
+      this._setToastDismissible(id, toast, dismissible);
     }
 
+    toast.classList.remove('hide');
+    toast.classList.add('show');
+    if (this.container.firstChild !== toast) {
+      this.container.prepend(toast);
+    }
+
+    this._setTimeout(id, rec, timeoutMs);
     return true;
   }
 
-  _applyTypeClass(el, type) {
-    if (!el) return;
-    el.classList.remove('success', 'error', 'warning', 'info', 'loading');
-    if (type) el.classList.add(type);
+  createTransactionProgress({
+    id,
+    title,
+    successTitle,
+    failureTitle,
+    cancelledTitle,
+    summary,
+    steps,
+  }) {
+    const toastId = id || `t${this._nextId++}`;
+    const closeCallbacks = new Set();
+    const refs = this._createTransactionToast({
+      toastId,
+      title,
+      summary,
+      steps,
+    });
+
+    this._mountToast(toastId, refs.toast, {
+      timeoutMs: 0,
+      onClose() {
+        closeCallbacks.forEach((callback) => callback());
+      },
+    });
+
+    const setSummary = (message) => {
+      refs.summary.textContent = message;
+      refs.summary.hidden = message === '';
+    };
+
+    const setTerminalMessage = (message) => {
+      refs.terminalMessage.textContent = message;
+      refs.terminalMessage.hidden = message === '';
+    };
+
+    const finish = (type, nextTitle, nextSummary, terminalMessage) => {
+      this._setToastType(refs.toast, type);
+      this._setToastTitle(refs.toast, nextTitle);
+      setSummary(nextSummary);
+      setTerminalMessage(terminalMessage);
+    };
+
+    return {
+      updateStep: (stepId, update) => {
+        const step = refs.steps.get(stepId);
+        assert(step, `Unknown transaction step: ${stepId}`);
+        const detail = Object.prototype.hasOwnProperty.call(update, 'detail')
+          ? update.detail
+          : step.detail.textContent;
+        this._setStepState(step, update.status || step.item.dataset.stepStatus, detail || '');
+      },
+      setSummary,
+      setTransactionLink: ({ hash, url }) => {
+        refs.meta.hidden = false;
+        refs.hash.textContent = this._shortHash(hash);
+        refs.hash.title = hash;
+        refs.link.href = url;
+        refs.link.hidden = url === '';
+      },
+      finishSuccess: (message) => {
+        finish('success', successTitle, message || summary, '');
+      },
+      finishFailure: (message) => {
+        finish('error', failureTitle, '', message || 'Transaction failed.');
+      },
+      finishCancelled: (message) => {
+        finish('warning', cancelledTitle, '', message || 'Transaction cancelled.');
+      },
+      onClose: (callback) => {
+        assert(typeof callback === 'function', 'Toast close callback is required');
+        closeCallbacks.add(callback);
+        return () => closeCallbacks.delete(callback);
+      },
+      close: () => {
+        this.dismiss(toastId);
+      },
+    };
+  }
+
+  dismiss(id) {
+    const rec = this._toasts.get(id);
+    if (!rec) {
+      return false;
+    }
+
+    if (rec.showTimerId) {
+      window.clearTimeout(rec.showTimerId);
+    }
+    if (rec.timeoutId) {
+      window.clearTimeout(rec.timeoutId);
+    }
+
+    if (!rec.closeHandled && rec.onClose) {
+      rec.closeHandled = true;
+      rec.onClose();
+    }
+
+    if (rec.el) {
+      rec.el.classList.add('hide');
+      window.setTimeout(() => {
+        rec.el.remove();
+      }, 400);
+    }
+
+    this._toasts.delete(id);
+    return true;
+  }
+
+  _showNow(toastId, { title, message, type, timeoutMs, dismissible, allowHtml }) {
+    const toast = this._createStandardToast({ toastId, title, message, type, dismissible, allowHtml });
+    this._mountToast(toastId, toast, {
+      timeoutMs,
+      onClose: null,
+    });
+  }
+
+  _mountToast(toastId, toast, { timeoutMs, onClose }) {
+    if (!this.container) {
+      this.load();
+    }
+
+    const rec = {
+      el: toast,
+      timeoutId: null,
+      showTimerId: null,
+      onClose,
+      closeHandled: false,
+    };
+
+    this._toasts.set(toastId, rec);
+    this.container.prepend(toast);
+    requestAnimationFrame(() => toast.classList.add('show'));
+    this._setTimeout(toastId, rec, timeoutMs);
+  }
+
+  _setTimeout(toastId, rec, timeoutMs) {
+    if (rec.timeoutId) {
+      window.clearTimeout(rec.timeoutId);
+    }
+    rec.timeoutId = null;
+
+    if (typeof timeoutMs === 'number' && timeoutMs > 0) {
+      rec.timeoutId = window.setTimeout(() => this.dismiss(toastId), timeoutMs);
+    }
+  }
+
+  _createStandardToast({ toastId, title, message, type, dismissible, allowHtml }) {
+    const refs = this._createToastShell({ toastId, title, type, dismissible });
+    const body = document.createElement('div');
+    body.className = 'notification-message';
+    refs.content.appendChild(body);
+    this._setToastMessage(refs.toast, message, allowHtml);
+    return refs.toast;
+  }
+
+  _createTransactionToast({ toastId, title, summary, steps }) {
+    const refs = this._createToastShell({
+      toastId,
+      title,
+      type: 'info',
+      dismissible: true,
+    });
+
+    refs.toast.classList.add('notification-transaction');
+
+    const summaryEl = document.createElement('p');
+    summaryEl.className = 'notification-summary';
+    summaryEl.textContent = summary;
+    summaryEl.hidden = summary === '';
+    refs.content.appendChild(summaryEl);
+
+    const checklist = document.createElement('ul');
+    checklist.className = 'notification-checklist';
+    refs.content.appendChild(checklist);
+
+    const stepRefs = new Map();
+    steps.forEach((step) => {
+      const stepRef = this._createStep(step);
+      checklist.appendChild(stepRef.item);
+      stepRefs.set(step.id, stepRef);
+    });
+
+    const meta = document.createElement('div');
+    meta.className = 'notification-transaction-meta';
+    meta.hidden = true;
+
+    const hash = document.createElement('code');
+    hash.className = 'notification-transaction-hash';
+
+    const link = document.createElement('a');
+    link.className = 'notification-transaction-link';
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = 'View on explorer';
+    link.hidden = true;
+
+    meta.appendChild(hash);
+    meta.appendChild(link);
+    refs.content.appendChild(meta);
+
+    const terminalMessage = document.createElement('p');
+    terminalMessage.className = 'notification-terminal-message';
+    terminalMessage.hidden = true;
+    refs.content.appendChild(terminalMessage);
+
+    return {
+      toast: refs.toast,
+      summary: summaryEl,
+      steps: stepRefs,
+      meta,
+      hash,
+      link,
+      terminalMessage,
+    };
+  }
+
+  _createToastShell({ toastId, title, type, dismissible }) {
+    const toast = document.createElement('div');
+    toast.className = 'notification';
+    toast.dataset.toastId = toastId;
+
+    const icon = document.createElement('div');
+    icon.className = 'notification-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    toast.appendChild(icon);
+
+    const content = document.createElement('div');
+    content.className = 'notification-content';
+    toast.appendChild(content);
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'notification-title';
+    content.appendChild(titleEl);
+
+    this._setToastType(toast, type);
+    this._setToastTitle(toast, title);
+
+    if (dismissible) {
+      toast.appendChild(this._createCloseButton(toastId));
+    }
+
+    return { toast, content };
+  }
+
+  _createCloseButton(toastId) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'notification-close';
+    button.setAttribute('aria-label', 'Dismiss');
+    button.textContent = '\u00D7';
+    button.addEventListener('click', () => this.dismiss(toastId));
+    return button;
+  }
+
+  _createStep(step) {
+    const item = document.createElement('li');
+    item.className = 'notification-checklist-item';
+    item.dataset.stepId = step.id;
+
+    const icon = document.createElement('span');
+    icon.className = 'notification-checklist-icon';
+    item.appendChild(icon);
+
+    const content = document.createElement('div');
+    content.className = 'notification-checklist-content';
+
+    const label = document.createElement('div');
+    label.className = 'notification-checklist-label';
+    label.textContent = step.label;
+    content.appendChild(label);
+
+    const detail = document.createElement('div');
+    detail.className = 'notification-checklist-detail';
+    content.appendChild(detail);
+
+    item.appendChild(content);
+    this._setStepState({ item, icon, detail }, step.status || 'pending', step.detail || '');
+    return { item, icon, detail };
+  }
+
+  _setStepState(step, status, detail) {
+    step.item.dataset.stepStatus = status;
+    step.item.classList.remove('is-pending', 'is-active', 'is-completed', 'is-failed', 'is-cancelled');
+    step.item.classList.add(`is-${status}`);
+    step.icon.textContent = this._getStepIcon(status);
+    step.detail.textContent = detail;
+    step.detail.hidden = detail === '';
+  }
+
+  _getStepIcon(status) {
+    switch (status) {
+      case 'pending':
+        return '\u25CB';
+      case 'active':
+        return '\u25CF';
+      case 'completed':
+        return '\u2714';
+      case 'failed':
+        return '\u2716';
+      case 'cancelled':
+        return '\u2212';
+      default:
+        throw new Error(`Unknown step status: ${status}`);
+    }
+  }
+
+  _setToastType(toast, type) {
+    assert(type in TYPE_ICONS, `Unknown toast type: ${type}`);
+    toast.classList.remove('success', 'error', 'warning', 'info', 'loading');
+    toast.classList.add(type);
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+
+    const icon = toast.querySelector('.notification-icon');
+    if (type === 'loading') {
+      icon.innerHTML = '<span class="spinner"></span>';
+      return;
+    }
+    icon.textContent = TYPE_ICONS[type];
+  }
+
+  _setToastTitle(toast, title) {
+    const titleEl = toast.querySelector('.notification-title');
+    titleEl.textContent = String(title || '');
+    titleEl.hidden = titleEl.textContent === '';
+  }
+
+  _setToastMessage(toast, message, allowHtml) {
+    let messageEl = toast.querySelector('.notification-message');
+    if (!messageEl) {
+      messageEl = document.createElement('div');
+      messageEl.className = 'notification-message';
+      toast.querySelector('.notification-content').appendChild(messageEl);
+    }
+
+    if (allowHtml) {
+      messageEl.innerHTML = this._sanitizeMessageHtml(message);
+      return;
+    }
+
+    messageEl.textContent = String(message || '');
+  }
+
+  _setToastDismissible(toastId, toast, dismissible) {
+    const closeButton = toast.querySelector('.notification-close');
+    if (dismissible) {
+      if (!closeButton) {
+        toast.appendChild(this._createCloseButton(toastId));
+      }
+      return;
+    }
+
+    if (closeButton) {
+      closeButton.remove();
+    }
+  }
+
+  _shortHash(hash) {
+    const text = String(hash);
+    if (text.length <= 14) {
+      return text;
+    }
+    return `${text.slice(0, 8)}...${text.slice(-6)}`;
   }
 
   _sanitizeMessageHtml(message) {
@@ -194,61 +512,40 @@ export class ToastManager {
     container.innerHTML = String(message || '');
 
     const fragment = document.createDocumentFragment();
-    const appendSanitized = (node, parent) => {
+    container.childNodes.forEach((node) => {
       if (node.nodeType === Node.TEXT_NODE) {
-        parent.appendChild(document.createTextNode(node.textContent || ''));
+        fragment.appendChild(document.createTextNode(node.textContent || ''));
         return;
       }
-      if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+      if (node.nodeType !== Node.ELEMENT_NODE) {
+        return;
+      }
 
       const tag = node.tagName.toLowerCase();
-      if (tag === 'a') {
-        const a = document.createElement('a');
-        const href = node.getAttribute('href') || '';
-        if (href && !/^javascript:/i.test(href)) {
-          a.setAttribute('href', href);
-        } else {
-          a.setAttribute('href', '#');
-        }
-        if (node.getAttribute('target') === '_blank') {
-          a.setAttribute('target', '_blank');
-        }
-        a.setAttribute('rel', 'noopener noreferrer');
-        a.textContent = node.textContent || '';
-        parent.appendChild(a);
-        return;
-      }
-      
       if (tag === 'br') {
-        parent.appendChild(document.createElement('br'));
+        fragment.appendChild(document.createElement('br'));
         return;
       }
 
-      parent.appendChild(document.createTextNode(node.textContent || ''));
-    };
+      if (tag !== 'a') {
+        fragment.appendChild(document.createTextNode(node.textContent || ''));
+        return;
+      }
 
-    container.childNodes.forEach((node) => appendSanitized(node, fragment));
+      const anchor = document.createElement('a');
+      const href = node.getAttribute('href') || '#';
+      anchor.setAttribute('href', /^javascript:/i.test(href) ? '#' : href);
+      anchor.setAttribute('rel', 'noopener noreferrer');
+      if (node.getAttribute('target') === '_blank') {
+        anchor.setAttribute('target', '_blank');
+      }
+      anchor.textContent = node.textContent || '';
+      fragment.appendChild(anchor);
+    });
+
     const wrapper = document.createElement('div');
     wrapper.appendChild(fragment);
     return wrapper.innerHTML;
-  }
-
-  dismiss(id) {
-    const rec = this._toasts.get(id);
-    if (!rec) return false;
-
-    if (rec.showTimerId) window.clearTimeout(rec.showTimerId);
-    if (rec.timeoutId) window.clearTimeout(rec.timeoutId);
-
-    const el = rec.el;
-    if (el) {
-      el.classList.add('hide');
-      // Remove after animation
-      setTimeout(() => {
-        el.remove();
-      }, 400);
-    }
-    this._toasts.delete(id);
-    return true;
   }
 }
