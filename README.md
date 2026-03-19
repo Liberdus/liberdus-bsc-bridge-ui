@@ -1,6 +1,6 @@
 # liberdus-bsc-bridge-ui
 
-Skeleton UI for the Liberdus Polygon Vault bridge app.
+Skeleton UI for the Liberdus vault bridge app.
 
 ## Current Scope
 
@@ -44,9 +44,11 @@ Open `http://localhost:8080`.
 Edit `js/config.js` to change network/contract settings:
 
 - `CONFIG.RUNTIME.PROFILE` selects `dev` or `prod`
-- `CONFIG.NETWORK.{CHAIN_ID, NAME, RPC_URL, BLOCK_EXPLORER, NATIVE_CURRENCY}`
-- `CONFIG.CONTRACT.{ADDRESS, ABI_PATH}`
-- `CONFIG.BRIDGE.CHAINS.BSC` and `CONFIG.BRIDGE.CONTRACTS.BSC` remain destination-only bridge metadata
+- `PROFILES.<profile>.SOURCE_NETWORK` and `PROFILES.<profile>.DESTINATION_NETWORK`
+- `PROFILES.<profile>.SOURCE_CONTRACT` and `PROFILES.<profile>.DESTINATION_CONTRACT`
+- `PROFILES.<profile>.BRIDGE.COORDINATOR_URL`
+- Runtime source aliases `CONFIG.NETWORK` and `CONFIG.CONTRACT` are derived from `SOURCE_*` for source-chain internals
+- Canonical bridge runtime config lives at `CONFIG.BRIDGE.CHAINS.{SOURCE,DESTINATION}` and `CONFIG.BRIDGE.CONTRACTS.{SOURCE,DESTINATION}`
 
 Wallet connect only requests account access. If the wallet is on the wrong chain, the app stays connected and tx actions will prompt a switch to the configured source network when used.
 

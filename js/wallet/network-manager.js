@@ -3,8 +3,8 @@ import { CONFIG } from '../config.js';
 /**
  * NetworkManager (Phase 2)
  * Configured source-network only:
- * - Read-only mode uses CONFIG.NETWORK.RPC_URL
- * - Tx-enabled mode requires MetaMask connected AND chainId === CONFIG.NETWORK.CHAIN_ID
+ * - Read-only mode uses CONFIG.BRIDGE.CHAINS.SOURCE.RPC_URL
+ * - Tx-enabled mode requires MetaMask connected AND chainId === CONFIG.BRIDGE.CHAINS.SOURCE.CHAIN_ID
  */
 export class NetworkManager {
   constructor({ walletManager } = {}) {
@@ -37,7 +37,7 @@ export class NetworkManager {
       return { switched: false };
     }
 
-    await this.switchToChain(this._requiredNetworkDescriptor());
+    await this.switchToChain(CONFIG.BRIDGE.CHAINS.SOURCE);
     if (this.isOnRequiredNetwork()) {
       return { switched: true };
     }
@@ -53,29 +53,25 @@ export class NetworkManager {
   }
 
   getAvailableNetworks() {
-    const config = this._config();
-    const polygon = config?.BRIDGE?.CHAINS?.POLYGON || config?.NETWORK || null;
-    const bsc = config?.BRIDGE?.CHAINS?.BSC || null;
-    const polygonNative = polygon?.NATIVE_CURRENCY || config?.NETWORK?.NATIVE_CURRENCY || { name: 'MATIC', symbol: 'MATIC', decimals: 18 };
-    const bscNative = bsc?.NATIVE_CURRENCY || { name: 'BNB', symbol: 'tBNB', decimals: 18 };
+    const { SOURCE, DESTINATION } = CONFIG.BRIDGE.CHAINS;
     return [
       {
-        key: 'polygon',
-        chainId: polygon?.CHAIN_ID || config?.NETWORK?.CHAIN_ID || 80002,
-        name: polygon?.NAME || config?.NETWORK?.NAME || 'Polygon Amoy Testnet',
-        rpcUrl: polygon?.RPC_URL || config?.NETWORK?.RPC_URL || '',
-        fallbackRpcs: polygon?.FALLBACK_RPCS || config?.NETWORK?.FALLBACK_RPCS || [],
-        blockExplorer: polygon?.BLOCK_EXPLORER || config?.NETWORK?.BLOCK_EXPLORER || '',
-        nativeCurrency: polygonNative,
+        key: 'source',
+        chainId: SOURCE.CHAIN_ID,
+        name: SOURCE.NAME,
+        rpcUrl: SOURCE.RPC_URL,
+        fallbackRpcs: SOURCE.FALLBACK_RPCS,
+        blockExplorer: SOURCE.BLOCK_EXPLORER,
+        nativeCurrency: SOURCE.NATIVE_CURRENCY,
       },
       {
-        key: 'bsc',
-        chainId: bsc?.CHAIN_ID || 97,
-        name: bsc?.NAME || 'BSC Testnet',
-        rpcUrl: bsc?.RPC_URL || '',
-        fallbackRpcs: bsc?.FALLBACK_RPCS || [],
-        blockExplorer: bsc?.BLOCK_EXPLORER || '',
-        nativeCurrency: bscNative,
+        key: 'destination',
+        chainId: DESTINATION.CHAIN_ID,
+        name: DESTINATION.NAME,
+        rpcUrl: DESTINATION.RPC_URL,
+        fallbackRpcs: DESTINATION.FALLBACK_RPCS,
+        blockExplorer: DESTINATION.BLOCK_EXPLORER,
+        nativeCurrency: DESTINATION.NATIVE_CURRENCY,
       },
     ];
   }
@@ -88,10 +84,10 @@ export class NetworkManager {
     return null;
   }
 
-  async switchToChain(chain) {
+  async switchToChain(network) {
     const walletProvider = await this.walletManager?.getEip1193Provider?.({ waitMs: 200 });
     if (!walletProvider) throw new Error('MetaMask not available');
-    const chainHex = this._toHexChainId(chain.chainId);
+    const chainHex = this._toHexChainId(network.CHAIN_ID);
     try {
       await walletProvider.request({
         method: 'wallet_switchEthereumChain',
@@ -104,10 +100,10 @@ export class NetworkManager {
           method: 'wallet_addEthereumChain',
           params: [{
             chainId: chainHex,
-            chainName: chain.name,
-            rpcUrls: [chain.rpcUrl, ...(chain.fallbackRpcs || [])].filter(Boolean),
-            nativeCurrency: chain.nativeCurrency,
-            blockExplorerUrls: [chain.blockExplorer].filter(Boolean),
+            chainName: network.NAME,
+            rpcUrls: [network.RPC_URL, ...network.FALLBACK_RPCS],
+            nativeCurrency: network.NATIVE_CURRENCY,
+            blockExplorerUrls: [network.BLOCK_EXPLORER],
           }],
         });
         await walletProvider.request({
@@ -121,7 +117,7 @@ export class NetworkManager {
   }
 
   networkSymbol() {
-    return this._networkConfig()?.NATIVE_CURRENCY?.symbol || 'MATIC';
+    return CONFIG.BRIDGE.CHAINS.SOURCE.NATIVE_CURRENCY.symbol;
   }
 
   updateUIState() {
@@ -170,32 +166,8 @@ export class NetworkManager {
     return Number(cid);
   }
 
-  _config() {
-    return window.CONFIG || CONFIG;
-  }
-
-  _networkConfig() {
-    return this._config()?.NETWORK || null;
-  }
-
   _requiredChainId() {
-    return Number(this._networkConfig()?.CHAIN_ID || 0) || null;
-  }
-
-  _requiredNetworkDescriptor() {
-    const network = this._networkConfig();
-    return {
-      chainId: network?.CHAIN_ID,
-      name: network?.NAME || 'Required Network',
-      rpcUrl: network?.RPC_URL || '',
-      fallbackRpcs: network?.FALLBACK_RPCS || [],
-      blockExplorer: network?.BLOCK_EXPLORER || '',
-      nativeCurrency: network?.NATIVE_CURRENCY || { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
-    };
-  }
-
-  _requiredNetworkName() {
-    return this._requiredNetworkDescriptor().name || 'the required network';
+    return CONFIG.BRIDGE.CHAINS.SOURCE.CHAIN_ID;
   }
 
   _createRequiredNetworkWaiter({ timeoutMs = 3000 } = {}) {
@@ -235,7 +207,7 @@ export class NetworkManager {
         if (resolved) return;
         resolved = true;
         cleanup();
-        reject(new Error(`Timed out waiting for wallet to switch to ${this._requiredNetworkName()}`));
+        reject(new Error(`Timed out waiting for wallet to switch to ${CONFIG.BRIDGE.CHAINS.SOURCE.NAME}`));
       }, timeoutMs);
 
       pollId = window.setInterval(() => resolveIfReady(resolve), 50);

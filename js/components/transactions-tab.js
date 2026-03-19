@@ -17,11 +17,6 @@ function shortenAddress(value) {
   return shortenHex(value, { head: 4, tail: 4 });
 }
 
-function safeLowerHex(value) {
-  const s = String(value || '');
-  return s.startsWith('0x') ? s.toLowerCase() : s.toLowerCase();
-}
-
 function formatRelativeTime(unixSeconds) {
   const ts = Number(unixSeconds);
   if (!Number.isFinite(ts) || ts <= 0) return '--';
@@ -59,30 +54,10 @@ function formatTokenAmount(amount, decimals, symbol) {
   }
 }
 
-function getChainConfig() {
-  const chains = CONFIG?.BRIDGE?.CHAINS || {};
-  const polygon = chains.POLYGON || CONFIG?.NETWORK;
-  const bsc = chains.BSC || null;
-
-  const normalized = {};
-  if (polygon?.CHAIN_ID) normalized.POLYGON = polygon;
-  if (bsc?.CHAIN_ID) normalized.BSC = bsc;
-  return normalized;
-}
-
-function getContractsConfig() {
-  const contracts = CONFIG?.BRIDGE?.CONTRACTS || {};
-  const fallbackAddr = CONFIG?.CONTRACT?.ADDRESS;
-  return {
-    POLYGON: contracts.POLYGON?.ADDRESS || fallbackAddr,
-    BSC: contracts.BSC?.ADDRESS || fallbackAddr,
-  };
-}
-
 function getExplorer(chainKey) {
-  const chains = getChainConfig();
-  const base = chains?.[chainKey]?.BLOCK_EXPLORER || '';
-  return String(base || '').replace(/\/$/, '');
+  if (!chainKey) return '';
+  const base = CONFIG.BRIDGE.CHAINS[chainKey].BLOCK_EXPLORER;
+  return String(base).replace(/\/$/, '');
 }
 
 function linkTx(chainKey, txHash) {
@@ -92,57 +67,8 @@ function linkTx(chainKey, txHash) {
   return `${explorer}/tx/${txHash}`;
 }
 
-let _chainConfigCache = null;
-
-function getDefaultCoordinatorUrl() {
-  return normalizeCoordinatorUrl(
-    CONFIG?.BRIDGE?.COORDINATOR_URL ||
-      CONFIG?.COORDINATOR?.URL ||
-      CONFIG?.COORDINATOR_URL ||
-      'https://tss-test1.liberdus.com'
-  );
-}
-
-async function fetchChainConfig() {
-  if (_chainConfigCache) return _chainConfigCache;
-
-  const defaultCoordinatorUrl = getDefaultCoordinatorUrl();
-  let remoteConfig = null;
-
-  try {
-    const response = await fetch('./tss-signer/chain-config.json', { cache: 'no-cache' });
-    if (!response.ok) throw new Error(`Failed to load chain config: ${response.status}`);
-    const json = await response.json();
-    remoteConfig = json && typeof json === 'object' ? json : null;
-  } catch {
-    remoteConfig = null;
-  }
-
-  const remoteCoordinatorUrl = normalizeCoordinatorUrl(remoteConfig?.coordinatorUrl);
-  const isLocalCoordinatorUrl = /^https?:\/\/(127\.0\.0\.1|localhost)(?::\d+)?$/i.test(remoteCoordinatorUrl);
-
-  _chainConfigCache = {
-    ...(remoteConfig || {}),
-    coordinatorUrl:
-      remoteCoordinatorUrl && !isLocalCoordinatorUrl
-        ? remoteCoordinatorUrl
-        : defaultCoordinatorUrl,
-  };
-
-  return _chainConfigCache;
-}
-
-function resolveChainConfig(chainId, chainConfig) {
-  if (!chainConfig || !Number.isFinite(chainId)) return null;
-  const supported = chainConfig?.supportedChains?.[String(chainId)];
-  if (supported && supported.chainId) return supported;
-  if (Number(chainConfig?.vaultChain?.chainId) === chainId) return chainConfig.vaultChain;
-  if (Number(chainConfig?.secondaryChainConfig?.chainId) === chainId) return chainConfig.secondaryChainConfig;
-  return null;
-}
-
 async function fetchAbi() {
-  const abiPath = CONFIG?.CONTRACT?.ABI_PATH || './abi/vault.json';
+  const abiPath = CONFIG.BRIDGE.CONTRACTS.SOURCE.ABI_PATH;
   const response = await fetch(abiPath, { cache: 'no-cache' });
   if (!response.ok) throw new Error(`Failed to load ABI (${abiPath}): ${response.status}`);
   const json = await response.json();
@@ -151,41 +77,11 @@ async function fetchAbi() {
   return abi;
 }
 
-async function getLogsChunked(provider, baseFilter, fromBlock, toBlock, chunkSize) {
-  const f = Number(fromBlock);
-  const t = Number(toBlock);
-  if (!Number.isFinite(f) || !Number.isFinite(t) || t < f) return [];
-
-  const size = Number(chunkSize || 3000);
-  const results = [];
-
-  for (let start = f; start <= t; start += size) {
-    const end = Math.min(t, start + size - 1);
-    const logs = await provider.getLogs({ ...baseFilter, fromBlock: start, toBlock: end });
-    if (Array.isArray(logs) && logs.length) results.push(...logs);
-  }
-
-  return results;
-}
-
-async function fetchTransactionReceipt(provider, txHash) {
-  try {
-    const receipt = await provider.getTransactionReceipt(txHash);
-    if (!receipt) return null;
-    return {
-      status: receipt.status,
-      blockNumber: receipt.blockNumber,
-    };
-  } catch {
-    return null;
-  }
-}
-
 function buildChainIdIndex(chains) {
   const map = new Map();
   for (const [key, cfg] of Object.entries(chains || {})) {
-    const id = Number(cfg?.CHAIN_ID);
-    if (Number.isFinite(id)) map.set(id, key);
+    const id = cfg?.CHAIN_ID;
+    if (Number.isInteger(id) && id > 0) map.set(id, key);
   }
   return map;
 }
@@ -298,17 +194,57 @@ function renderStatus(status) {
   return `<span class="tx-status tx-status--unknown">Unknown</span>`;
 }
 
-async function loadTransactionsFromCoordinator({ limit = 200 } = {}) {
-  const chains = getChainConfig();
-  const chainConfig = await fetchChainConfig();
-  const chainIdIndex = buildChainIdIndex(chains);
-  const coordinatorUrl = normalizeCoordinatorUrl(chainConfig?.coordinatorUrl) || getDefaultCoordinatorUrl();
-  if (!coordinatorUrl) throw new Error('Coordinator URL is not configured');
+function mapCoordinatorTransaction(tx, chains, chainIdIndex) {
+  const type = Number(tx?.type);
+  const chainId = Number(tx?.chainId);
+  const destinationChainId = chains.DESTINATION.CHAIN_ID;
+  let srcChainId;
+  let dstChainId;
 
-  const secondaryChainId =
-    Number(chainConfig?.secondaryChainConfig?.chainId) ||
-    Number(chains?.BSC?.CHAIN_ID) ||
-    0;
+  switch (type) {
+    case 0:
+      srcChainId = 0;
+      dstChainId = chainId;
+      break;
+    case 1:
+      srcChainId = chainId;
+      dstChainId = 0;
+      break;
+    case 2:
+      srcChainId = chainId;
+      dstChainId = destinationChainId;
+      break;
+    default:
+      srcChainId = chainId;
+      dstChainId = 0;
+      break;
+  }
+
+  const srcChainKey = chainIdIndex.get(srcChainId) || null;
+  const dstChainKey = chainIdIndex.get(dstChainId) || null;
+  const rawTimestamp = Number(tx?.txTimestamp || 0);
+  const timestamp = rawTimestamp > 1e12 ? Math.floor(rawTimestamp / 1000) : rawTimestamp;
+
+  return {
+    id: tx?.txId,
+    srcChainKey,
+    dstChainKey,
+    srcName: srcChainId === 0 ? 'Liberdus Network' : chains[srcChainKey]?.NAME || `Chain ${srcChainId}`,
+    dstName: dstChainId === 0 ? 'Liberdus Network' : chains[dstChainKey]?.NAME || `Chain ${dstChainId}`,
+    from: tx?.sender,
+    amount: tx?.value,
+    timestamp,
+    txHash: tx?.txId,
+    receiptTxHash: tx?.receiptId || '',
+    status: tx?.status,
+    type,
+  };
+}
+
+async function loadTransactionsFromCoordinator({ limit = 200 } = {}) {
+  const chains = CONFIG.BRIDGE.CHAINS;
+  const chainIdIndex = buildChainIdIndex(chains);
+  const coordinatorUrl = normalizeCoordinatorUrl(CONFIG.BRIDGE.COORDINATOR_URL);
 
   const allTransactions = [];
   let page = 1;
@@ -327,218 +263,11 @@ async function loadTransactionsFromCoordinator({ limit = 200 } = {}) {
   }
 
   const rows = allTransactions
-    .map((tx) => {
-      const type = Number(tx?.type);
-      const chainId = Number(tx?.chainId);
-      const srcChainId = type === 0 ? 0 : chainId;
-      const dstChainId = type === 0 ? chainId : type === 2 ? secondaryChainId : 0;
-
-      const srcChainKey = chainIdIndex.get(Number(srcChainId)) || null;
-      const dstChainKey = chainIdIndex.get(Number(dstChainId)) || null;
-
-      const srcName =
-        srcChainId === 0
-          ? 'Liberdus Network'
-          : chains?.[srcChainKey]?.NAME || `Chain ${srcChainId}`;
-      const dstName =
-        dstChainId === 0
-          ? 'Liberdus Network'
-          : chains?.[dstChainKey]?.NAME || `Chain ${dstChainId}`;
-
-      const rawTimestamp = Number(tx?.txTimestamp || 0);
-      const timestamp = rawTimestamp > 1e12 ? Math.floor(rawTimestamp / 1000) : rawTimestamp;
-
-      return {
-        id: tx?.txId,
-        srcChainKey,
-        dstChainKey,
-        srcName,
-        dstName,
-        from: tx?.sender,
-        amount: tx?.value,
-        timestamp,
-        txHash: tx?.txId,
-        receiptTxHash: tx?.receiptId || '',
-        status: tx?.status,
-        type,
-      };
-    })
+    .map((tx) => mapCoordinatorTransaction(tx, chains, chainIdIndex))
     .sort(sortByTimestampDesc)
     .slice(0, Number(limit || 200));
 
   return rows;
-}
-
-
-async function loadTransactionsFromOnchain({ limit = 200 } = {}) {
-
-  const ethers = window.ethers;
-  const abi = await fetchAbi();
-  const iface = new ethers.utils.Interface(abi);
-  const bridgedOutTopic = iface.getEventTopic('BridgedOut');
-  const relinquishedTopic = iface.getEventTopic('TokensRelinquished');
-
-  const chains = getChainConfig();
-  const contracts = getContractsConfig();
-  const chainConfig = await fetchChainConfig();
-  const chainIdIndex = buildChainIdIndex(chains);
-
-  const lookbackBlocks = Number(CONFIG?.BRIDGE?.LOOKBACK_BLOCKS || 60000);
-  const perChain = Object.entries(chains).map(async ([chainKey, cfg]) => {
-    try {
-      const provider = await getReadOnlyProviderForNetwork(cfg);
-      const toBlock = await provider.getBlockNumber();
-      const chainId = Number(cfg?.CHAIN_ID);
-      const resolvedChain = resolveChainConfig(chainId, chainConfig);
-      const deploymentBlock = Number(resolvedChain?.deploymentBlock);
-      const fallbackFrom = Math.max(0, toBlock - lookbackBlocks);
-      const fromBlock =
-        Number.isFinite(deploymentBlock) && deploymentBlock > 0 && deploymentBlock <= toBlock
-          ? Math.min(deploymentBlock, fallbackFrom)
-          : fallbackFrom;
-      const address = resolvedChain?.contractAddress || contracts?.[chainKey];
-      if (!address) return { chainKey, bridgedOut: [], relinquished: [], error: '' };
-
-      const bridgedOutLogs = await getLogsChunked(
-        provider,
-        { address, topics: [bridgedOutTopic] },
-        fromBlock,
-        toBlock,
-        3000
-      );
-
-      const relinquishedLogs = await getLogsChunked(
-        provider,
-        { address, topics: [relinquishedTopic] },
-        fromBlock,
-        toBlock,
-        3000
-      );
-
-      const bridgedOut = bridgedOutLogs
-        .map((log) => {
-          try {
-            const parsed = iface.parseLog(log);
-            return {
-              chainKey,
-              txHash: log.transactionHash,
-              from: parsed.args?.from,
-              amount: parsed.args?.amount,
-              targetAddress: parsed.args?.targetAddress,
-              targetChainId: Number(parsed.args?.chainId),
-              timestamp: Number(parsed.args?.timestamp),
-            };
-          } catch {
-            return null;
-          }
-        })
-        .filter(Boolean);
-
-      const relinquished = relinquishedLogs
-        .map((log) => {
-          try {
-            const parsed = iface.parseLog(log);
-            return {
-              chainKey,
-              txHash: log.transactionHash,
-              to: parsed.args?.to,
-              amount: parsed.args?.amount,
-              timestamp: Number(parsed.args?.timestamp),
-            };
-          } catch {
-            return null;
-          }
-        })
-        .filter(Boolean);
-
-      return { chainKey, bridgedOut, relinquished, error: '' };
-    } catch (error) {
-      const msg = error?.reason || error?.message || String(error);
-      return { chainKey, bridgedOut: [], relinquished: [], error: msg };
-    }
-  });
-
-  const results = await Promise.all(perChain);
-  const errors = results.map((r) => r.error).filter(Boolean);
-  const hasData = results.some((r) => (r.bridgedOut || []).length > 0 || (r.relinquished || []).length > 0);
-  if (!hasData && errors.length) {
-    throw new Error(errors.join(' | '));
-  }
-  const bridgedOutAll = results.flatMap((r) => r.bridgedOut || []);
-  const relinquishedAll = results.flatMap((r) => r.relinquished || []);
-
-  const relinquishedIndex = new Map();
-  for (const ev of relinquishedAll) {
-    const key = `${ev.chainKey}|${safeLowerHex(ev.to)}|${toBigNumber(ev.amount)?.toString() || ''}`;
-    const list = relinquishedIndex.get(key) || [];
-    list.push(ev);
-    relinquishedIndex.set(key, list);
-  }
-
-  for (const list of relinquishedIndex.values()) {
-    list.sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0));
-  }
-
-  const usedReceipts = new Set();
-  let rows = await Promise.all(
-    bridgedOutAll.map(async (ev) => {
-      const destChainKey = chainIdIndex.get(Number(ev.targetChainId)) || null;
-      const destName = destChainKey ? chains?.[destChainKey]?.NAME : `Chain ${ev.targetChainId}`;
-      const srcName = chains?.[ev.chainKey]?.NAME || ev.chainKey;
-
-      const amountKey = toBigNumber(ev.amount)?.toString() || '';
-      const matchKey = destChainKey
-        ? `${destChainKey}|${safeLowerHex(ev.targetAddress)}|${amountKey}`
-        : null;
-      const candidates = matchKey ? relinquishedIndex.get(matchKey) || [] : [];
-      const receipt = candidates.find(
-        (c) => Number(c.timestamp || 0) >= Number(ev.timestamp || 0) && !usedReceipts.has(c.txHash)
-      );
-      if (receipt?.txHash) usedReceipts.add(receipt.txHash);
-
-      let status = receipt?.txHash ? 'Completed' : 'Pending';
-
-      if (!receipt?.txHash) {
-        const chainCfg = chains?.[ev.chainKey];
-        if (chainCfg) {
-          try {
-            const provider = await getReadOnlyProviderForNetwork(chainCfg);
-            const receiptData = await fetchTransactionReceipt(provider, ev.txHash);
-            if (receiptData) {
-              if (receiptData.status === 1) {
-                status = 'Completed';
-              } else if (receiptData.status === 0) {
-                status = 'Failed';
-              }
-            }
-          } catch {}
-        }
-      }
-
-      return {
-        id: ev.txHash,
-        srcChainKey: ev.chainKey,
-        dstChainKey: destChainKey,
-        srcName,
-        dstName: destName,
-        from: ev.from,
-        amount: ev.amount,
-        timestamp: ev.timestamp,
-        txHash: ev.txHash,
-        receiptTxHash: receipt?.txHash || '',
-        status,
-        type: 1,
-      };
-    })
-  );
-
-  rows = rows.sort(sortByTimestampDesc).slice(0, Number(limit || 200));
-
-  return rows;
-}
-
-async function loadTransactionsData({ limit = 200 } = {}) {
-  return await loadTransactionsFromCoordinator({ limit });
 }
 
 export class TransactionsTab {
@@ -566,6 +295,9 @@ export class TransactionsTab {
     this._bridgeOutHandler = null;
     this._seenBridgeOutTx = new Set();
     this._bridgeOutWatchRetryTimer = null;
+    this.onlyMine = false;
+    this.onlyMineCheckbox = null;
+    this.onlyMineHintEl = null;
   }
 
   load() {
@@ -576,12 +308,16 @@ export class TransactionsTab {
     this.panel = document.querySelector('.tab-panel[data-panel="transactions"]');
     if (!this.panel) return;
 
+    const chains = CONFIG.BRIDGE.CHAINS;
+    const sourceName = chains.SOURCE?.NAME || 'source chain';
+    const destinationName = chains.DESTINATION?.NAME || 'destination chain';
+
     this.panel.innerHTML = `
       <div class="tx-header card">
         <div class="tx-header-row">
           <div>
             <div class="tx-title">Search Transactions</div>
-            <div class="muted" data-tx-status>Load recent bridge transactions from Polygon and BSC.</div>
+            <div class="muted" data-tx-status>Load recent bridge transactions from ${sourceName} and ${destinationName}.</div>
           </div>
           <div class="tx-header-actions">
             <div class="tx-total"><span class="tx-total-label">Total Transactions:</span> <strong data-tx-total>0</strong></div>
@@ -597,6 +333,13 @@ export class TransactionsTab {
         <div class="tx-search">
           <div class="tx-search-prefix">Transaction ID</div>
           <input class="field-input tx-search-input" type="text" placeholder="Enter transaction ID..." data-tx-search />
+        </div>
+        <div class="tx-filters">
+          <label class="field-checkbox">
+            <input type="checkbox" data-tx-onlymine />
+            <span>Only my transactions</span>
+          </label>
+          <span class="tx-muted" data-tx-onlymine-hint></span>
         </div>
       </div>
 
@@ -648,6 +391,8 @@ export class TransactionsTab {
     this.nextBtn = this.panel.querySelector('[data-tx-next]');
     this.pageInfoEl = this.panel.querySelector('[data-tx-page-info]');
     this.pageSizeEl = this.panel.querySelector('[data-tx-page-size]');
+    this.onlyMineCheckbox = this.panel.querySelector('[data-tx-onlymine]');
+    this.onlyMineHintEl = this.panel.querySelector('[data-tx-onlymine-hint]');
 
     this.refreshBtn?.addEventListener('click', () => this.refresh());
     this.panel.addEventListener('click', (event) => this._handleClick(event));
@@ -669,6 +414,12 @@ export class TransactionsTab {
       this.page = 1;
       this.render();
     });
+    this.onlyMineCheckbox?.addEventListener('change', () => {
+      this.onlyMine = !!this.onlyMineCheckbox.checked;
+      this.page = 1;
+      this._updateOnlyMineUI();
+      this.render();
+    });
     if (!this._bridgeListenerBound) {
       document.addEventListener('bridgeOutEvent', (e) => this._onBridgeOutEvent(e));
       this._bridgeListenerBound = true;
@@ -688,6 +439,22 @@ export class TransactionsTab {
       if (e?.detail?.tabName === 'transactions') this._stopIssuedTicker();
     });
 
+<<<<<<< transactions-background-prefetch
+=======
+    document.addEventListener('walletConnected', () => {
+      this._updateOnlyMineUI();
+      if (this.onlyMine) this.render();
+    });
+    document.addEventListener('walletDisconnected', () => {
+      this._updateOnlyMineUI();
+      if (this.onlyMine) this.render();
+    });
+    document.addEventListener('walletAccountChanged', () => {
+      this._updateOnlyMineUI();
+      if (this.onlyMine) this.render();
+    });
+    this._updateOnlyMineUI();
+>>>>>>> main
   }
 
   async refresh() {
@@ -700,7 +467,7 @@ export class TransactionsTab {
     } catch {}
 
     try {
-      const fetched = await loadTransactionsData({ limit: 250 });
+      const fetched = await loadTransactionsFromCoordinator({ limit: 250 });
       this._rows = mergeTransactions(fetched, this._rows, { limit: 500 });
       this.render();
       this._setStatus('Transactions updated.');
@@ -723,13 +490,24 @@ export class TransactionsTab {
     if (!this.panel || !this.tableBody) return;
     const q = String(this.searchInput?.value || '').trim().toLowerCase();
 
-    const filtered = q
-      ? this._rows.filter((r) => {
-          const a = String(r.txHash || '').toLowerCase();
-          const b = String(r.receiptTxHash || '').toLowerCase();
-          return a.includes(q) || b.includes(q);
-        })
-      : this._rows;
+    const connected = !!window.walletManager?.isConnected?.();
+    const addr = connected ? String(window.walletManager?.getAddress?.() || '').toLowerCase() : '';
+    let filtered = this._rows;
+    if (this.onlyMine) {
+      if (connected && addr) {
+        filtered = filtered.filter((r) => String(r.from || '').toLowerCase() === addr);
+        this._setStatus('Filtering: Only my transactions');
+      } else {
+        this._setStatus('Only my transactions is inactive — connect wallet');
+      }
+    }
+    if (q) {
+      filtered = filtered.filter((r) => {
+        const a = String(r.txHash || '').toLowerCase();
+        const b = String(r.receiptTxHash || '').toLowerCase();
+        return a.includes(q) || b.includes(q);
+      });
+    }
 
     if (this.totalEl) this.totalEl.textContent = String(filtered.length);
 
@@ -761,8 +539,21 @@ export class TransactionsTab {
         const sender = renderAddress(row.from);
         const value = formatTokenAmount(row.amount, decimals, symbol);
         const route = renderChainRoute(row.srcChainKey, row.dstChainKey, row.srcName, row.dstName);
-        const typeLabel =
-          row.type === 0 ? 'Bridge In' : row.type === 1 ? 'Bridge Out' : row.type === 2 ? 'Bridge Vault' : 'Unknown';
+        let typeLabel;
+        switch (row.type) {
+          case 0:
+            typeLabel = 'Bridge In';
+            break;
+          case 1:
+            typeLabel = 'Bridge Out';
+            break;
+          case 2:
+            typeLabel = 'Bridge Vault';
+            break;
+          default:
+            typeLabel = 'Unknown';
+            break;
+        }
         const type = `<span class="tx-type">${typeLabel}</span>`;
         const status = renderStatus(row.status);
         const issued = `<span class="tx-muted">${formatRelativeTime(row.timestamp)}</span>`;
@@ -787,12 +578,12 @@ export class TransactionsTab {
   _onBridgeOutEvent(e) {
     const d = e?.detail || null;
     if (!d) return;
-    const chains = getChainConfig();
+    const chains = CONFIG.BRIDGE.CHAINS;
     const chainIdIndex = buildChainIdIndex(chains);
-    const srcChainKey = chainIdIndex.get(Number(d.sourceChainId)) || 'POLYGON';
+    const srcChainKey = chainIdIndex.get(Number(d.sourceChainId)) || 'SOURCE';
     const dstChainKey = chainIdIndex.get(Number(d.targetChainId)) || null;
-    const srcName = chains?.[srcChainKey]?.NAME || 'Polygon';
-    const dstName = dstChainKey ? chains?.[dstChainKey]?.NAME || `Chain ${d.targetChainId}` : `Chain ${d.targetChainId}`;
+    const srcName = chains[srcChainKey].NAME;
+    const dstName = dstChainKey ? chains[dstChainKey]?.NAME || `Chain ${d.targetChainId}` : `Chain ${d.targetChainId}`;
     const row = {
       id: d.txHash,
       srcChainKey,
@@ -824,17 +615,11 @@ export class TransactionsTab {
       const iface = new ethers.utils.Interface(abi);
       const bridgedOutTopic = iface.getEventTopic('BridgedOut');
 
-      const chains = getChainConfig();
-      const polygonCfg = chains?.POLYGON;
-      if (!polygonCfg?.RPC_URL) return;
+      const chains = CONFIG.BRIDGE.CHAINS;
+      const sourceCfg = chains.SOURCE;
+      const address = CONFIG.BRIDGE.CONTRACTS.SOURCE.ADDRESS;
 
-      const contracts = getContractsConfig();
-      const chainConfig = await fetchChainConfig();
-      const resolved = resolveChainConfig(Number(polygonCfg?.CHAIN_ID), chainConfig);
-      const address = resolved?.contractAddress || contracts?.POLYGON;
-      if (!address) return;
-
-      const provider = await getReadOnlyProviderForNetwork(polygonCfg);
+      const provider = await getReadOnlyProviderForNetwork(sourceCfg);
       const filter = { address, topics: [bridgedOutTopic] };
 
       const handler = (log) => {
@@ -847,12 +632,12 @@ export class TransactionsTab {
           this._seenBridgeOutTx.add(key);
           if (this._seenBridgeOutTx.size > 2000) this._seenBridgeOutTx.clear();
 
-          const chainsLocal = getChainConfig();
+          const chainsLocal = CONFIG.BRIDGE.CHAINS;
           const chainIdIndex = buildChainIdIndex(chainsLocal);
           const dstChainId = Number(parsed.args?.chainId);
           const dstChainKey = chainIdIndex.get(dstChainId) || null;
-          const srcChainKey = 'POLYGON';
-          const srcName = chainsLocal?.[srcChainKey]?.NAME || 'Polygon';
+          const srcChainKey = 'SOURCE';
+          const srcName = chainsLocal.SOURCE.NAME;
           const dstName = dstChainKey ? chainsLocal?.[dstChainKey]?.NAME || `Chain ${dstChainId}` : `Chain ${dstChainId}`;
 
           const row = {
@@ -924,6 +709,23 @@ export class TransactionsTab {
 
   _setLoading(isLoading) {
     if (this.refreshBtn) this.refreshBtn.disabled = !!isLoading;
+  }
+
+  _updateOnlyMineUI() {
+    const connected = !!window.walletManager?.isConnected?.();
+    const addr = connected ? String(window.walletManager?.getAddress?.() || '') : '';
+    const short =
+      addr && addr.startsWith('0x') && addr.length > 10 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr || '';
+    if (this.onlyMineCheckbox) {
+      this.onlyMineCheckbox.disabled = false;
+    }
+    if (this.onlyMineHintEl) {
+      if (connected && addr) {
+        this.onlyMineHintEl.textContent = this.onlyMine ? `Filtering for ${short}` : `Connected: ${short}`;
+      } else {
+        this.onlyMineHintEl.textContent = 'Connect wallet to enable';
+      }
+    }
   }
 
   async _handleClick(event) {
