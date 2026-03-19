@@ -94,30 +94,23 @@
 }
 
 .wallet-action-link {
-  width: 100%;
-  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border: 1px solid var(--border-color);
-  background: var(--background-color);
-  color: var(--text-color);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
+  gap: 4px;
+  width: fit-content;
+  color: var(--primary-color);
   text-decoration: none;
   font-weight: var(--font-weight-medium);
 }
 
 .wallet-action-link:hover,
 .wallet-action-link:focus-visible {
-  background: var(--hover-background);
-  border-color: var(--border-color);
+  text-decoration: underline;
 }
 
 .wallet-action-link-icon {
   font-size: 12px;
-  color: var(--secondary-text-color);
+  color: currentColor;
 }
 
 .wallet-network {

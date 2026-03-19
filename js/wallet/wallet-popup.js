@@ -190,7 +190,7 @@ export class WalletPopup {
             ${explorerHref ? `
               <a class="wallet-action-link" href="${explorerHref}" target="_blank" rel="noopener">
                 <span>View on explorer</span>
-                <span class="wallet-action-link-icon" aria-hidden="true">&#8599;</span>
+                <span class="wallet-action-link-icon" aria-hidden="true">↗</span>
               </a>
             ` : ''}
             <button class="disconnect-button" type="button" data-wallet-disconnect>Disconnect</button>
