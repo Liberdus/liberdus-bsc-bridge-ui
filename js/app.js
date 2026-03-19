@@ -10,7 +10,6 @@ import { WalletManager } from './wallet/wallet-manager.js';
 import { NetworkManager } from './wallet/network-manager.js';
 import { WalletPopup } from './wallet/wallet-popup.js';
 import { ContractManager } from './contracts/contract-manager.js';
-import { versionService } from './version-service.js';
 
 const header = new Header();
 const tabBar = new TabBar();
@@ -24,9 +23,7 @@ const networkManager = new NetworkManager({ walletManager });
 const contractManager = new ContractManager({ walletManager, networkManager });
 const walletPopup = new WalletPopup({ walletManager, contractManager });
 
-document.addEventListener('DOMContentLoaded', async () => {
-  if (await versionService.initialize()) return;
-
+export async function startApp() {
   window.CONFIG = CONFIG;
 
   const versionEl = document.querySelector('.app-version');
@@ -59,4 +56,4 @@ document.addEventListener('DOMContentLoaded', async () => {
   transactionsTab.load();
 
   tabBar.load();
-});
+}

@@ -22,6 +22,7 @@ const STATIC_CRITICAL_FILES = [
   'css/tabs.css',
   'css/wallet-popup.css',
   'libs/ethers.umd.min.js',
+  'js/bootstrap.js',
   'js/app.js',
   'js/config.js',
   'js/version-service.js',
