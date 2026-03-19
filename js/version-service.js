@@ -95,7 +95,7 @@ export async function initializeVersionService() {
     await reloadCriticalFiles();
 
     localStorage.setItem(VERSION_STORAGE_KEY, nextVersion);
-    window.location.replace(getReloadUrl());
+    window.location.reload();
     return true;
   } catch (error) {
     console.warn('Version refresh skipped, continuing with current app', error);
