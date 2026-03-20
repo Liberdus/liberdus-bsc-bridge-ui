@@ -292,6 +292,12 @@ export class PolygonBscBridgeModule {
     if (this._isBridgePreflightPending) {
       bridgeButtonState = { type: 'preflight', disabled: true, label: 'Bridging...' };
     } else if (session?.isVisible()) {
+      /**
+       * Product choice: a visible terminal checklist acts as an acknowledgement
+       * gate. The primary action stays disabled until the user closes the toast,
+       * even after success/failure/cancelled, so they explicitly dismiss the
+       * last bridge attempt before starting a new one.
+       */
       bridgeButtonState = session.isActive()
         ? { type: 'visible-active', disabled: true, label: 'Bridging...' }
         : { type: 'visible-terminal', disabled: true, label: 'Checklist Open' };
