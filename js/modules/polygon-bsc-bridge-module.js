@@ -353,7 +353,7 @@ export class PolygonBscBridgeModule {
     }
   }
 
-  _assertBridgeSubmitStillAllowed(amountWei, snapshot = null) {
+  _assertBridgeSubmitStillAllowed(amountWei) {
     assert(amountWei && typeof amountWei.gt === 'function', 'Bridge amount is required');
 
     const balanceWei = this._balanceCache?.balanceWei || null;
@@ -361,14 +361,14 @@ export class PolygonBscBridgeModule {
       throw new Error('Amount exceeds available balance. Please review and try again.');
     }
 
-    const s = snapshot ?? this.contractManager.getStatusSnapshot();
-    if (s?.bridgeOutEnabled === false) {
+    const snapshot = this.contractManager.getStatusSnapshot();
+    if (snapshot?.bridgeOutEnabled === false) {
       throw new Error('Bridge out is currently disabled');
     }
-    if (s?.halted === true) {
+    if (snapshot?.halted === true) {
       throw new Error('Vault is currently halted');
     }
-    if (s?.maxBridgeOutAmount && amountWei.gt(this._bn(s.maxBridgeOutAmount))) {
+    if (snapshot?.maxBridgeOutAmount && amountWei.gt(this._bn(snapshot.maxBridgeOutAmount))) {
       throw new Error('Amount exceeds max bridge out limit');
     }
   }
@@ -462,9 +462,9 @@ export class PolygonBscBridgeModule {
         amountWei: amountWei.toString(),
       };
 
-      const snapshot = this.contractManager.getStatusSnapshot();
-      this._assertBridgeSubmitStillAllowed(amountWei, snapshot);
+      this._assertBridgeSubmitStillAllowed(amountWei);
 
+      const snapshot = this.contractManager.getStatusSnapshot();
       const bridgeChainId = this._getBridgeOutChainId(snapshot);
       if (!bridgeChainId) throw new Error('Bridge chain ID is not configured');
 
