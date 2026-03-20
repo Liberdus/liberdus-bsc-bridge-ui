@@ -9,10 +9,10 @@ export class PolygonBscBridgeModule {
     toastManager = null,
     config = null,
   } = {}) {
-    this.contractManager = contractManager || window.contractManager;
-    this.walletManager = walletManager || window.walletManager;
-    this.networkManager = networkManager || window.networkManager;
-    this.toastManager = toastManager || window.toastManager;
+    this.contractManager = contractManager || window.contractManager || null;
+    this.walletManager = walletManager || window.walletManager || null;
+    this.networkManager = networkManager || window.networkManager || null;
+    this.toastManager = toastManager || window.toastManager || null;
     this.config = config || window.CONFIG;
 
     assert(this.contractManager, 'contractManager is required');
@@ -60,7 +60,7 @@ export class PolygonBscBridgeModule {
   }
 
   async refresh() {
-    if (!this.contractManager.isReady()) return;
+    if (!this.contractManager?.isReady?.()) return;
     await this.contractManager.refreshStatus({ reason: 'bridgeModuleRefresh' });
     await this._refreshBalances();
   }
@@ -349,7 +349,7 @@ export class PolygonBscBridgeModule {
       throw new Error('Amount exceeds available balance. Please review and try again.');
     }
 
-    const snapshot = this.contractManager.getStatusSnapshot();
+    const snapshot = this.contractManager?.getStatusSnapshot?.();
     if (snapshot?.bridgeOutEnabled === false) {
       throw new Error('Bridge out is currently disabled');
     }
@@ -397,11 +397,11 @@ export class PolygonBscBridgeModule {
   }
 
   async _onSetMaxClicked() {
-    const snapshot = this.contractManager.getStatusSnapshot() || this._lastSnapshot;
+    const snapshot = this.contractManager?.getStatusSnapshot?.() || this._lastSnapshot;
     const maxStr = snapshot?.maxBridgeOutAmount || null;
     if (!this._els.amount) return;
     if (!maxStr) {
-      this.toastManager.error('Unable to read max bridge out amount from contract');
+      this.toastManager?.error?.('Unable to read max bridge out amount from contract');
       return;
     }
 
@@ -673,35 +673,33 @@ export class PolygonBscBridgeModule {
   }
 
   _parseBridgedOutFromReceipt(receipt) {
-    if (!receipt?.logs?.length) {
+    try {
+      if (!receipt?.logs || !this.contractManager?.abi || !window.ethers) return null;
+      const iface = new window.ethers.utils.Interface(this.contractManager.abi);
+      for (const log of receipt.logs) {
+        try {
+          const parsed = iface.parseLog(log);
+          if (parsed?.name === 'BridgedOut') {
+            return {
+              from: parsed.args?.from,
+              amount: parsed.args?.amount?.toString?.() ?? String(parsed.args?.amount ?? ''),
+              targetAddress: parsed.args?.targetAddress,
+              chainId: parsed.args?.chainId?.toString?.() ?? String(parsed.args?.chainId ?? ''),
+            };
+          }
+        } catch (_) {}
+      }
+      return null;
+    } catch (_) {
       return null;
     }
-
-    const iface = new window.ethers.utils.Interface(this.contractManager.abi);
-    for (const log of receipt.logs) {
-      try {
-        const parsed = iface.parseLog(log);
-        if (parsed.name !== 'BridgedOut') {
-          continue;
-        }
-        return {
-          from: parsed.args.from,
-          amount: parsed.args.amount.toString(),
-          targetAddress: parsed.args.targetAddress,
-          chainId: parsed.args.chainId.toString(),
-        };
-      } catch (_) {
-        continue;
-      }
-    }
-
-    return null;
   }
 
   async _refreshBalances() {
     if (!window.ethers) return;
-    const provider = this.contractManager.provider;
-    const address = this.walletManager.getAddress();
+    // Approval and spend happen on the source chain, so read token state from the app's source-chain provider.
+    const provider = this.contractManager?.provider || null;
+    const address = this.walletManager?.getAddress?.() || null;
     if (!provider || !address) {
       this._balanceCache = null;
       if (this._els.userBalance) this._els.userBalance.textContent = `- ${this._tokenSymbol()} Available`;
@@ -714,6 +712,7 @@ export class PolygonBscBridgeModule {
     if (!tokenAddr || !vaultAddr) return;
 
     const token = new window.ethers.Contract(tokenAddr, this._erc20Abi(), provider);
+
     const [bal, allowance] = await Promise.all([
       token.balanceOf(address).catch(() => null),
       token.allowance(address, vaultAddr).catch(() => null),
@@ -723,39 +722,44 @@ export class PolygonBscBridgeModule {
     const allowanceWei = allowance ? this._bn(allowance.toString()) : null;
 
     this._balanceCache = { balanceWei, allowanceWei };
-    if (this._els.userBalance) {
-      this._els.userBalance.textContent = balanceWei
-        ? `${this._formatTokenUnits(balanceWei.toString())} ${this._tokenSymbol()} Available`
-        : `- ${this._tokenSymbol()} Available`;
-    }
+    if (this._els.userBalance)
+      this._els.userBalance.textContent = balanceWei ? `${this._formatTokenUnits(balanceWei.toString())} ${this._tokenSymbol()} Available` : `- ${this._tokenSymbol()} Available`;
 
     this._updateActionStates();
   }
 
   async _getTokenAddress() {
-    const configured = this.config.TOKEN.ADDRESS;
-    if (configured) {
-      return window.ethers.utils.getAddress(configured);
+    const configured = this.config?.TOKEN?.ADDRESS;
+    if (configured && window.ethers?.utils?.getAddress) {
+      try {
+        return window.ethers.utils.getAddress(configured);
+      } catch (_) {
+        // fall through to contract-derived address
+      }
     }
 
-    const snapshot = this.contractManager.getStatusSnapshot();
+    const snapshot = this.contractManager?.getStatusSnapshot?.();
     if (snapshot?.token) return snapshot.token;
 
-    const contract = this.contractManager.getReadContract();
+    const contract = this.contractManager?.getReadContract?.();
     if (!contract?.token) return null;
-    const tokenAddr = await contract.token();
-    return tokenAddr ? String(tokenAddr) : null;
+    try {
+      const tokenAddr = await contract.token();
+      return tokenAddr ? String(tokenAddr) : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   _getBridgeOutChainId(snapshot = null) {
-    const status = snapshot ?? this.contractManager.getStatusSnapshot();
+    const status = snapshot ?? this.contractManager?.getStatusSnapshot?.() ?? null;
     const onChainId = Number(status?.onChainId);
     if (Number.isInteger(onChainId) && onChainId > 0) return onChainId;
     return this.config.BRIDGE.CHAINS.SOURCE.CHAIN_ID;
   }
 
   async _ensureRequiredNetworkForAction(toastId) {
-    if (this.networkManager.isOnRequiredNetwork()) {
+    if (this.networkManager?.isOnRequiredNetwork?.()) {
       return { switched: false, toastId: null };
     }
     const requiredNetworkName = this.config.BRIDGE.CHAINS.SOURCE.NAME;
@@ -770,8 +774,8 @@ export class PolygonBscBridgeModule {
     });
 
     try {
-      const result = await this.networkManager.ensureRequiredNetwork();
-      await this.contractManager.refreshStatus({ reason: 'requiredNetworkEnsured' }).catch(() => {});
+      const result = await this.networkManager?.ensureRequiredNetwork?.();
+      await this.contractManager?.refreshStatus?.({ reason: 'requiredNetworkEnsured' }).catch(() => {});
       await this._refreshBalances().catch(() => {});
       this._updateActionStates();
       return { switched: !!result?.switched, toastId: activeToastId };
@@ -786,7 +790,7 @@ export class PolygonBscBridgeModule {
 
   _showActionToast({ toastId = null, title, message, type = 'info', timeoutMs = 0, dismissible = true, allowHtml = false }) {
     return (
-      this.toastManager.show({
+      this.toastManager?.show?.({
         id: toastId || undefined,
         title,
         message,
@@ -906,18 +910,24 @@ export class PolygonBscBridgeModule {
   }
 
   _tokenSymbol() {
-    return this.config.TOKEN.SYMBOL;
+    return this.config?.TOKEN?.SYMBOL || 'LIB';
   }
 
   _formatTokenUnits(valueWeiStr) {
-    const s = window.ethers.utils.formatUnits(valueWeiStr, this.config.TOKEN.DECIMALS);
-    const [a, b] = s.split('.');
-    if (!b) return a;
-    return `${a}.${b.slice(0, 6)}`.replace(/\.$/, '');
+    try {
+      const dec = Number(this.config?.TOKEN?.DECIMALS ?? 18);
+      const s = window.ethers.utils.formatUnits(valueWeiStr, dec);
+      const [a, b] = s.split('.');
+      if (!b) return a;
+      return `${a}.${b.slice(0, 6)}`.replace(/\.$/, '');
+    } catch (_) {
+      return String(valueWeiStr || '-');
+    }
   }
 
   _formatEditableTokenUnits(valueWeiStr) {
-    const formatted = window.ethers.utils.formatUnits(valueWeiStr, this.config.TOKEN.DECIMALS);
+    const dec = Number(this.config?.TOKEN?.DECIMALS ?? 18);
+    const formatted = window.ethers.utils.formatUnits(valueWeiStr, dec);
     if (!formatted.includes('.')) return formatted;
     return formatted.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '').replace(/\.$/, '');
   }
@@ -947,7 +957,7 @@ export class PolygonBscBridgeModule {
   }
 
   _getRecipientAddress() {
-    return String(this.walletManager.getAddress() || '').trim();
+    return String(this.walletManager?.getAddress?.() || '').trim();
   }
 
   _syncAmountInput() {
@@ -1037,10 +1047,10 @@ export class PolygonBscBridgeModule {
     if (!text) return;
     const copied = await this._copy(text);
     if (!copied) {
-      this.toastManager.error('Failed to copy address');
+      this.toastManager?.error?.('Failed to copy address');
       return;
     }
-    this.toastManager.success('Address copied to clipboard', { timeoutMs: 1800 });
+    this.toastManager?.success?.('Address copied to clipboard', { timeoutMs: 1800 });
   }
 
   async _copy(text) {
