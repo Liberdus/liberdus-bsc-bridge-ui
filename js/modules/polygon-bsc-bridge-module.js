@@ -566,7 +566,17 @@ export class PolygonBscBridgeModule {
         return;
       }
 
-      const postApprovalSwitchResult = await this._ensureRequiredNetworkForAction(actionToastId);
+      let postApprovalSwitchResult;
+      try {
+        postApprovalSwitchResult = await this._ensureRequiredNetworkForAction(actionToastId);
+      } catch (error) {
+        const dismissId = error?._actionToastId;
+        if (dismissId) this.toastManager.dismiss(dismissId);
+        const message = this._actionErrorMessage(error, 'Bridge failed');
+        progressSession.updateStep(stepId.submit, { status: 'failed', detail: message });
+        progressSession.finishFailure(message);
+        return;
+      }
       if (postApprovalSwitchResult.toastId) {
         this.toastManager.dismiss(postApprovalSwitchResult.toastId);
       }
@@ -574,10 +584,20 @@ export class PolygonBscBridgeModule {
         return;
       }
 
-      if (!this.walletManager.getSigner()) throw new Error('Wallet not connected');
+      if (!this.walletManager.getSigner()) {
+        const message = 'Wallet not connected';
+        progressSession.updateStep(stepId.submit, { status: 'failed', detail: message });
+        progressSession.finishFailure(message);
+        return;
+      }
 
       contract = this.contractManager.getWriteContract();
-      if (!contract) throw new Error('Wallet not connected');
+      if (!contract) {
+        const message = 'Wallet not connected';
+        progressSession.updateStep(stepId.submit, { status: 'failed', detail: message });
+        progressSession.finishFailure(message);
+        return;
+      }
 
       progressSession.updateStep(stepId.submit, { status: 'active', detail: 'Confirm in wallet' });
 
@@ -703,8 +723,11 @@ export class PolygonBscBridgeModule {
     const allowanceWei = allowance ? this._bn(allowance.toString()) : null;
 
     this._balanceCache = { balanceWei, allowanceWei };
-    if (this._els.userBalance)
-      this._els.userBalance.textContent = balanceWei ? `${this._formatTokenUnits(balanceWei.toString())} ${this._tokenSymbol()} Available` : `- ${this._tokenSymbol()} Available`;
+    if (this._els.userBalance) {
+      this._els.userBalance.textContent = balanceWei
+        ? `${this._formatTokenUnits(balanceWei.toString())} ${this._tokenSymbol()} Available`
+        : `- ${this._tokenSymbol()} Available`;
+    }
 
     this._updateActionStates();
   }
