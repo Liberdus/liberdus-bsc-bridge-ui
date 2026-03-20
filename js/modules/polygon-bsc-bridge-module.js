@@ -263,8 +263,8 @@ export class PolygonBscBridgeModule {
   }
 
   _updateActionStates() {
-    const txEnabled = this.networkManager.isTxEnabled();
-    const connected = this.walletManager.isConnected();
+    const txEnabled = !!this.networkManager?.isTxEnabled?.();
+    const connected = !!this.walletManager?.isConnected?.();
     const session = this._bridgeProgressSession;
     const snapshot = this._lastSnapshot;
     const amountInput = this._els.amount;
