@@ -5,6 +5,9 @@ function assert(condition, message) {
 }
 
 function copyStep(step) {
+  assert(typeof step.id === 'string' && step.id !== '', 'Progress step id is required');
+  assert(typeof step.label === 'string' && step.label !== '', 'Progress step label is required');
+
   return {
     id: step.id,
     label: step.label,
@@ -36,7 +39,7 @@ export function createTransactionProgressSession(toastApi, options) {
   assert(typeof toastApi.createTransactionProgress === 'function', 'toastApi.createTransactionProgress is required');
   assert(Array.isArray(options.steps), 'Progress steps are required');
 
-  const visibilityListeners = new Set();
+  let visibilityListener = null;
   const state = {
     title: options.title,
     successTitle: options.successTitle,
@@ -51,13 +54,13 @@ export function createTransactionProgressSession(toastApi, options) {
   };
 
   function notifyVisibility() {
-    const nextVisibility = {
+    if (visibilityListener === null) {
+      return;
+    }
+
+    visibilityListener({
       hidden: state.hidden,
       active: state.phase.type === 'active',
-    };
-
-    visibilityListeners.forEach((listener) => {
-      listener(nextVisibility);
     });
   }
 
@@ -158,8 +161,13 @@ export function createTransactionProgressSession(toastApi, options) {
     },
     onVisibilityChange(listener) {
       assert(typeof listener === 'function', 'Progress visibility listener is required');
-      visibilityListeners.add(listener);
-      return () => visibilityListeners.delete(listener);
+      assert(visibilityListener === null, 'Progress visibility listener already set');
+      visibilityListener = listener;
+      return () => {
+        if (visibilityListener === listener) {
+          visibilityListener = null;
+        }
+      };
     },
   };
 }

@@ -152,8 +152,10 @@ export class ToastManager {
     summary,
     steps,
   }) {
+    assert(Array.isArray(steps), 'Transaction steps are required');
+
     const toastId = id || `t${this._nextId++}`;
-    const closeCallbacks = new Set();
+    let closeCallback = null;
     const refs = this._createTransactionToast({
       toastId,
       title,
@@ -164,7 +166,9 @@ export class ToastManager {
     this._mountToast(toastId, refs.toast, {
       timeoutMs: 0,
       onClose() {
-        closeCallbacks.forEach((callback) => callback());
+        if (closeCallback !== null) {
+          closeCallback();
+        }
       },
     });
 
@@ -213,8 +217,13 @@ export class ToastManager {
       },
       onClose: (callback) => {
         assert(typeof callback === 'function', 'Toast close callback is required');
-        closeCallbacks.add(callback);
-        return () => closeCallbacks.delete(callback);
+        assert(closeCallback === null, 'Toast close callback already set');
+        closeCallback = callback;
+        return () => {
+          if (closeCallback === callback) {
+            closeCallback = null;
+          }
+        };
       },
       close: () => {
         this.dismiss(toastId);
@@ -419,7 +428,7 @@ export class ToastManager {
     content.appendChild(detail);
 
     item.appendChild(content);
-    this._setStepState({ item, icon, detail }, step.status || 'pending', step.detail || '');
+    this._setStepState({ item, icon, detail }, step.status, step.detail);
     return { item, icon, detail };
   }
 
