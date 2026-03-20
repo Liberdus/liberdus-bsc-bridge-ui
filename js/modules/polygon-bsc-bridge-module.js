@@ -276,7 +276,8 @@ export class PolygonBscBridgeModule {
     if (!amountInput) return;
 
     const balanceWei = this._balanceCache?.balanceWei || null;
-    amountInput.disabled = false;
+    const formLocked = this._isBridgePreflightPending || !!session;
+    amountInput.disabled = formLocked;
 
     const recipient = this._getRecipientAddress();
     const recipientOk = this._isAddress(recipient);
@@ -327,7 +328,7 @@ export class PolygonBscBridgeModule {
           throw new Error(`Unknown bridge button state: ${bridgeButtonState.type}`);
       }
     }
-    if (this._els.setMaxBtn) this._els.setMaxBtn.disabled = !txEnabled;
+    if (this._els.setMaxBtn) this._els.setMaxBtn.disabled = !txEnabled || formLocked;
   }
 
   _needsApproval(amountWei) {
@@ -335,6 +336,28 @@ export class PolygonBscBridgeModule {
     const allowanceWei = this._balanceCache?.allowanceWei || null;
     if (!allowanceWei) return true;
     return allowanceWei.lt(amountWei);
+  }
+
+  _assertBridgeRequestUnchanged(request) {
+    assert(request, 'Bridge request snapshot is required');
+
+    const address = String(this.walletManager.getAddress() || '').trim();
+    if (address !== request.address) {
+      throw new Error('Wallet account changed during bridge flow. Please review and try again.');
+    }
+
+    const recipient = this._getRecipientAddress();
+    if (recipient !== request.recipient) {
+      throw new Error('Recipient changed during bridge flow. Please review and try again.');
+    }
+
+    const amountInput = this._els.amount;
+    assert(amountInput, 'Amount input is required');
+
+    const amountWei = this._parseAmountToWei(amountInput.value);
+    if (!amountWei || amountWei.toString() !== request.amountWei) {
+      throw new Error('Amount changed during bridge flow. Please review and try again.');
+    }
   }
 
   _clearBridgeProgressSession() {
@@ -419,6 +442,11 @@ export class PolygonBscBridgeModule {
 
       const amountWei = this._parseAmountToWei(amountInput.value);
       if (!amountWei || amountWei.lte(0)) throw new Error('Enter a valid amount');
+      const bridgeRequest = {
+        address: String(address).trim(),
+        recipient,
+        amountWei: amountWei.toString(),
+      };
 
       const snapshot = this.contractManager.getStatusSnapshot();
       if (snapshot?.bridgeOutEnabled === false) throw new Error('Bridge out is currently disabled');
@@ -434,6 +462,7 @@ export class PolygonBscBridgeModule {
       if (switchResult.toastId) {
         this.toastManager.dismiss(switchResult.toastId);
       }
+      this._assertBridgeRequestUnchanged(bridgeRequest);
 
       const tokenAddr = await this._getTokenAddress();
       if (!tokenAddr) throw new Error('Token address not available');
@@ -444,7 +473,7 @@ export class PolygonBscBridgeModule {
       const signer = this.walletManager.getSigner();
       if (!signer) throw new Error('Wallet not connected');
 
-      const contract = this.contractManager.getWriteContract();
+      let contract = this.contractManager.getWriteContract();
       if (!contract) throw new Error('Wallet not connected');
 
       if (this._balanceCache?.allowanceWei == null) {
@@ -480,6 +509,16 @@ export class PolygonBscBridgeModule {
       });
       this._isBridgePreflightPending = false;
       this._setBridgeProgressSession(progressSession);
+
+      const failForChangedRequest = () => {
+        try {
+          this._assertBridgeRequestUnchanged(bridgeRequest);
+          return false;
+        } catch (error) {
+          progressSession.finishFailure(this._actionErrorMessage(error, 'Bridge failed'));
+          return true;
+        }
+      };
 
       if (approvalNeeded) {
         const token = new window.ethers.Contract(tokenAddr, this._erc20Abi(), signer);
@@ -517,6 +556,23 @@ export class PolygonBscBridgeModule {
         await this._refreshBalances().catch(() => {});
         progressSession.updateStep(stepId.approve, { status: 'completed', detail: 'Approved' });
       }
+
+      if (failForChangedRequest()) {
+        return;
+      }
+
+      const postApprovalSwitchResult = await this._ensureRequiredNetworkForAction(actionToastId);
+      if (postApprovalSwitchResult.toastId) {
+        this.toastManager.dismiss(postApprovalSwitchResult.toastId);
+      }
+      if (failForChangedRequest()) {
+        return;
+      }
+
+      if (!this.walletManager.getSigner()) throw new Error('Wallet not connected');
+
+      contract = this.contractManager.getWriteContract();
+      if (!contract) throw new Error('Wallet not connected');
 
       progressSession.updateStep(stepId.submit, { status: 'active', detail: 'Confirm in wallet' });
 
