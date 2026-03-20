@@ -296,26 +296,19 @@ export class PolygonBscBridgeModule {
 
     if (this._els.bridgeBtn) {
       const button = this._els.bridgeBtn;
-      let disabled;
-      let label;
-      if (this._isBridgePreflightPending) {
-        disabled = true;
-        label = 'Bridging...';
-      } else if (session?.isVisible()) {
-        /**
-         * Product choice: a visible terminal checklist acts as an acknowledgement
-         * gate. The primary action stays disabled until the user closes the toast,
-         * even after success/failure/cancelled, so they explicitly dismiss the
-         * last bridge attempt before starting a new one.
-         */
-        disabled = true;
-        label = session.isActive() ? 'Bridging...' : 'Checklist Open';
-      } else if (session?.isHidden() && session.isActive()) {
-        disabled = false;
-        label = 'View Progress';
-      } else {
-        disabled = !canBridge;
-        label = 'Bridge Out';
+      // Visible checklist (any phase): keep primary disabled until toast dismissed.
+      let disabled = true;
+      let label = 'Bridging...';
+      if (!this._isBridgePreflightPending && !session?.isVisible()) {
+        if (session?.isHidden() && session.isActive()) {
+          disabled = false;
+          label = 'View Progress';
+        } else {
+          disabled = !canBridge;
+          label = 'Bridge Out';
+        }
+      } else if (session?.isVisible() && !session.isActive()) {
+        label = 'Checklist Open';
       }
       button.disabled = disabled;
       button.classList.toggle('disabled', disabled);
@@ -373,22 +366,20 @@ export class PolygonBscBridgeModule {
     }
   }
 
-  _disposeBridgeProgressVisibilityListener() {
+  _clearBridgeProgressSession() {
     if (this._bridgeProgressVisibilityCleanup) {
       this._bridgeProgressVisibilityCleanup();
       this._bridgeProgressVisibilityCleanup = null;
     }
-  }
-
-  _clearBridgeProgressSession() {
-    this._disposeBridgeProgressVisibilityListener();
-
     this._bridgeProgressSession = null;
     this._updateActionStates();
   }
 
   _setBridgeProgressSession(session) {
-    this._disposeBridgeProgressVisibilityListener();
+    if (this._bridgeProgressVisibilityCleanup) {
+      this._bridgeProgressVisibilityCleanup();
+      this._bridgeProgressVisibilityCleanup = null;
+    }
 
     this._bridgeProgressSession = session;
     if (!session) {
