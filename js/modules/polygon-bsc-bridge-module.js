@@ -441,6 +441,13 @@ export class PolygonBscBridgeModule {
       const contract = this.contractManager.getWriteContract();
       if (!contract) throw new Error('Wallet not connected');
 
+      if (this._balanceCache?.allowanceWei == null) {
+        await this._refreshBalances().catch(() => {});
+      }
+      if (this._balanceCache?.allowanceWei == null) {
+        throw new Error('Unable to verify token allowance');
+      }
+
       const approvalNeeded = this._needsApproval(amountWei);
       const stepId = {
         approve: 'approve-bridge-token',
