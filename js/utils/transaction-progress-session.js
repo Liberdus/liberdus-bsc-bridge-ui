@@ -1,6 +1,4 @@
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from './assert.js';
 
 let nextSessionToastId = 1;
 

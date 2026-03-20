@@ -1,3 +1,5 @@
+import { assert } from '../utils/assert.js';
+
 const TYPE_ICONS = {
   success: '\u2713',
   error: '\u2715',
@@ -13,10 +15,6 @@ const STEP_ICONS = {
   failed: '\u2716',
   cancelled: '\u2212',
 };
-
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
 
 function toDisplayText(value) {
   return value == null ? '' : String(value);
