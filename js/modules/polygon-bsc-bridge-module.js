@@ -353,7 +353,7 @@ export class PolygonBscBridgeModule {
     }
   }
 
-  _assertBridgeSubmitStillAllowed(amountWei) {
+  _assertBridgeSubmitStillAllowed(amountWei, snapshot = null) {
     assert(amountWei && typeof amountWei.gt === 'function', 'Bridge amount is required');
 
     const balanceWei = this._balanceCache?.balanceWei || null;
@@ -361,33 +361,34 @@ export class PolygonBscBridgeModule {
       throw new Error('Amount exceeds available balance. Please review and try again.');
     }
 
-    const snapshot = this.contractManager.getStatusSnapshot();
-    if (snapshot?.bridgeOutEnabled === false) {
+    const s = snapshot ?? this.contractManager.getStatusSnapshot();
+    if (s?.bridgeOutEnabled === false) {
       throw new Error('Bridge out is currently disabled');
     }
-    if (snapshot?.halted === true) {
+    if (s?.halted === true) {
       throw new Error('Vault is currently halted');
     }
-    if (snapshot?.maxBridgeOutAmount && amountWei.gt(this._bn(snapshot.maxBridgeOutAmount))) {
+    if (s?.maxBridgeOutAmount && amountWei.gt(this._bn(s.maxBridgeOutAmount))) {
       throw new Error('Amount exceeds max bridge out limit');
     }
   }
 
-  _clearBridgeProgressSession() {
+  _disposeBridgeProgressVisibilityListener() {
     if (this._bridgeProgressVisibilityCleanup) {
       this._bridgeProgressVisibilityCleanup();
       this._bridgeProgressVisibilityCleanup = null;
     }
+  }
+
+  _clearBridgeProgressSession() {
+    this._disposeBridgeProgressVisibilityListener();
 
     this._bridgeProgressSession = null;
     this._updateActionStates();
   }
 
   _setBridgeProgressSession(session) {
-    if (this._bridgeProgressVisibilityCleanup) {
-      this._bridgeProgressVisibilityCleanup();
-      this._bridgeProgressVisibilityCleanup = null;
-    }
+    this._disposeBridgeProgressVisibilityListener();
 
     this._bridgeProgressSession = session;
     if (!session) {
@@ -462,11 +463,7 @@ export class PolygonBscBridgeModule {
       };
 
       const snapshot = this.contractManager.getStatusSnapshot();
-      if (snapshot?.bridgeOutEnabled === false) throw new Error('Bridge out is currently disabled');
-      if (snapshot?.halted === true) throw new Error('Vault is currently halted');
-      if (snapshot?.maxBridgeOutAmount && amountWei.gt(this._bn(snapshot.maxBridgeOutAmount))) {
-        throw new Error('Amount exceeds max bridge out limit');
-      }
+      this._assertBridgeSubmitStillAllowed(amountWei, snapshot);
 
       const bridgeChainId = this._getBridgeOutChainId(snapshot);
       if (!bridgeChainId) throw new Error('Bridge chain ID is not configured');
