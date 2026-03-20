@@ -159,6 +159,9 @@ export class ToastManager {
     assert(Array.isArray(steps), 'Transaction steps are required');
 
     const toastId = id || `t${this._nextId++}`;
+    if (this._toasts.has(toastId)) {
+      this.dismiss(toastId);
+    }
     let currentSummary = toDisplayText(summary);
     let closeCallback = null;
     const refs = this._createTransactionToast({
