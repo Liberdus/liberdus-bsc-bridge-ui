@@ -185,6 +185,10 @@
   line-height: 1.45;
 }
 
+.notification-terminal-message {
+  margin-top: 10px;
+}
+
 .notification-checklist {
   list-style: none;
   display: grid;
@@ -266,10 +270,6 @@
   font-weight: var(--font-weight-semibold);
   color: #0066cc;
   text-decoration: underline;
-}
-
-.notification-terminal-message {
-  margin-top: 10px;
 }
 
 /* Close Button */

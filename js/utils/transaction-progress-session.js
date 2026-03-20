@@ -4,7 +4,6 @@ function assert(cond, msg) {
 
 let nextSessionToastId = 1;
 
-/** @param {{ type: string, message?: string }} phase */
 function applyPhase(controller, phase) {
   switch (phase.type) {
     case 'active':
@@ -41,9 +40,7 @@ function normalizeSteps(rawSteps) {
   return out;
 }
 
-/**
- * Progress toast session: hide = pause UI updates; terminal outcome still applied when async completes.
- */
+/** Hide toast = pause UI; terminal phase still runs when async completes. */
 export function createTransactionProgressSession(toastApi, options) {
   assert(toastApi, 'toastApi is required');
   assert(typeof toastApi.createTransactionProgress === 'function', 'toastApi.createTransactionProgress is required');

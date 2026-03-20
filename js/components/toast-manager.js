@@ -6,10 +6,16 @@ const TYPE_ICONS = {
   loading: '',
 };
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
+const STEP_ICONS = {
+  pending: '\u25CB',
+  active: '\u25CF',
+  completed: '\u2714',
+  failed: '\u2716',
+  cancelled: '\u2212',
+};
+
+function assert(cond, msg) {
+  if (!cond) throw new Error(msg);
 }
 
 function toDisplayText(value) {
@@ -185,34 +191,28 @@ export class ToastManager {
       },
     });
 
-    const setSummary = (message) => {
+    const applySummary = (message) => {
       currentSummary = toDisplayText(message);
       refs.summary.textContent = currentSummary;
       refs.summary.hidden = currentSummary === '';
     };
 
-    const setTerminalMessage = (message) => {
-      refs.terminalMessage.textContent = message;
-      refs.terminalMessage.hidden = message === '';
-    };
-
-    const finish = (type, nextTitle, nextSummary, terminalMessage) => {
+    const finish = (type, nextTitle, nextSummary, terminal) => {
       this._setToastType(refs.toast, type);
       this._setToastTitle(refs.toast, nextTitle);
-      setSummary(nextSummary);
-      setTerminalMessage(terminalMessage);
+      applySummary(nextSummary);
+      refs.terminalMessage.textContent = terminal;
+      refs.terminalMessage.hidden = terminal === '';
     };
 
     return {
       updateStep: (stepId, update) => {
         const step = refs.steps.get(stepId);
         assert(step, `Unknown transaction step: ${stepId}`);
-        const detail = Object.prototype.hasOwnProperty.call(update, 'detail')
-          ? update.detail
-          : step.detail.textContent;
+        const detail = 'detail' in update ? update.detail : step.detail.textContent;
         this._setStepState(step, update.status || step.item.dataset.stepStatus, detail || '');
       },
-      setSummary,
+      setSummary: applySummary,
       setTransactionLink: ({ hash, url }) => {
         refs.meta.hidden = false;
         refs.hash.textContent = this._shortHash(hash);
@@ -470,20 +470,10 @@ export class ToastManager {
   }
 
   _getStepIcon(status) {
-    switch (status) {
-      case 'pending':
-        return '\u25CB';
-      case 'active':
-        return '\u25CF';
-      case 'completed':
-        return '\u2714';
-      case 'failed':
-        return '\u2716';
-      case 'cancelled':
-        return '\u2212';
-      default:
-        throw new Error(`Unknown step status: ${status}`);
+    if (!Object.prototype.hasOwnProperty.call(STEP_ICONS, status)) {
+      throw new Error(`Unknown step status: ${status}`);
     }
+    return STEP_ICONS[status];
   }
 
   _setToastType(toast, type) {
