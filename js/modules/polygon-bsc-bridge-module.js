@@ -360,6 +360,26 @@ export class PolygonBscBridgeModule {
     }
   }
 
+  _assertBridgeSubmitStillAllowed(amountWei) {
+    assert(amountWei && typeof amountWei.gt === 'function', 'Bridge amount is required');
+
+    const balanceWei = this._balanceCache?.balanceWei || null;
+    if (balanceWei && amountWei.gt(balanceWei)) {
+      throw new Error('Amount exceeds available balance. Please review and try again.');
+    }
+
+    const snapshot = this.contractManager.getStatusSnapshot();
+    if (snapshot?.bridgeOutEnabled === false) {
+      throw new Error('Bridge out is currently disabled');
+    }
+    if (snapshot?.halted === true) {
+      throw new Error('Vault is currently halted');
+    }
+    if (snapshot?.maxBridgeOutAmount && amountWei.gt(this._bn(snapshot.maxBridgeOutAmount))) {
+      throw new Error('Amount exceeds max bridge out limit');
+    }
+  }
+
   _clearBridgeProgressSession() {
     if (this._bridgeProgressVisibilityCleanup) {
       this._bridgeProgressVisibilityCleanup();
@@ -554,10 +574,19 @@ export class PolygonBscBridgeModule {
         }
 
         await this._refreshBalances().catch(() => {});
+        await this.contractManager.refreshStatus({ reason: 'bridgeApprovalConfirmed' }).catch(() => {});
         progressSession.updateStep(stepId.approve, { status: 'completed', detail: 'Approved' });
       }
 
       if (failForChangedRequest()) {
+        return;
+      }
+      try {
+        this._assertBridgeSubmitStillAllowed(amountWei);
+      } catch (error) {
+        const message = this._actionErrorMessage(error, 'Bridge failed');
+        progressSession.updateStep(stepId.submit, { status: 'failed', detail: message });
+        progressSession.finishFailure(message);
         return;
       }
 
