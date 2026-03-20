@@ -16,6 +16,15 @@ function toDisplayText(value) {
   return value == null ? '' : String(value);
 }
 
+function assertUniqueStepIds(steps) {
+  const seenStepIds = new Set();
+  steps.forEach((step) => {
+    assert(typeof step.id === 'string' && step.id !== '', 'Progress step id is required');
+    assert(!seenStepIds.has(step.id), `Duplicate progress step id: ${step.id}`);
+    seenStepIds.add(step.id);
+  });
+}
+
 export class ToastManager {
   constructor({ containerId = 'notification-container' } = {}) {
     this.containerId = containerId;
@@ -157,11 +166,13 @@ export class ToastManager {
     steps,
   }) {
     assert(Array.isArray(steps), 'Transaction steps are required');
+    assertUniqueStepIds(steps);
 
     const toastId = id || `t${this._nextId++}`;
     if (this._toasts.has(toastId)) {
       this.dismiss(toastId);
     }
+    this._removeLingeringToast(toastId);
     let currentSummary = toDisplayText(summary);
     let closeCallback = null;
     const refs = this._createTransactionToast({
@@ -294,6 +305,18 @@ export class ToastManager {
     this.container.prepend(toast);
     requestAnimationFrame(() => toast.classList.add('show'));
     this._setTimeout(toastId, rec, timeoutMs);
+  }
+
+  _removeLingeringToast(toastId) {
+    if (!this.container) {
+      return;
+    }
+
+    this.container.querySelectorAll('.notification').forEach((toast) => {
+      if (toast.dataset.toastId === toastId) {
+        toast.remove();
+      }
+    });
   }
 
   _setTimeout(toastId, rec, timeoutMs) {

@@ -4,13 +4,19 @@ function assert(condition, message) {
   }
 }
 
+let nextSessionToastId = 1;
+
 function toDisplayText(value) {
   return value == null ? '' : String(value);
 }
 
-function copyStep(step) {
+function copyStep(step, seenStepIds = null) {
   assert(typeof step.id === 'string' && step.id !== '', 'Progress step id is required');
   assert(typeof step.label === 'string' && step.label !== '', 'Progress step label is required');
+  if (seenStepIds !== null) {
+    assert(!seenStepIds.has(step.id), `Duplicate progress step id: ${step.id}`);
+    seenStepIds.add(step.id);
+  }
 
   return {
     id: step.id,
@@ -54,14 +60,16 @@ export function createTransactionProgressSession(toastApi, options) {
   assert(options && typeof options === 'object', 'Progress options are required');
   assert(Array.isArray(options.steps), 'Progress steps are required');
 
+  const seenStepIds = new Set();
   let visibilityListener = null;
   const state = {
+    toastId: `transaction-progress-${nextSessionToastId++}`,
     title: options.title,
     successTitle: options.successTitle,
     failureTitle: options.failureTitle,
     cancelledTitle: options.cancelledTitle,
     summary: toDisplayText(options.summary),
-    steps: options.steps.map(copyStep),
+    steps: options.steps.map((step) => copyStep(step, seenStepIds)),
     transactionLink: null,
     phase: { type: 'active' },
     controller: null,
@@ -81,6 +89,7 @@ export function createTransactionProgressSession(toastApi, options) {
 
   function createController() {
     const controller = toastApi.createTransactionProgress({
+      id: state.toastId,
       title: state.title,
       successTitle: state.successTitle,
       failureTitle: state.failureTitle,
