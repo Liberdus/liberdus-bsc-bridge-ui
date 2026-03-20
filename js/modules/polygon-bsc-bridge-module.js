@@ -450,11 +450,12 @@ export class PolygonBscBridgeModule {
       if (this._balanceCache?.allowanceWei == null) {
         await this._refreshBalances().catch(() => {});
       }
-      if (this._balanceCache?.allowanceWei == null) {
-        throw new Error('Unable to verify token allowance');
-      }
 
-      const approvalNeeded = this._needsApproval(amountWei);
+      // Preserve the old recovery path: if allowance reads are unavailable,
+      // fall back to submitting an approval instead of blocking the user.
+      const approvalNeeded = this._balanceCache?.allowanceWei == null
+        ? true
+        : this._needsApproval(amountWei);
       const stepId = {
         approve: 'approve-bridge-token',
         submit: 'submit-bridge-out',
