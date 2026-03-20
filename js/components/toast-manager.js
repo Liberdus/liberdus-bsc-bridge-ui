@@ -24,7 +24,7 @@ export class ToastManager {
   constructor({ containerId = 'notification-container' } = {}) {
     this.containerId = containerId;
     this.container = null;
-    this._toasts = new Map();
+    this._toasts = new Map(); // id -> { el, timeoutId, showTimerId }
     this._nextId = 1;
   }
 
@@ -33,8 +33,9 @@ export class ToastManager {
     if (!this.container) {
       this.container = document.createElement('div');
       this.container.id = this.containerId;
-      const app = document.getElementById('app');
-      (app || document.body).appendChild(this.container);
+      // Append to #app container (for relative positioning)
+      const appContainer = document.getElementById('app');
+      (appContainer || document.body).appendChild(this.container);
     }
 
     this.container.classList.add('notification-container');
@@ -42,23 +43,16 @@ export class ToastManager {
     this.container.setAttribute('aria-relevant', 'additions');
   }
 
-  show({
-    title,
-    message,
-    type = 'info',
-    timeoutMs,
-    id,
-    dismissible = true,
-    delayMs = 0,
-    allowHtml = false,
-  } = {}) {
+  show({ title, message, type = 'info', timeoutMs, id, dismissible = true, delayMs = 0, allowHtml = false } = {}) {
     const toastId = id || `t${this._nextId++}`;
+
+    // If already exists, update instead.
     if (this._toasts.has(toastId)) {
       this.update(toastId, { title, message, type, timeoutMs, dismissible, allowHtml });
       return toastId;
     }
 
-    if (delayMs > 0) {
+    if (delayMs && delayMs > 0) {
       const showTimerId = window.setTimeout(() => {
         this._toasts.delete(toastId);
         this._showNow(toastId, { title, message, type, timeoutMs, dismissible, allowHtml });
@@ -77,49 +71,25 @@ export class ToastManager {
     return toastId;
   }
 
+  // Compatibility wrapper for existing loading toast call sites.
   loading(message, { title = 'Loading', id, delayMs = 200, allowHtml = false } = {}) {
-    return this.show({
-      id,
-      title,
-      message,
-      type: 'loading',
-      timeoutMs: 0,
-      dismissible: false,
-      delayMs,
-      allowHtml,
-    });
+    return this.show({ id, title, message, type: 'loading', timeoutMs: 0, dismissible: false, delayMs, allowHtml });
   }
 
   success(message, { title = 'Done', timeoutMs = 2500, id, allowHtml = false } = {}) {
-    return this.show({
-      id,
-      title,
-      message,
-      type: 'success',
-      timeoutMs,
-      dismissible: true,
-      allowHtml,
-    });
+    return this.show({ id, title, message, type: 'success', timeoutMs, dismissible: true, allowHtml });
   }
 
   error(message, { title = 'Error', timeoutMs = 0, id, allowHtml = false } = {}) {
-    return this.show({
-      id,
-      title,
-      message,
-      type: 'error',
-      timeoutMs,
-      dismissible: true,
-      allowHtml,
-    });
+    // Error toasts stay until user dismisses them (timeoutMs = 0 means no auto-dismiss)
+    return this.show({ id, title, message, type: 'error', timeoutMs, dismissible: true, allowHtml });
   }
 
   update(id, { title, message, type, timeoutMs, dismissible, allowHtml = false } = {}) {
     const rec = this._toasts.get(id);
-    if (!rec) {
-      return false;
-    }
+    if (!rec) return false;
 
+    // If pending delayed show, cancel and show immediately with updated content.
     if (rec.el === null) {
       window.clearTimeout(rec.showTimerId);
       this._toasts.delete(id);
@@ -143,7 +113,7 @@ export class ToastManager {
 
     toast.classList.remove('hide');
     toast.classList.add('show');
-    if (this.container.firstChild !== toast) {
+    if (this.container && toast.parentElement === this.container && this.container.firstChild !== toast) {
       this.container.prepend(toast);
     }
 
@@ -245,26 +215,22 @@ export class ToastManager {
 
   dismiss(id) {
     const rec = this._toasts.get(id);
-    if (!rec) {
-      return false;
-    }
+    if (!rec) return false;
 
-    if (rec.showTimerId) {
-      window.clearTimeout(rec.showTimerId);
-    }
-    if (rec.timeoutId) {
-      window.clearTimeout(rec.timeoutId);
-    }
+    if (rec.showTimerId) window.clearTimeout(rec.showTimerId);
+    if (rec.timeoutId) window.clearTimeout(rec.timeoutId);
 
     if (!rec.closeHandled && rec.onClose) {
       rec.closeHandled = true;
       rec.onClose();
     }
 
-    if (rec.el) {
-      rec.el.classList.add('hide');
+    const el = rec.el;
+    if (el) {
+      el.classList.add('hide');
+      // Remove after animation
       window.setTimeout(() => {
-        rec.el.remove();
+        el.remove();
       }, 400);
     }
 
@@ -312,9 +278,7 @@ export class ToastManager {
   }
 
   _setTimeout(toastId, rec, timeoutMs) {
-    if (rec.timeoutId) {
-      window.clearTimeout(rec.timeoutId);
-    }
+    if (rec.timeoutId) window.clearTimeout(rec.timeoutId);
     rec.timeoutId = null;
 
     if (typeof timeoutMs === 'number' && timeoutMs > 0) {
