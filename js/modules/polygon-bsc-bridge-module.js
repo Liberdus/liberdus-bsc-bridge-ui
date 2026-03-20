@@ -500,6 +500,7 @@ export class PolygonBscBridgeModule {
           return;
         }
 
+        await this._refreshBalances().catch(() => {});
         progressSession.updateStep(stepId.approve, { status: 'completed', detail: 'Approved' });
       }
 
@@ -619,12 +620,12 @@ export class PolygonBscBridgeModule {
 
     const token = new window.ethers.Contract(tokenAddr, this._erc20Abi(), provider);
     const [bal, allowance] = await Promise.all([
-      token.balanceOf(address),
-      token.allowance(address, vaultAddr),
+      token.balanceOf(address).catch(() => null),
+      token.allowance(address, vaultAddr).catch(() => null),
     ]);
 
-    const balanceWei = this._bn(bal.toString());
-    const allowanceWei = this._bn(allowance.toString());
+    const balanceWei = bal ? this._bn(bal.toString()) : null;
+    const allowanceWei = allowance ? this._bn(allowance.toString()) : null;
 
     this._balanceCache = { balanceWei, allowanceWei };
     if (this._els.userBalance)
@@ -672,8 +673,8 @@ export class PolygonBscBridgeModule {
 
     try {
       const result = await this.networkManager.ensureRequiredNetwork();
-      await this.contractManager.refreshStatus({ reason: 'requiredNetworkEnsured' });
-      await this._refreshBalances();
+      await this.contractManager.refreshStatus({ reason: 'requiredNetworkEnsured' }).catch(() => {});
+      await this._refreshBalances().catch(() => {});
       this._updateActionStates();
       return { switched: !!result?.switched, toastId: activeToastId };
     } catch (error) {
