@@ -4,6 +4,10 @@ function assert(condition, message) {
   }
 }
 
+function toDisplayText(value) {
+  return value == null ? '' : String(value);
+}
+
 function copyStep(step) {
   assert(typeof step.id === 'string' && step.id !== '', 'Progress step id is required');
   assert(typeof step.label === 'string' && step.label !== '', 'Progress step label is required');
@@ -11,8 +15,8 @@ function copyStep(step) {
   return {
     id: step.id,
     label: step.label,
-    status: step.status,
-    detail: step.detail,
+    status: step.status || 'pending',
+    detail: toDisplayText(step.detail),
   };
 }
 
@@ -37,6 +41,7 @@ function applyPhase(controller, phase) {
 export function createTransactionProgressSession(toastApi, options) {
   assert(toastApi, 'toastApi is required');
   assert(typeof toastApi.createTransactionProgress === 'function', 'toastApi.createTransactionProgress is required');
+  assert(options && typeof options === 'object', 'Progress options are required');
   assert(Array.isArray(options.steps), 'Progress steps are required');
 
   let visibilityListener = null;
@@ -45,7 +50,7 @@ export function createTransactionProgressSession(toastApi, options) {
     successTitle: options.successTitle,
     failureTitle: options.failureTitle,
     cancelledTitle: options.cancelledTitle,
-    summary: options.summary,
+    summary: toDisplayText(options.summary),
     steps: options.steps.map(copyStep),
     transactionLink: null,
     phase: { type: 'active' },
@@ -121,7 +126,7 @@ export function createTransactionProgressSession(toastApi, options) {
       }
     },
     setSummary(message) {
-      state.summary = message;
+      state.summary = toDisplayText(message);
       if (state.controller !== null) {
         state.controller.setSummary(state.summary);
       }

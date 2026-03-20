@@ -12,6 +12,10 @@ function assert(condition, message) {
   }
 }
 
+function toDisplayText(value) {
+  return value == null ? '' : String(value);
+}
+
 export class ToastManager {
   constructor({ containerId = 'notification-container' } = {}) {
     this.containerId = containerId;
@@ -155,11 +159,12 @@ export class ToastManager {
     assert(Array.isArray(steps), 'Transaction steps are required');
 
     const toastId = id || `t${this._nextId++}`;
+    let currentSummary = toDisplayText(summary);
     let closeCallback = null;
     const refs = this._createTransactionToast({
       toastId,
       title,
-      summary,
+      summary: currentSummary,
       steps,
     });
 
@@ -173,8 +178,9 @@ export class ToastManager {
     });
 
     const setSummary = (message) => {
-      refs.summary.textContent = message;
-      refs.summary.hidden = message === '';
+      currentSummary = toDisplayText(message);
+      refs.summary.textContent = currentSummary;
+      refs.summary.hidden = currentSummary === '';
     };
 
     const setTerminalMessage = (message) => {
@@ -207,7 +213,7 @@ export class ToastManager {
         refs.link.hidden = url === '';
       },
       finishSuccess: (message) => {
-        finish('success', successTitle, message || summary, '');
+        finish('success', successTitle, toDisplayText(message) || currentSummary, '');
       },
       finishFailure: (message) => {
         finish('error', failureTitle, '', message || 'Transaction failed.');
@@ -319,8 +325,8 @@ export class ToastManager {
 
     const summaryEl = document.createElement('p');
     summaryEl.className = 'notification-summary';
-    summaryEl.textContent = summary;
-    summaryEl.hidden = summary === '';
+    summaryEl.textContent = toDisplayText(summary);
+    summaryEl.hidden = summaryEl.textContent === '';
     refs.content.appendChild(summaryEl);
 
     const checklist = document.createElement('ul');
@@ -433,12 +439,14 @@ export class ToastManager {
   }
 
   _setStepState(step, status, detail) {
-    step.item.dataset.stepStatus = status;
+    const nextStatus = status || 'pending';
+    const detailText = toDisplayText(detail);
+    step.item.dataset.stepStatus = nextStatus;
     step.item.classList.remove('is-pending', 'is-active', 'is-completed', 'is-failed', 'is-cancelled');
-    step.item.classList.add(`is-${status}`);
-    step.icon.textContent = this._getStepIcon(status);
-    step.detail.textContent = detail;
-    step.detail.hidden = detail === '';
+    step.item.classList.add(`is-${nextStatus}`);
+    step.icon.textContent = this._getStepIcon(nextStatus);
+    step.detail.textContent = detailText;
+    step.detail.hidden = detailText === '';
   }
 
   _getStepIcon(status) {
