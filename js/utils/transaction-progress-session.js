@@ -1,31 +1,10 @@
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
+function assert(cond, msg) {
+  if (!cond) throw new Error(msg);
 }
 
 let nextSessionToastId = 1;
 
-function toDisplayText(value) {
-  return value == null ? '' : String(value);
-}
-
-function copyStep(step, seenStepIds = null) {
-  assert(typeof step.id === 'string' && step.id !== '', 'Progress step id is required');
-  assert(typeof step.label === 'string' && step.label !== '', 'Progress step label is required');
-  if (seenStepIds !== null) {
-    assert(!seenStepIds.has(step.id), `Duplicate progress step id: ${step.id}`);
-    seenStepIds.add(step.id);
-  }
-
-  return {
-    id: step.id,
-    label: step.label,
-    status: step.status || 'pending',
-    detail: toDisplayText(step.detail),
-  };
-}
-
+/** @param {{ type: string, message?: string }} phase */
 function applyPhase(controller, phase) {
   switch (phase.type) {
     case 'active':
@@ -44,15 +23,26 @@ function applyPhase(controller, phase) {
   }
 }
 
+function normalizeSteps(rawSteps) {
+  const seen = new Set();
+  const out = [];
+  for (const step of rawSteps) {
+    assert(typeof step.id === 'string' && step.id !== '', 'Progress step id is required');
+    assert(typeof step.label === 'string' && step.label !== '', 'Progress step label is required');
+    assert(!seen.has(step.id), `Duplicate progress step id: ${step.id}`);
+    seen.add(step.id);
+    out.push({
+      id: step.id,
+      label: step.label,
+      status: step.status || 'pending',
+      detail: step.detail == null ? '' : String(step.detail),
+    });
+  }
+  return out;
+}
+
 /**
- * Creates a transaction-progress session backed by a toast controller.
- *
- * UX contract:
- * - Closing an active toast hides intermediate progress updates.
- * - Terminal states are surfaced even after dismissal, so users still see the
- *   final success/failure/cancelled outcome when the async flow settles.
- * - `reopen()` is mainly for bringing an in-flight hidden session back on
- *   screen before it reaches a terminal state.
+ * Progress toast session: hide = pause UI updates; terminal outcome still applied when async completes.
  */
 export function createTransactionProgressSession(toastApi, options) {
   assert(toastApi, 'toastApi is required');
@@ -60,7 +50,6 @@ export function createTransactionProgressSession(toastApi, options) {
   assert(options && typeof options === 'object', 'Progress options are required');
   assert(Array.isArray(options.steps), 'Progress steps are required');
 
-  const seenStepIds = new Set();
   let visibilityListener = null;
   const state = {
     toastId: `transaction-progress-${nextSessionToastId++}`,
@@ -68,8 +57,8 @@ export function createTransactionProgressSession(toastApi, options) {
     successTitle: options.successTitle,
     failureTitle: options.failureTitle,
     cancelledTitle: options.cancelledTitle,
-    summary: toDisplayText(options.summary),
-    steps: options.steps.map((step) => copyStep(step, seenStepIds)),
+    summary: options.summary == null ? '' : String(options.summary),
+    steps: normalizeSteps(options.steps),
     transactionLink: null,
     phase: { type: 'active' },
     controller: null,
@@ -77,17 +66,11 @@ export function createTransactionProgressSession(toastApi, options) {
   };
 
   function notifyVisibility() {
-    if (visibilityListener === null) {
-      return;
-    }
-
-    visibilityListener({
-      hidden: state.hidden,
-      active: state.phase.type === 'active',
-    });
+    if (!visibilityListener) return;
+    visibilityListener({ hidden: state.hidden, active: state.phase.type === 'active' });
   }
 
-  function createController() {
+  function mountController() {
     const controller = toastApi.createTransactionProgress({
       id: state.toastId,
       title: state.title,
@@ -95,7 +78,7 @@ export function createTransactionProgressSession(toastApi, options) {
       failureTitle: state.failureTitle,
       cancelledTitle: state.cancelledTitle,
       summary: state.summary,
-      steps: state.steps.map(copyStep),
+      steps: state.steps,
     });
 
     controller.onClose(() => {
@@ -106,73 +89,56 @@ export function createTransactionProgressSession(toastApi, options) {
 
     state.controller = controller;
     state.hidden = false;
-
-    if (state.transactionLink !== null) {
-      controller.setTransactionLink(state.transactionLink);
-    }
-
+    if (state.transactionLink !== null) controller.setTransactionLink(state.transactionLink);
     applyPhase(controller, state.phase);
     notifyVisibility();
     return controller;
   }
 
-  function getController() {
-    if (state.controller !== null) {
-      return state.controller;
-    }
-    return createController();
+  function controllerOrMount() {
+    return state.controller ?? mountController();
   }
 
-  function getStep(stepId) {
-    const step = state.steps.find((item) => item.id === stepId);
+  function stepById(stepId) {
+    const step = state.steps.find((s) => s.id === stepId);
     assert(step, `Unknown progress step: ${stepId}`);
     return step;
   }
 
-  createController();
+  mountController();
 
   return {
     updateStep(stepId, update) {
-      const step = getStep(stepId);
-      if (update.status) {
-        step.status = update.status;
-      }
-      if (Object.prototype.hasOwnProperty.call(update, 'detail')) {
-        step.detail = update.detail;
-      }
-      if (state.controller !== null) {
-        state.controller.updateStep(stepId, update);
-      }
+      const step = stepById(stepId);
+      if (update.status) step.status = update.status;
+      if (Object.prototype.hasOwnProperty.call(update, 'detail')) step.detail = update.detail;
+      state.controller?.updateStep(stepId, update);
     },
     setSummary(message) {
-      state.summary = toDisplayText(message);
-      if (state.controller !== null) {
-        state.controller.setSummary(state.summary);
-      }
+      state.summary = message == null ? '' : String(message);
+      state.controller?.setSummary(state.summary);
     },
     setTransactionLink(transactionLink) {
       state.transactionLink = transactionLink;
-      if (state.controller !== null) {
-        state.controller.setTransactionLink(transactionLink);
-      }
+      state.controller?.setTransactionLink(transactionLink);
     },
     finishSuccess(message) {
       state.phase = { type: 'success', message };
-      getController().finishSuccess(message);
+      controllerOrMount().finishSuccess(message);
       notifyVisibility();
     },
     finishFailure(message) {
       state.phase = { type: 'failure', message };
-      getController().finishFailure(message);
+      controllerOrMount().finishFailure(message);
       notifyVisibility();
     },
     finishCancelled(message) {
       state.phase = { type: 'cancelled', message };
-      getController().finishCancelled(message);
+      controllerOrMount().finishCancelled(message);
       notifyVisibility();
     },
     reopen() {
-      getController();
+      controllerOrMount();
     },
     isHidden() {
       return state.hidden;
@@ -188,9 +154,7 @@ export function createTransactionProgressSession(toastApi, options) {
       assert(visibilityListener === null, 'Progress visibility listener already set');
       visibilityListener = listener;
       return () => {
-        if (visibilityListener === listener) {
-          visibilityListener = null;
-        }
+        if (visibilityListener === listener) visibilityListener = null;
       };
     },
   };

@@ -16,15 +16,6 @@ function toDisplayText(value) {
   return value == null ? '' : String(value);
 }
 
-function assertUniqueStepIds(steps) {
-  const seenStepIds = new Set();
-  steps.forEach((step) => {
-    assert(typeof step.id === 'string' && step.id !== '', 'Progress step id is required');
-    assert(!seenStepIds.has(step.id), `Duplicate progress step id: ${step.id}`);
-    seenStepIds.add(step.id);
-  });
-}
-
 export class ToastManager {
   constructor({ containerId = 'notification-container' } = {}) {
     this.containerId = containerId;
@@ -166,7 +157,12 @@ export class ToastManager {
     steps,
   }) {
     assert(Array.isArray(steps), 'Transaction steps are required');
-    assertUniqueStepIds(steps);
+    const seenIds = new Set();
+    for (const step of steps) {
+      assert(typeof step.id === 'string' && step.id !== '', 'Progress step id is required');
+      assert(!seenIds.has(step.id), `Duplicate progress step id: ${step.id}`);
+      seenIds.add(step.id);
+    }
 
     const toastId = id || `t${this._nextId++}`;
     if (this._toasts.has(toastId)) {
@@ -185,9 +181,7 @@ export class ToastManager {
     this._mountToast(toastId, refs.toast, {
       timeoutMs: 0,
       onClose() {
-        if (closeCallback !== null) {
-          closeCallback();
-        }
+        closeCallback?.();
       },
     });
 
