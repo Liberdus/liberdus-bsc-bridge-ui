@@ -35,7 +35,7 @@ export class PolygonBscBridgeModule {
     this._actionToastSequence = 0;
     this._bridgeProgressSession = null;
     this._bridgeProgressVisibilityCleanup = null;
-    this._isBridgeFlowPending = false;
+    this._isBridgePreflightPending = false;
     this._bound = false;
 
     this._onWalletEvent = this._onWalletEvent.bind(this);
@@ -289,11 +289,13 @@ export class PolygonBscBridgeModule {
     const amountOk = hasAmount && !exceedsBalance && !exceedsMax;
     const canBridge = connected && recipientOk && amountOk && bridgeEnabled;
     let bridgeButtonState;
-    if (session?.isVisible()) {
+    if (this._isBridgePreflightPending) {
+      bridgeButtonState = { type: 'preflight', disabled: true, label: 'Bridging...' };
+    } else if (session?.isVisible()) {
       bridgeButtonState = session.isActive()
         ? { type: 'visible-active', disabled: true, label: 'Bridging...' }
         : { type: 'visible-terminal', disabled: true, label: 'Checklist Open' };
-    } else if (session?.isHidden() && this._isBridgeFlowPending) {
+    } else if (session?.isHidden() && session.isActive()) {
       bridgeButtonState = { type: 'hidden-active', disabled: false, label: 'View Progress' };
     } else {
       bridgeButtonState = { type: 'idle', disabled: !canBridge, label: 'Bridge Out' };
@@ -306,6 +308,7 @@ export class PolygonBscBridgeModule {
     if (this._els.bridgeBtn) {
       const button = this._els.bridgeBtn;
       switch (bridgeButtonState.type) {
+        case 'preflight':
         case 'idle':
         case 'visible-active':
         case 'visible-terminal':
@@ -390,11 +393,14 @@ export class PolygonBscBridgeModule {
       return;
     }
 
-    if (this._isBridgeFlowPending) {
+    if (this._isBridgePreflightPending) {
       return;
     }
 
     const actionToastId = this._nextActionToastId('bridgeOut');
+    this._isBridgePreflightPending = true;
+    this._updateActionStates();
+
     try {
       const address = this.walletManager.getAddress();
       if (!address) throw new Error('Wallet not connected');
@@ -430,15 +436,17 @@ export class PolygonBscBridgeModule {
       if (!vault) throw new Error('Vault address not configured');
 
       const signer = this.walletManager.getSigner();
-      if (!signer || !this.walletManager.getAddress()) throw new Error('Wallet not connected');
+      if (!signer) throw new Error('Wallet not connected');
 
       const contract = this.contractManager.getWriteContract();
       if (!contract) throw new Error('Wallet not connected');
 
       const approvalNeeded = this._needsApproval(amountWei);
-      const approveStepId = 'approve-bridge-token';
-      const submitStepId = 'submit-bridge-out';
-      const confirmStepId = 'confirm-bridge-out';
+      const stepId = {
+        approve: 'approve-bridge-token',
+        submit: 'submit-bridge-out',
+        confirm: 'confirm-bridge-out',
+      };
       const progressSession = createTransactionProgressSession(this.toastManager, {
         title: 'Bridging Out',
         successTitle: 'Bridge Out Confirmed',
@@ -447,28 +455,28 @@ export class PolygonBscBridgeModule {
         summary: 'Complete the steps below in your wallet and on-chain.',
         steps: [
           {
-            id: approveStepId,
+            id: stepId.approve,
             label: `Approve ${this._tokenSymbol()}`,
             status: approvalNeeded ? 'pending' : 'completed',
             detail: approvalNeeded ? '' : 'Already approved',
           },
-          { id: submitStepId, label: 'Submit bridge out', status: 'pending', detail: '' },
-          { id: confirmStepId, label: 'Confirm bridge on-chain', status: 'pending', detail: '' },
+          { id: stepId.submit, label: 'Submit bridge out', status: 'pending', detail: '' },
+          { id: stepId.confirm, label: 'Confirm bridge on-chain', status: 'pending', detail: '' },
         ],
       });
-      this._isBridgeFlowPending = true;
+      this._isBridgePreflightPending = false;
       this._setBridgeProgressSession(progressSession);
 
       if (approvalNeeded) {
         const token = new window.ethers.Contract(tokenAddr, this._erc20Abi(), signer);
-        progressSession.updateStep(approveStepId, { status: 'active', detail: 'Confirm in wallet' });
+        progressSession.updateStep(stepId.approve, { status: 'active', detail: 'Confirm in wallet' });
 
         let approveTx;
         try {
           approveTx = await token.approve(vault, amountWei);
         } catch (error) {
           if (this._isUserRejectionError(error)) {
-            progressSession.updateStep(approveStepId, {
+            progressSession.updateStep(stepId.approve, {
               status: 'cancelled',
               detail: 'Wallet request rejected',
             });
@@ -477,32 +485,32 @@ export class PolygonBscBridgeModule {
           }
 
           const message = this._actionErrorMessage(error, 'Approval failed');
-          progressSession.updateStep(approveStepId, { status: 'failed', detail: message });
+          progressSession.updateStep(stepId.approve, { status: 'failed', detail: message });
           progressSession.finishFailure(message);
           return;
         }
 
-        progressSession.updateStep(approveStepId, { status: 'active', detail: 'Waiting for confirmation' });
+        progressSession.updateStep(stepId.approve, { status: 'active', detail: 'Waiting for confirmation' });
         try {
           await approveTx.wait(1);
         } catch (error) {
           const message = this._actionErrorMessage(error, 'Approval failed');
-          progressSession.updateStep(approveStepId, { status: 'failed', detail: message });
+          progressSession.updateStep(stepId.approve, { status: 'failed', detail: message });
           progressSession.finishFailure(message);
           return;
         }
 
-        progressSession.updateStep(approveStepId, { status: 'completed', detail: 'Approved' });
+        progressSession.updateStep(stepId.approve, { status: 'completed', detail: 'Approved' });
       }
 
-      progressSession.updateStep(submitStepId, { status: 'active', detail: 'Confirm in wallet' });
+      progressSession.updateStep(stepId.submit, { status: 'active', detail: 'Confirm in wallet' });
 
       let tx;
       try {
         tx = await contract.bridgeOut(amountWei, recipient, bridgeChainId);
       } catch (error) {
         if (this._isUserRejectionError(error)) {
-          progressSession.updateStep(submitStepId, {
+          progressSession.updateStep(stepId.submit, {
             status: 'cancelled',
             detail: 'Wallet request rejected',
           });
@@ -511,37 +519,37 @@ export class PolygonBscBridgeModule {
         }
 
         const message = this._actionErrorMessage(error, 'Bridge failed');
-        progressSession.updateStep(submitStepId, { status: 'failed', detail: message });
+        progressSession.updateStep(stepId.submit, { status: 'failed', detail: message });
         progressSession.finishFailure(message);
         return;
       }
 
-      progressSession.updateStep(submitStepId, { status: 'completed', detail: 'Submitted' });
+      progressSession.updateStep(stepId.submit, { status: 'completed', detail: 'Submitted' });
       progressSession.setTransactionLink({
         hash: tx.hash,
         url: this._getTransactionExplorerUrl(tx.hash),
       });
-      progressSession.updateStep(confirmStepId, { status: 'active', detail: 'Waiting for confirmation' });
+      progressSession.updateStep(stepId.confirm, { status: 'active', detail: 'Waiting for confirmation' });
 
       let receipt;
       try {
         receipt = await tx.wait(1);
       } catch (error) {
         const message = this._actionErrorMessage(error, 'Bridge failed');
-        progressSession.updateStep(confirmStepId, { status: 'failed', detail: message });
+        progressSession.updateStep(stepId.confirm, { status: 'failed', detail: message });
         progressSession.finishFailure(message);
         return;
       }
 
       if (receipt?.status === 0) {
         const message = 'Bridge transaction failed on-chain';
-        progressSession.updateStep(confirmStepId, { status: 'failed', detail: message });
+        progressSession.updateStep(stepId.confirm, { status: 'failed', detail: message });
         progressSession.finishFailure(message);
         return;
       }
 
       const bridgedOut = this._parseBridgedOutFromReceipt(receipt);
-      progressSession.updateStep(confirmStepId, { status: 'completed', detail: 'Confirmed' });
+      progressSession.updateStep(stepId.confirm, { status: 'completed', detail: 'Confirmed' });
       progressSession.finishSuccess(bridgedOut ? 'Bridge out confirmed.' : 'Bridge confirmed.');
 
       if (bridgedOut) {
@@ -563,7 +571,7 @@ export class PolygonBscBridgeModule {
       const message = this._actionErrorMessage(error, 'Bridge failed');
       this._showActionToast({ toastId, title: 'Error', message, type: 'error', timeoutMs: 0, dismissible: true });
     } finally {
-      this._isBridgeFlowPending = false;
+      this._isBridgePreflightPending = false;
       this._updateActionStates();
     }
   }
