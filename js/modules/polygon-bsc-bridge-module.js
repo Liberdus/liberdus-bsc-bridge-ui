@@ -1,10 +1,5 @@
+import { assert } from '../utils/assert.js';
 import { createTransactionProgressSession } from '../utils/transaction-progress-session.js';
-
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
-}
 
 export class PolygonBscBridgeModule {
   constructor({
