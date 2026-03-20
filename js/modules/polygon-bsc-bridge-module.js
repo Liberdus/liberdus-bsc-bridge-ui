@@ -289,24 +289,6 @@ export class PolygonBscBridgeModule {
     const bridgeEnabled = snapshot?.bridgeOutEnabled !== false && snapshot?.halted !== true;
     const amountOk = hasAmount && !exceedsBalance && !exceedsMax;
     const canBridge = connected && recipientOk && amountOk && bridgeEnabled;
-    let bridgeButtonState;
-    if (this._isBridgePreflightPending) {
-      bridgeButtonState = { type: 'preflight', disabled: true, label: 'Bridging...' };
-    } else if (session?.isVisible()) {
-      /**
-       * Product choice: a visible terminal checklist acts as an acknowledgement
-       * gate. The primary action stays disabled until the user closes the toast,
-       * even after success/failure/cancelled, so they explicitly dismiss the
-       * last bridge attempt before starting a new one.
-       */
-      bridgeButtonState = session.isActive()
-        ? { type: 'visible-active', disabled: true, label: 'Bridging...' }
-        : { type: 'visible-terminal', disabled: true, label: 'Checklist Open' };
-    } else if (session?.isHidden() && session.isActive()) {
-      bridgeButtonState = { type: 'hidden-active', disabled: false, label: 'View Progress' };
-    } else {
-      bridgeButtonState = { type: 'idle', disabled: !canBridge, label: 'Bridge Out' };
-    }
 
     this._els.amountField?.classList.toggle('is-invalid', exceedsBalance);
     amountInput.classList.toggle('is-invalid', exceedsBalance);
@@ -314,19 +296,30 @@ export class PolygonBscBridgeModule {
 
     if (this._els.bridgeBtn) {
       const button = this._els.bridgeBtn;
-      switch (bridgeButtonState.type) {
-        case 'preflight':
-        case 'idle':
-        case 'visible-active':
-        case 'visible-terminal':
-        case 'hidden-active':
-          button.disabled = bridgeButtonState.disabled;
-          button.classList.toggle('disabled', bridgeButtonState.disabled);
-          button.textContent = bridgeButtonState.label;
-          break;
-        default:
-          throw new Error(`Unknown bridge button state: ${bridgeButtonState.type}`);
+      let disabled;
+      let label;
+      if (this._isBridgePreflightPending) {
+        disabled = true;
+        label = 'Bridging...';
+      } else if (session?.isVisible()) {
+        /**
+         * Product choice: a visible terminal checklist acts as an acknowledgement
+         * gate. The primary action stays disabled until the user closes the toast,
+         * even after success/failure/cancelled, so they explicitly dismiss the
+         * last bridge attempt before starting a new one.
+         */
+        disabled = true;
+        label = session.isActive() ? 'Bridging...' : 'Checklist Open';
+      } else if (session?.isHidden() && session.isActive()) {
+        disabled = false;
+        label = 'View Progress';
+      } else {
+        disabled = !canBridge;
+        label = 'Bridge Out';
       }
+      button.disabled = disabled;
+      button.classList.toggle('disabled', disabled);
+      button.textContent = label;
     }
     if (this._els.setMaxBtn) this._els.setMaxBtn.disabled = !txEnabled || formLocked;
   }
