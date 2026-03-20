@@ -38,6 +38,16 @@ function applyPhase(controller, phase) {
   }
 }
 
+/**
+ * Creates a transaction-progress session backed by a toast controller.
+ *
+ * UX contract:
+ * - Closing an active toast hides intermediate progress updates.
+ * - Terminal states are surfaced even after dismissal, so users still see the
+ *   final success/failure/cancelled outcome when the async flow settles.
+ * - `reopen()` is mainly for bringing an in-flight hidden session back on
+ *   screen before it reaches a terminal state.
+ */
 export function createTransactionProgressSession(toastApi, options) {
   assert(toastApi, 'toastApi is required');
   assert(typeof toastApi.createTransactionProgress === 'function', 'toastApi.createTransactionProgress is required');
