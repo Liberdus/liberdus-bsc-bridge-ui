@@ -308,8 +308,15 @@ export class OperationsTab {
     this.tabButton.tabIndex = allowed ? -1 : -1;
 
     if (!allowed && !this._access.loading && (window.location.hash || '') === '#operations') {
-      window.location.hash = '#info';
+      window.location.hash = `#${this._defaultFallbackTabName()}`;
     }
+  }
+
+  _defaultFallbackTabName() {
+    const visibleTab = Array.from(document.querySelectorAll('.tab-button[data-tab]')).find(
+      (btn) => !btn.hidden && !btn.classList.contains('hidden')
+    );
+    return visibleTab?.dataset?.tab || 'bridge';
   }
 
   _renderAccessSummary() {

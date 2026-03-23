@@ -173,7 +173,7 @@ describe('OperationsTab access behavior', () => {
     expect(document.querySelector('[data-ops-status]').textContent).toBe('Checking wallet access against the Vault.');
   });
 
-  it('hides the Admin tab and redirects away from operations when disconnected', async () => {
+  it('hides the Admin tab and redirects away from operations to the default visible tab when disconnected', async () => {
     window.walletManager.isConnected = vi.fn(() => false);
     window.walletManager.getAddress = vi.fn(() => null);
     window.location.hash = '#operations';
@@ -183,7 +183,7 @@ describe('OperationsTab access behavior', () => {
     await tab._syncAccess();
 
     expect(tab.tabButton.hidden).toBe(true);
-    expect(window.location.hash).toBe('#info');
+    expect(window.location.hash).toBe('#bridge');
     expect(document.querySelector('[data-ops-status]').textContent).toBe('Connect a wallet to check access.');
   });
 
