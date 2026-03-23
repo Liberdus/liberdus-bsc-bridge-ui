@@ -161,19 +161,9 @@ export class PolygonBscBridgeModule {
             </div>
           </div>
           <div class="bridge-amount-footer">
-            <div class="bridge-amount-available-wrap">
-              <span class="bridge-amount-available-value" data-bridge-user-balance>- ${this._tokenSymbol()} Available</span>
-            </div>
+            <span class="bridge-amount-max-value" data-bridge-max-hint>Max bridge out <span data-bridge-max-amount>-</span> ${this._tokenSymbol()}</span>
+            <span class="bridge-amount-available-value" data-bridge-user-balance>- ${this._tokenSymbol()} Available</span>
             <button type="button" class="btn bridge-max-btn" data-bridge-set-max data-requires-tx="true">Max</button>
-          </div>
-        </div>
-
-        <div class="bridge-meta">
-          <div class="bridge-meta-card">
-            <div class="bridge-meta-row">
-              <div class="bridge-meta-label">Max bridge out</div>
-              <div class="bridge-meta-value"><span data-bridge-max-amount>-</span> ${this._tokenSymbol()}</div>
-            </div>
           </div>
         </div>
 
@@ -190,6 +180,7 @@ export class PolygonBscBridgeModule {
       amountField: this.container.querySelector('[data-bridge-amount-field]'),
       amount: this.container.querySelector('[data-bridge-amount]'),
       userBalance: this.container.querySelector('[data-bridge-user-balance]'),
+      maxAmountHint: this.container.querySelector('[data-bridge-max-hint]'),
       maxAmount: this.container.querySelector('[data-bridge-max-amount]'),
       bridgeBtn: this.container.querySelector('[data-bridge-submit]'),
       setMaxBtn: this.container.querySelector('[data-bridge-set-max]'),
@@ -278,9 +269,11 @@ export class PolygonBscBridgeModule {
     const amountOk = hasAmount && !exceedsBalance && !exceedsMax;
     const canBridge = connected && recipientOk && amountOk && bridgeEnabled;
 
-    this._els.amountField?.classList.toggle('is-invalid', exceedsBalance);
-    amountInput.classList.toggle('is-invalid', exceedsBalance);
+    const amountInvalid = exceedsBalance || exceedsMax;
+    this._els.amountField?.classList.toggle('is-invalid', amountInvalid);
+    amountInput.classList.toggle('is-invalid', amountInvalid);
     this._els.userBalance?.classList.toggle('is-invalid', exceedsBalance);
+    this._els.maxAmountHint?.classList.toggle('is-invalid', exceedsMax);
 
     if (this._els.bridgeBtn) {
       const button = this._els.bridgeBtn;
