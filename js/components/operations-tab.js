@@ -5,12 +5,18 @@ export class OperationsTab {
     this._access = {
       connected: false,
       address: null,
+      owner: null,
       isAdmin: false,
       isMultisig: false,
+      loading: false,
+      ownerError: null,
+      signerError: null,
+      error: null,
     };
     this._lastOperationId = null;
     this._isLoadingOperation = false;
     this._actionToastSequence = 0;
+    this._accessRequestId = 0;
   }
 
   load() {
@@ -198,13 +204,13 @@ export class OperationsTab {
 
     this.panel.addEventListener('click', (e) => this._onClick(e));
     this.panel.addEventListener('change', (e) => this._onChange(e));
-    document.addEventListener('walletConnected', () => this._syncAccess());
-    document.addEventListener('walletDisconnected', () => this._syncAccess());
-    document.addEventListener('walletAccountChanged', () => this._syncAccess());
-    document.addEventListener('walletChainChanged', () => this._syncAccess());
-    document.addEventListener('contractManagerUpdated', () => this._syncAccessInfo());
+    document.addEventListener('walletConnected', () => void this._syncAccess());
+    document.addEventListener('walletDisconnected', () => void this._syncAccess());
+    document.addEventListener('walletAccountChanged', () => void this._syncAccess());
+    document.addEventListener('walletChainChanged', () => void this._syncAccess());
+    document.addEventListener('contractManagerUpdated', () => void this._syncAccess());
 
-    this._syncAccess();
+    void this._syncAccess();
   }
 
   _tokenSymbol() {
@@ -225,42 +231,64 @@ export class OperationsTab {
     }
   }
 
-  _listHasAddress(list, address) {
-    const needle = this._normalizeAddress(address);
-    if (!needle) return false;
-    if (!Array.isArray(list)) return false;
-    return list.some((a) => {
-      const n = this._normalizeAddress(a);
-      return n ? n === needle : false;
-    });
-  }
-
-  _computeAccess(address) {
-    const adminList = window.CONFIG?.ACCESS?.ADMIN_ADDRESSES || [];
-    const multisigList = window.CONFIG?.ACCESS?.MULTISIG_ADDRESSES || [];
-    return {
-      isAdmin: this._listHasAddress(adminList, address),
-      isMultisig: this._listHasAddress(multisigList, address),
-    };
-  }
-
-  _syncAccess() {
+  async _syncAccess() {
     const walletManager = window.walletManager;
     const address = walletManager?.getAddress?.() || null;
     const connected = !!walletManager?.isConnected?.();
-    const roles = connected && address ? this._computeAccess(address) : { isAdmin: false, isMultisig: false };
+    const normalizedAddress = this._normalizeAddress(address);
+    const requestId = ++this._accessRequestId;
 
     this._access = {
       connected,
-      address,
-      isAdmin: !!roles.isAdmin,
-      isMultisig: !!roles.isMultisig,
+      address: normalizedAddress || address,
+      owner: null,
+      isAdmin: false,
+      isMultisig: false,
+      loading: !!(connected && normalizedAddress),
+      ownerError: null,
+      signerError: null,
+      error: connected && address && !normalizedAddress ? 'Invalid connected address' : null,
     };
 
     this._updateTabVisibility();
     this._renderAccessSummary();
-    this._syncAccessInfo();
     this._syncOperationTypeFields();
+
+    if (!connected || !normalizedAddress) return;
+
+    try {
+      const nextAccess = await window.contractManager?.getAccessState?.(normalizedAddress);
+      if (requestId !== this._accessRequestId) return;
+
+      this._access = {
+        connected,
+        address: normalizedAddress,
+        owner: nextAccess?.owner || null,
+        isAdmin: !!nextAccess?.isOwner,
+        isMultisig: !!nextAccess?.isSigner,
+        loading: false,
+        ownerError: nextAccess?.ownerError || null,
+        signerError: nextAccess?.signerError || null,
+        error: nextAccess?.error || null,
+      };
+    } catch (error) {
+      if (requestId !== this._accessRequestId) return;
+
+      this._access = {
+        connected,
+        address: normalizedAddress,
+        owner: null,
+        isAdmin: false,
+        isMultisig: false,
+        loading: false,
+        ownerError: error?.message || 'Failed to read contract access state.',
+        signerError: error?.message || 'Failed to read contract access state.',
+        error: error?.message || 'Failed to read contract access state.',
+      };
+    }
+
+    this._updateTabVisibility();
+    this._renderAccessSummary();
   }
 
   _updateTabVisibility() {
@@ -282,6 +310,9 @@ export class OperationsTab {
     const copyBtn = this.panel?.querySelector('[data-ops-copy][data-copy-value]');
     const roleEl = this.panel?.querySelector('[data-ops-role]');
     const txEnabledEl = this.panel?.querySelector('[data-ops-tx-enabled]');
+    const ownerEl = this.panel?.querySelector('[data-ops-owner]');
+    const ownerCopyBtn = ownerEl?.closest('.param-address')?.querySelector('[data-ops-copy][data-copy-value]');
+    const isSignerEl = this.panel?.querySelector('[data-ops-is-signer]');
 
     const address = this._normalizeAddress(this._access.address) || null;
     if (addressEl) addressEl.textContent = address || '--';
@@ -290,15 +321,40 @@ export class OperationsTab {
     const txEnabled = !!window.networkManager?.isTxEnabled?.();
     if (txEnabledEl) txEnabledEl.textContent = txEnabled ? 'Yes' : 'No';
 
-    const role = this._access.connected
-      ? this._access.isAdmin && this._access.isMultisig
-        ? 'Admin + Multisig'
-        : this._access.isAdmin
-          ? 'Admin'
-          : this._access.isMultisig
-            ? 'Multisig'
-            : 'None'
-      : 'Not connected';
+    const ownerAddress = this._normalizeAddress(this._access.owner) || null;
+    if (ownerEl) {
+      ownerEl.textContent = this._access.loading
+        ? 'Checking...'
+        : this._access.ownerError
+          ? 'Unavailable'
+          : ownerAddress || '--';
+    }
+    if (ownerCopyBtn) ownerCopyBtn.setAttribute('data-copy-value', this._access.ownerError ? '' : ownerAddress || '');
+    if (isSignerEl) {
+      isSignerEl.textContent = this._access.loading
+        ? 'Checking...'
+        : this._access.connected
+          ? this._access.signerError
+            ? 'Unavailable'
+            : this._access.isMultisig
+              ? 'Yes'
+              : 'No'
+          : '--';
+    }
+
+    const role = !this._access.connected
+      ? 'Not connected'
+      : this._access.loading
+        ? 'Checking...'
+        : this._access.isAdmin && this._access.isMultisig
+          ? 'Owner + Multisig'
+          : this._access.isAdmin
+            ? 'Owner'
+            : this._access.isMultisig
+              ? 'Multisig'
+              : this._access.error
+                ? 'Unavailable'
+                : 'None';
     if (roleEl) roleEl.textContent = role;
 
     const adminSection = this.panel?.querySelector('[data-ops-admin-section]');
@@ -309,8 +365,15 @@ export class OperationsTab {
     if (ownershipSection) ownershipSection.hidden = !(this._access.connected && this._access.isAdmin);
 
     if (statusEl) {
+      const partialStatus = this._partialAccessStatusMessage();
       if (!this._access.connected) {
         statusEl.textContent = 'Connect a wallet to check access.';
+      } else if (this._access.loading) {
+        statusEl.textContent = 'Checking wallet access against the Vault.';
+      } else if (partialStatus) {
+        statusEl.textContent = partialStatus;
+      } else if (this._access.error) {
+        statusEl.textContent = `Unable to read Vault access state: ${this._access.error}`;
       } else if (!this._access.isAdmin && !this._access.isMultisig) {
         statusEl.textContent = 'Connected wallet is not allowed to access Admin.';
       } else if (!txEnabled) {
@@ -321,33 +384,26 @@ export class OperationsTab {
     }
   }
 
-  async _syncAccessInfo() {
-    const ownerEl = this.panel?.querySelector('[data-ops-owner]');
-    const ownerCopyBtn = ownerEl?.closest('.param-address')?.querySelector('[data-ops-copy][data-copy-value]');
-    const isSignerEl = this.panel?.querySelector('[data-ops-is-signer]');
+  _partialAccessStatusMessage() {
+    const ownerUnavailable = !!this._access.ownerError;
+    const signerUnavailable = !!this._access.signerError;
+    const wrongNetworkNote = !window.networkManager?.isTxEnabled?.()
+      ? ` Transaction actions will prompt a switch to ${this._requiredNetworkName()} when used.`
+      : '';
 
-    if (!ownerEl || !isSignerEl) return;
-
-    const contract = window.contractManager?.getReadContract?.();
-    const address = this._normalizeAddress(this._access.address);
-    if (!contract || !address) {
-      ownerEl.textContent = '--';
-      isSignerEl.textContent = '--';
-      if (ownerCopyBtn) ownerCopyBtn.setAttribute('data-copy-value', '');
-      return;
+    if (ownerUnavailable && !signerUnavailable) {
+      return this._access.isMultisig
+        ? `Signer verified, owner status unavailable.${wrongNetworkNote}`
+        : `Signer status known, owner status unavailable.${wrongNetworkNote}`;
     }
 
-    try {
-      const [owner, isSigner] = await Promise.all([contract.owner(), contract.isSigner(address)]);
-      const ownerAddr = this._normalizeAddress(owner) || String(owner || '--');
-      ownerEl.textContent = ownerAddr;
-      if (ownerCopyBtn) ownerCopyBtn.setAttribute('data-copy-value', ownerAddr && ownerAddr !== '--' ? ownerAddr : '');
-      isSignerEl.textContent = isSigner ? 'Yes' : 'No';
-    } catch {
-      ownerEl.textContent = '--';
-      isSignerEl.textContent = '--';
-      if (ownerCopyBtn) ownerCopyBtn.setAttribute('data-copy-value', '');
+    if (signerUnavailable && !ownerUnavailable) {
+      return this._access.isAdmin
+        ? `Owner verified, signer status unavailable.${wrongNetworkNote}`
+        : `Owner status known, signer status unavailable.${wrongNetworkNote}`;
     }
+
+    return null;
   }
 
   _syncOperationTypeFields() {
@@ -379,8 +435,8 @@ export class OperationsTab {
     if (!(target instanceof Element)) return;
 
     if (target.closest('[data-ops-refresh]')) {
-      await this._syncAccessInfo();
       await window.contractManager?.refreshStatus?.({ reason: 'operationsTabRefresh' }).catch(() => {});
+      await this._syncAccess().catch(() => {});
       return;
     }
 
@@ -555,7 +611,6 @@ export class OperationsTab {
         : 'Transfer submitted.';
       this._showActionToast({ toastId, type: 'success', title: 'Done', message, timeoutMs: 3500, dismissible: true, allowHtml: true });
 
-      await this._syncAccessInfo().catch(() => {});
       await window.contractManager?.refreshStatus?.({ reason: 'ownershipTransferred' }).catch(() => {});
     } catch (error) {
       toastId = toastId || error?._actionToastId || actionToastId;
@@ -727,7 +782,7 @@ export class OperationsTab {
     try {
       const result = await window.networkManager?.ensureRequiredNetwork?.();
       await window.contractManager?.refreshStatus?.({ reason: 'requiredNetworkEnsured' }).catch(() => {});
-      await this._syncAccessInfo().catch(() => {});
+      await this._syncAccess().catch(() => {});
       return { switched: !!result?.switched, toastId: activeToastId };
     } catch (error) {
       if (error && typeof error === 'object') {
