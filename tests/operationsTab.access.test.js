@@ -125,6 +125,54 @@ describe('OperationsTab access behavior', () => {
     expect(document.querySelector('[data-ops-status]').textContent).toBe('Owner verified, signer status unavailable.');
   });
 
+  it('keeps authorized users on Admin while refreshing access for the same wallet', async () => {
+    window.walletManager.isConnected = vi.fn(() => true);
+    window.walletManager.getAddress = vi.fn(() => OWNER);
+
+    window.contractManager.getAccessState = vi.fn(async () => ({
+      owner: OWNER,
+      isOwner: true,
+      isSigner: false,
+      ownerError: null,
+      signerError: null,
+      error: null,
+    }));
+
+    const tab = new OperationsTab();
+    tab.load();
+    await flushPromises();
+
+    window.location.hash = '#operations';
+    const pending = new Promise(() => {});
+    window.contractManager.getAccessState = vi.fn(() => pending);
+    void tab._syncAccess();
+    await flushPromises();
+
+    expect(tab.tabButton.hidden).toBe(false);
+    expect(window.location.hash).toBe('#operations');
+    expect(document.querySelector('[data-ops-role]').textContent).toBe('Checking...');
+    expect(document.querySelector('[data-ops-status]').textContent).toBe('Checking wallet access against the Vault.');
+    expect(document.querySelector('[data-ops-admin-section]').hidden).toBe(false);
+    expect(document.querySelector('[data-ops-ownership-section]').hidden).toBe(false);
+  });
+
+  it('does not redirect away from Admin while the initial access lookup is still loading', async () => {
+    window.walletManager.isConnected = vi.fn(() => true);
+    window.walletManager.getAddress = vi.fn(() => OWNER);
+
+    const pending = new Promise(() => {});
+    window.contractManager.getAccessState = vi.fn(() => pending);
+    window.location.hash = '#operations';
+
+    const tab = new OperationsTab();
+    tab.load();
+    await flushPromises();
+
+    expect(tab.tabButton.hidden).toBe(true);
+    expect(window.location.hash).toBe('#operations');
+    expect(document.querySelector('[data-ops-status]').textContent).toBe('Checking wallet access against the Vault.');
+  });
+
   it('hides the Admin tab and redirects away from operations when disconnected', async () => {
     window.walletManager.isConnected = vi.fn(() => false);
     window.walletManager.getAddress = vi.fn(() => null);

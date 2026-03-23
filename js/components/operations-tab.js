@@ -237,13 +237,21 @@ export class OperationsTab {
     const connected = !!walletManager?.isConnected?.();
     const normalizedAddress = this._normalizeAddress(address);
     const requestId = ++this._accessRequestId;
+    const previousAccess = this._access;
+    const preserveConfirmedAccess = !!(
+      connected &&
+      normalizedAddress &&
+      previousAccess?.connected &&
+      previousAccess?.address === normalizedAddress &&
+      (previousAccess?.isAdmin || previousAccess?.isMultisig)
+    );
 
     this._access = {
       connected,
       address: normalizedAddress || address,
-      owner: null,
-      isAdmin: false,
-      isMultisig: false,
+      owner: preserveConfirmedAccess ? previousAccess.owner : null,
+      isAdmin: preserveConfirmedAccess ? !!previousAccess.isAdmin : false,
+      isMultisig: preserveConfirmedAccess ? !!previousAccess.isMultisig : false,
       loading: !!(connected && normalizedAddress),
       ownerError: null,
       signerError: null,
@@ -299,7 +307,7 @@ export class OperationsTab {
     this.tabButton.setAttribute('aria-hidden', allowed ? 'false' : 'true');
     this.tabButton.tabIndex = allowed ? -1 : -1;
 
-    if (!allowed && (window.location.hash || '') === '#operations') {
+    if (!allowed && !this._access.loading && (window.location.hash || '') === '#operations') {
       window.location.hash = '#info';
     }
   }
