@@ -303,6 +303,60 @@ export class PolygonBscBridgeModule {
     return allowanceWei.lt(amountWei);
   }
 
+  _assertActionRequestUnchanged(request) {
+    if (!request || typeof request !== 'object') {
+      throw new Error('Bridge request snapshot is required');
+    }
+
+    const address = this._comparableAddress(this.walletManager?.getAddress?.());
+    if (address !== this._comparableAddress(request.address)) {
+      throw new Error('Wallet account changed during bridge flow. Please review and try again.');
+    }
+
+    if (Object.prototype.hasOwnProperty.call(request, 'recipient')) {
+      const recipient = this._comparableAddress(this._getRecipientAddress());
+      if (recipient !== this._comparableAddress(request.recipient)) {
+        throw new Error('Recipient changed during bridge flow. Please review and try again.');
+      }
+    }
+
+    const amountInput = this._els.amount;
+    const amountWei = amountInput ? this._parseAmountToWei(amountInput.value) : null;
+    if (!amountWei || amountWei.toString() !== request.amountWei) {
+      throw new Error('Amount changed during bridge flow. Please review and try again.');
+    }
+  }
+
+  _assertActionRequestContext(request) {
+    this._assertActionRequestUnchanged(request);
+    if (!this.networkManager?.isOnRequiredNetwork?.()) {
+      throw new Error('Wallet network changed during bridge flow. Please review and try again.');
+    }
+  }
+
+  _getRequestSigner(address) {
+    if (!address) return null;
+    const provider = this.walletManager?.getProvider?.();
+    if (provider?.getSigner) {
+      try {
+        return provider.getSigner(address);
+      } catch (_) {}
+    }
+    return this.walletManager?.getSigner?.() || null;
+  }
+
+  _bindWriteContractToRequestAddress(contract, address) {
+    if (!contract) return null;
+    const signer = this._getRequestSigner(address);
+    if (!signer) return null;
+    if (typeof contract.connect === 'function') {
+      try {
+        return contract.connect(signer);
+      } catch (_) {}
+    }
+    return contract;
+  }
+
   async _onSetMaxClicked() {
     const snapshot = this.contractManager?.getStatusSnapshot?.() || this._lastSnapshot;
     const maxStr = snapshot?.maxBridgeOutAmount || null;
@@ -336,11 +390,18 @@ export class PolygonBscBridgeModule {
       const vault = this.config.BRIDGE.CONTRACTS.SOURCE.ADDRESS;
       if (!vault) throw new Error('Vault address not configured');
 
+      const approvalRequest = {
+        address,
+        amountWei: amountWei.toString(),
+      };
+
       const switchResult = await this._ensureRequiredNetworkForAction(actionToastId);
       toastId = switchResult.toastId || null;
 
-      const signer = this.walletManager?.getSigner?.();
-      if (!signer || !this.walletManager?.getAddress?.()) throw new Error('Wallet not connected');
+      this._assertActionRequestContext(approvalRequest);
+
+      const signer = this._getRequestSigner(approvalRequest.address);
+      if (!signer) throw new Error('Wallet not connected');
 
       if (!this._needsApproval(amountWei)) {
         toastId = this._showActionToast({
@@ -407,6 +468,12 @@ export class PolygonBscBridgeModule {
       const amountWei = this._parseAmountToWei(this._els.amount?.value);
       if (!amountWei || amountWei.lte(0)) throw new Error('Enter a valid amount');
 
+      const bridgeRequest = {
+        address,
+        recipient,
+        amountWei: amountWei.toString(),
+      };
+
       const snapshot = this.contractManager?.getStatusSnapshot?.();
       if (snapshot?.bridgeOutEnabled === false) throw new Error('Bridge out is currently disabled');
       if (snapshot?.halted === true) throw new Error('Vault is currently halted');
@@ -420,9 +487,11 @@ export class PolygonBscBridgeModule {
       const switchResult = await this._ensureRequiredNetworkForAction(actionToastId);
       toastId = switchResult.toastId || null;
 
-      const contract = this.contractManager?.getWriteContract?.();
-      const activeAddress = this.walletManager?.getAddress?.();
-      if (!contract || !activeAddress) throw new Error('Wallet not connected');
+      this._assertActionRequestContext(bridgeRequest);
+
+      let contract = this.contractManager?.getWriteContract?.();
+      contract = this._bindWriteContractToRequestAddress(contract, bridgeRequest.address);
+      if (!contract || !this._getRequestSigner(bridgeRequest.address)) throw new Error('Wallet not connected');
 
       if (this._needsApproval(amountWei)) throw new Error('Approval required before bridging');
 
@@ -781,6 +850,10 @@ export class PolygonBscBridgeModule {
     const a = String(address || '');
     if (!/^0x[a-fA-F0-9]{40}$/.test(a)) return a || '-';
     return `${a.slice(0, 6)}...${a.slice(-4)}`;
+  }
+
+  _comparableAddress(address) {
+    return String(address || '').trim().toLowerCase();
   }
 
   _getRecipientAddress() {
