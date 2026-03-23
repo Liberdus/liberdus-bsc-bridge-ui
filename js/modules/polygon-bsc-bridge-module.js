@@ -313,7 +313,7 @@ export class PolygonBscBridgeModule {
     return allowanceWei.lt(amountWei);
   }
 
-  _assertActionRequestUnchanged(request) {
+  _assertBridgeRequestUnchanged(request) {
     if (!request || typeof request !== 'object') {
       throw new Error('Bridge request snapshot is required');
     }
@@ -338,9 +338,31 @@ export class PolygonBscBridgeModule {
   }
 
   _assertActionRequestContext(request) {
-    this._assertActionRequestUnchanged(request);
+    this._assertBridgeRequestUnchanged(request);
     if (!this.networkManager?.isOnRequiredNetwork?.()) {
       throw new Error('Wallet network changed during bridge flow. Please review and try again.');
+    }
+  }
+
+  _assertBridgeSubmitStillAllowed(amountWei) {
+    if (!amountWei || typeof amountWei.gt !== 'function') {
+      throw new Error('Bridge amount is required');
+    }
+
+    const balanceWei = this._balanceCache?.balanceWei || null;
+    if (balanceWei && amountWei.gt(balanceWei)) {
+      throw new Error('Amount exceeds available balance. Please review and try again.');
+    }
+
+    const snapshot = this.contractManager?.getStatusSnapshot?.();
+    if (snapshot?.bridgeOutEnabled === false) {
+      throw new Error('Bridge out is currently disabled');
+    }
+    if (snapshot?.halted === true) {
+      throw new Error('Vault is currently halted');
+    }
+    if (snapshot?.maxBridgeOutAmount && amountWei.gt(this._bn(snapshot.maxBridgeOutAmount))) {
+      throw new Error('Amount exceeds max bridge out limit');
     }
   }
 
@@ -451,18 +473,14 @@ export class PolygonBscBridgeModule {
       if (!amountWei || amountWei.lte(0)) throw new Error('Enter a valid amount');
 
       const bridgeRequest = {
-        address,
+        address: String(address).trim(),
         recipient,
         amountWei: amountWei.toString(),
       };
 
-      const snapshot = this.contractManager?.getStatusSnapshot?.();
-      if (snapshot?.bridgeOutEnabled === false) throw new Error('Bridge out is currently disabled');
-      if (snapshot?.halted === true) throw new Error('Vault is currently halted');
-      if (snapshot?.maxBridgeOutAmount && amountWei.gt(this._bn(snapshot.maxBridgeOutAmount))) {
-        throw new Error('Amount exceeds max bridge out limit');
-      }
+      this._assertBridgeSubmitStillAllowed(amountWei);
 
+      const snapshot = this.contractManager?.getStatusSnapshot?.();
       const bridgeChainId = this._getBridgeOutChainId(snapshot);
       if (!bridgeChainId) throw new Error('Bridge chain ID is not configured');
 
@@ -486,7 +504,11 @@ export class PolygonBscBridgeModule {
       contract = this._bindWriteContractToRequestAddress(contract, bridgeRequest.address);
       if (!contract) throw new Error('Wallet not connected');
 
-      const needsApproval = this._needsApproval(amountWei);
+      if (this._balanceCache?.allowanceWei == null) {
+        await this._refreshBalances().catch(() => {});
+      }
+
+      const needsApproval = this._balanceCache?.allowanceWei == null ? true : this._needsApproval(amountWei);
       const stepId = {
         approve: 'approve-bridge-token',
         submit: 'submit-bridge-out',
@@ -511,6 +533,36 @@ export class PolygonBscBridgeModule {
       });
       this._isBridgePreflightPending = false;
       this._setBridgeProgressSession(progressSession);
+
+      const finishProgressFailure = ({ step, error, fallback }) => {
+        const message = this._actionErrorMessage(error, fallback);
+        progressSession.updateStep(step, { status: 'failed', detail: message });
+        progressSession.finishFailure(message);
+      };
+
+      const failForPreApprovalContext = ({ step }) => {
+        try {
+          this._assertActionRequestContext(bridgeRequest);
+          return false;
+        } catch (error) {
+          finishProgressFailure({ step, error, fallback: 'Bridge failed' });
+          return true;
+        }
+      };
+
+      const failForChangedRequest = ({ step }) => {
+        try {
+          this._assertBridgeRequestUnchanged(bridgeRequest);
+          return false;
+        } catch (error) {
+          finishProgressFailure({ step, error, fallback: 'Bridge failed' });
+          return true;
+        }
+      };
+
+      if (failForPreApprovalContext({ step: needsApproval ? stepId.approve : stepId.submit })) {
+        return;
+      }
 
       if (needsApproval) {
         const token = new window.ethers.Contract(tokenAddr, this._erc20Abi(), signer);
@@ -548,6 +600,32 @@ export class PolygonBscBridgeModule {
         await this._refreshBalances().catch(() => {});
         await this.contractManager?.refreshStatus?.({ reason: 'bridgeApprovalConfirmed' }).catch(() => {});
         progressSession.updateStep(stepId.approve, { status: 'completed', detail: 'Approved' });
+      }
+
+      if (failForChangedRequest({ step: stepId.submit })) {
+        return;
+      }
+
+      try {
+        this._assertBridgeSubmitStillAllowed(amountWei);
+      } catch (error) {
+        finishProgressFailure({ step: stepId.submit, error, fallback: 'Bridge failed' });
+        return;
+      }
+
+      const postApprovalSwitchResult = await this._ensureRequiredNetworkForAction(actionToastId);
+      if (postApprovalSwitchResult.toastId) {
+        this.toastManager?.dismiss?.(postApprovalSwitchResult.toastId);
+      }
+
+      if (failForChangedRequest({ step: stepId.submit })) {
+        return;
+      }
+
+      contract = this.contractManager?.getWriteContract?.();
+      contract = this._bindWriteContractToRequestAddress(contract, bridgeRequest.address);
+      if (!contract || !this._getRequestSigner(bridgeRequest.address)) {
+        throw new Error('Wallet not connected');
       }
 
       progressSession.updateStep(stepId.submit, { status: 'active', detail: 'Confirm in wallet' });
