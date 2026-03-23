@@ -613,7 +613,17 @@ export class PolygonBscBridgeModule {
         return;
       }
 
-      const postApprovalSwitchResult = await this._ensureRequiredNetworkForAction(actionToastId);
+      let postApprovalSwitchResult;
+      try {
+        postApprovalSwitchResult = await this._ensureRequiredNetworkForAction(actionToastId);
+      } catch (error) {
+        const dismissId = error?._actionToastId;
+        if (dismissId) {
+          this.toastManager?.dismiss?.(dismissId);
+        }
+        finishProgressFailure({ step: stepId.submit, error, fallback: 'Bridge failed' });
+        return;
+      }
       if (postApprovalSwitchResult.toastId) {
         this.toastManager?.dismiss?.(postApprovalSwitchResult.toastId);
       }
@@ -622,10 +632,25 @@ export class PolygonBscBridgeModule {
         return;
       }
 
+      const submitSigner = this._getRequestSigner(bridgeRequest.address);
+      if (!submitSigner) {
+        finishProgressFailure({
+          step: stepId.submit,
+          error: new Error('Wallet not connected'),
+          fallback: 'Bridge failed',
+        });
+        return;
+      }
+
       contract = this.contractManager?.getWriteContract?.();
       contract = this._bindWriteContractToRequestAddress(contract, bridgeRequest.address);
-      if (!contract || !this._getRequestSigner(bridgeRequest.address)) {
-        throw new Error('Wallet not connected');
+      if (!contract) {
+        finishProgressFailure({
+          step: stepId.submit,
+          error: new Error('Wallet not connected'),
+          fallback: 'Bridge failed',
+        });
+        return;
       }
 
       progressSession.updateStep(stepId.submit, { status: 'active', detail: 'Confirm in wallet' });
