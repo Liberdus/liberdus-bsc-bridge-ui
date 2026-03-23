@@ -1,13 +1,10 @@
 import { initializeVersionService } from './version-service.js';
-import { assert } from './utils/assert.js';
 
 const bootstrapLoading = document.getElementById('bootstrap-loading');
 const bootstrapTitle = document.querySelector('[data-bootstrap-title]');
 
-assert(bootstrapLoading, '#bootstrap-loading is required');
-assert(bootstrapTitle, '[data-bootstrap-title] is required');
-
 function setBootstrapLoadingTitle(title) {
+  if (!bootstrapLoading || !bootstrapTitle) return;
   bootstrapLoading.classList.remove('hidden');
   bootstrapTitle.textContent = title;
 }
@@ -17,11 +14,14 @@ async function start() {
 
   if (await initializeVersionService()) return;
 
-  setBootstrapLoadingTitle('Loading bridge UI.');
+  try {
+    setBootstrapLoadingTitle('Loading bridge UI.');
 
-  const { startApp } = await import('./app.js');
-  await startApp();
-  bootstrapLoading.classList.add('hidden');
+    const { startApp } = await import('./app.js');
+    await startApp();
+  } finally {
+    bootstrapLoading?.classList.add('hidden');
+  }
 }
 
 start();
