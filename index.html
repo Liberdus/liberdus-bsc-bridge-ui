@@ -21,6 +21,15 @@
   </head>
 
   <body>
+    <div id="bootstrap-loading" class="modal-backdrop">
+      <div class="modal">
+        <div class="modal-body">
+          <div class="notification-icon" aria-hidden="true"><span class="spinner"></span></div>
+          <div class="card-title" data-bootstrap-title>Loading latest version.</div>
+        </div>
+      </div>
+    </div>
+
     <script src="./libs/ethers.umd.min.js"></script>
     <script src="./js/bootstrap.js" type="module"></script>
 
@@ -166,14 +175,5 @@
     </div>
 
     <div id="wallet-popup-container"></div>
-
-    <div id="bootstrap-loading" class="modal-backdrop hidden">
-      <div class="modal">
-        <div class="modal-body">
-          <div class="notification-icon" aria-hidden="true"><span class="spinner"></span></div>
-          <div class="card-title" data-bootstrap-title>Loading latest version.</div>
-        </div>
-      </div>
-    </div>
   </body>
 </html>
