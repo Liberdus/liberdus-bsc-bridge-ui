@@ -1,3 +1,5 @@
+import { createTransactionProgressSession } from '../utils/transaction-progress-session.js';
+
 export class PolygonBscBridgeModule {
   constructor({
     contractManager = null,
@@ -16,13 +18,16 @@ export class PolygonBscBridgeModule {
 
     this._els = {};
     this._lastSnapshot = null;
+    this._balanceCache = null;
     this._refreshTimerId = null;
     this._actionToastSequence = 0;
+    this._bridgeProgressSession = null;
+    this._bridgeProgressVisibilityCleanup = null;
+    this._isBridgePreflightPending = false;
     this._bound = false;
 
     this._onWalletEvent = this._onWalletEvent.bind(this);
     this._onContractUpdated = this._onContractUpdated.bind(this);
-    this._onApproveClicked = this._onApproveClicked.bind(this);
     this._onBridgeClicked = this._onBridgeClicked.bind(this);
     this._onSetMaxClicked = this._onSetMaxClicked.bind(this);
     this._onCopyAddressClicked = this._onCopyAddressClicked.bind(this);
@@ -40,6 +45,7 @@ export class PolygonBscBridgeModule {
 
   destroy() {
     this._unbind();
+    this._clearBridgeProgressSession();
     if (this._refreshTimerId) window.clearTimeout(this._refreshTimerId);
     this._refreshTimerId = null;
     this.container = null;
@@ -62,7 +68,6 @@ export class PolygonBscBridgeModule {
     document.addEventListener('walletChainChanged', this._onWalletEvent);
     document.addEventListener('contractManagerUpdated', this._onContractUpdated);
 
-    this._els.approveBtn?.addEventListener('click', this._onApproveClicked);
     this._els.bridgeBtn?.addEventListener('click', this._onBridgeClicked);
     this._els.setMaxBtn?.addEventListener('click', this._onSetMaxClicked);
     for (const button of this._els.copyAddressButtons) {
@@ -82,7 +87,6 @@ export class PolygonBscBridgeModule {
     document.removeEventListener('walletChainChanged', this._onWalletEvent);
     document.removeEventListener('contractManagerUpdated', this._onContractUpdated);
 
-    this._els.approveBtn?.removeEventListener('click', this._onApproveClicked);
     this._els.bridgeBtn?.removeEventListener('click', this._onBridgeClicked);
     this._els.setMaxBtn?.removeEventListener('click', this._onSetMaxClicked);
     for (const button of this._els.copyAddressButtons) {
@@ -167,10 +171,6 @@ export class PolygonBscBridgeModule {
         <div class="bridge-meta">
           <div class="bridge-meta-card">
             <div class="bridge-meta-row">
-              <div class="bridge-meta-label">Allowance</div>
-              <div class="bridge-meta-value"><span data-bridge-user-allowance>-</span> ${this._tokenSymbol()}</div>
-            </div>
-            <div class="bridge-meta-row">
               <div class="bridge-meta-label">Max bridge out</div>
               <div class="bridge-meta-value"><span data-bridge-max-amount>-</span> ${this._tokenSymbol()}</div>
             </div>
@@ -178,13 +178,7 @@ export class PolygonBscBridgeModule {
         </div>
 
         <div class="actions bridge-actions">
-          <button type="button" class="btn" data-bridge-approve data-requires-tx="true">Approve</button>
           <button type="button" class="btn btn--primary" data-bridge-submit data-requires-tx="true">Bridge Out</button>
-        </div>
-
-        <div class="bridge-status" data-bridge-status hidden>
-          <div class="bridge-status-title" data-bridge-status-title></div>
-          <div class="bridge-status-body" data-bridge-status-body></div>
         </div>
       </div>
     `;
@@ -196,14 +190,9 @@ export class PolygonBscBridgeModule {
       amountField: this.container.querySelector('[data-bridge-amount-field]'),
       amount: this.container.querySelector('[data-bridge-amount]'),
       userBalance: this.container.querySelector('[data-bridge-user-balance]'),
-      userAllowance: this.container.querySelector('[data-bridge-user-allowance]'),
       maxAmount: this.container.querySelector('[data-bridge-max-amount]'),
-      approveBtn: this.container.querySelector('[data-bridge-approve]'),
       bridgeBtn: this.container.querySelector('[data-bridge-submit]'),
       setMaxBtn: this.container.querySelector('[data-bridge-set-max]'),
-      status: this.container.querySelector('[data-bridge-status]'),
-      statusTitle: this.container.querySelector('[data-bridge-status-title]'),
-      statusBody: this.container.querySelector('[data-bridge-status-body]'),
     };
 
     this._syncChainText();
@@ -269,31 +258,52 @@ export class PolygonBscBridgeModule {
   _updateActionStates() {
     const txEnabled = !!this.networkManager?.isTxEnabled?.();
     const connected = !!this.walletManager?.isConnected?.();
+    const session = this._bridgeProgressSession;
     const snapshot = this._lastSnapshot;
-    const balanceWei = this._balanceCache?.balanceWei || null;
+    const amountInput = this._els.amount;
+    if (!amountInput) return;
 
-    if (this._els.amount) this._els.amount.disabled = false;
+    const balanceWei = this._balanceCache?.balanceWei || null;
+    const formLocked = this._isBridgePreflightPending || !!session;
+    amountInput.disabled = formLocked;
 
     const recipient = this._getRecipientAddress();
     const recipientOk = this._isAddress(recipient);
-    const amountWei = this._parseAmountToWei(this._els.amount?.value);
+    const amountWei = this._parseAmountToWei(amountInput.value);
     const hasAmount = !!amountWei && amountWei.gt(0);
     const exceedsBalance = hasAmount && !!balanceWei && amountWei.gt(balanceWei);
     const exceedsMax = hasAmount && !!snapshot?.maxBridgeOutAmount && amountWei.gt(this._bn(snapshot.maxBridgeOutAmount));
 
     const bridgeEnabled = snapshot?.bridgeOutEnabled !== false && snapshot?.halted !== true;
     const amountOk = hasAmount && !exceedsBalance && !exceedsMax;
-    const needsApproval = this._needsApproval(amountWei);
+    const canBridge = connected && recipientOk && amountOk && bridgeEnabled;
 
     this._els.amountField?.classList.toggle('is-invalid', exceedsBalance);
-    this._els.amount?.classList.toggle('is-invalid', exceedsBalance);
+    amountInput.classList.toggle('is-invalid', exceedsBalance);
     this._els.userBalance?.classList.toggle('is-invalid', exceedsBalance);
 
-    if (this._els.approveBtn) this._els.approveBtn.disabled = !connected || !amountOk || !needsApproval;
-    if (this._els.bridgeBtn)
-      this._els.bridgeBtn.disabled =
-        !connected || !recipientOk || !amountOk || !bridgeEnabled || needsApproval;
-    if (this._els.setMaxBtn) this._els.setMaxBtn.disabled = !txEnabled;
+    if (this._els.bridgeBtn) {
+      const button = this._els.bridgeBtn;
+      let disabled = true;
+      let label = 'Bridging...';
+
+      if (!this._isBridgePreflightPending && !session?.isVisible?.()) {
+        if (session?.isHidden?.() && session.isActive()) {
+          disabled = false;
+          label = 'View Progress';
+        } else {
+          disabled = !canBridge;
+          label = 'Bridge Out';
+        }
+      } else if (session?.isVisible?.() && !session.isActive()) {
+        label = 'Checklist Open';
+      }
+
+      button.disabled = disabled;
+      button.classList.toggle('disabled', disabled);
+      button.textContent = label;
+    }
+    if (this._els.setMaxBtn) this._els.setMaxBtn.disabled = !txEnabled || formLocked;
   }
 
   _needsApproval(amountWei) {
@@ -301,6 +311,82 @@ export class PolygonBscBridgeModule {
     const allowanceWei = this._balanceCache?.allowanceWei || null;
     if (!allowanceWei) return true;
     return allowanceWei.lt(amountWei);
+  }
+
+  _assertBridgeRequestUnchanged(request) {
+    if (!request || typeof request !== 'object') {
+      throw new Error('Bridge request snapshot is required');
+    }
+
+    const address = this._comparableAddress(this.walletManager?.getAddress?.());
+    if (address !== this._comparableAddress(request.address)) {
+      throw new Error('Wallet account changed during bridge flow. Please review and try again.');
+    }
+
+    if (Object.prototype.hasOwnProperty.call(request, 'recipient')) {
+      const recipient = this._comparableAddress(this._getRecipientAddress());
+      if (recipient !== this._comparableAddress(request.recipient)) {
+        throw new Error('Recipient changed during bridge flow. Please review and try again.');
+      }
+    }
+
+    const amountInput = this._els.amount;
+    const amountWei = amountInput ? this._parseAmountToWei(amountInput.value) : null;
+    if (!amountWei || amountWei.toString() !== request.amountWei) {
+      throw new Error('Amount changed during bridge flow. Please review and try again.');
+    }
+  }
+
+  _assertActionRequestContext(request) {
+    this._assertBridgeRequestUnchanged(request);
+    if (!this.networkManager?.isOnRequiredNetwork?.()) {
+      throw new Error('Wallet network changed during bridge flow. Please review and try again.');
+    }
+  }
+
+  _assertBridgeSubmitStillAllowed(amountWei) {
+    if (!amountWei || typeof amountWei.gt !== 'function') {
+      throw new Error('Bridge amount is required');
+    }
+
+    const balanceWei = this._balanceCache?.balanceWei || null;
+    if (balanceWei && amountWei.gt(balanceWei)) {
+      throw new Error('Amount exceeds available balance. Please review and try again.');
+    }
+
+    const snapshot = this.contractManager?.getStatusSnapshot?.();
+    if (snapshot?.bridgeOutEnabled === false) {
+      throw new Error('Bridge out is currently disabled');
+    }
+    if (snapshot?.halted === true) {
+      throw new Error('Vault is currently halted');
+    }
+    if (snapshot?.maxBridgeOutAmount && amountWei.gt(this._bn(snapshot.maxBridgeOutAmount))) {
+      throw new Error('Amount exceeds max bridge out limit');
+    }
+  }
+
+  _getRequestSigner(address) {
+    if (!address) return null;
+    const provider = this.walletManager?.getProvider?.();
+    if (provider?.getSigner) {
+      try {
+        return provider.getSigner(address);
+      } catch (_) {}
+    }
+    return this.walletManager?.getSigner?.() || null;
+  }
+
+  _bindWriteContractToRequestAddress(contract, address) {
+    if (!contract) return null;
+    const signer = this._getRequestSigner(address);
+    if (!signer) return null;
+    if (typeof contract.connect === 'function') {
+      try {
+        return contract.connect(signer);
+      } catch (_) {}
+    }
+    return contract;
   }
 
   async _onSetMaxClicked() {
@@ -320,175 +406,323 @@ export class PolygonBscBridgeModule {
     this._updateActionStates();
   }
 
-  async _onApproveClicked() {
-    const actionToastId = this._nextActionToastId('bridgeApprove');
-    let toastId = null;
-    try {
-      const address = this.walletManager?.getAddress?.();
-      if (!address) throw new Error('Wallet not connected');
+  _clearBridgeProgressSession() {
+    if (this._bridgeProgressVisibilityCleanup) {
+      this._bridgeProgressVisibilityCleanup();
+      this._bridgeProgressVisibilityCleanup = null;
+    }
 
-      const tokenAddr = await this._getTokenAddress();
-      if (!tokenAddr) throw new Error('Token address not available');
+    this._bridgeProgressSession = null;
+    this._updateActionStates();
+  }
 
-      const amountWei = this._parseAmountToWei(this._els.amount?.value);
-      if (!amountWei || amountWei.lte(0)) throw new Error('Enter a valid amount');
+  _setBridgeProgressSession(session) {
+    if (this._bridgeProgressVisibilityCleanup) {
+      this._bridgeProgressVisibilityCleanup();
+      this._bridgeProgressVisibilityCleanup = null;
+    }
 
-      const vault = this.config.BRIDGE.CONTRACTS.SOURCE.ADDRESS;
-      if (!vault) throw new Error('Vault address not configured');
+    this._bridgeProgressSession = session;
+    if (!session) {
+      this._updateActionStates();
+      return;
+    }
 
-      const switchResult = await this._ensureRequiredNetworkForAction(actionToastId);
-      toastId = switchResult.toastId || null;
-
-      const signer = this.walletManager?.getSigner?.();
-      if (!signer || !this.walletManager?.getAddress?.()) throw new Error('Wallet not connected');
-
-      if (!this._needsApproval(amountWei)) {
-        toastId = this._showActionToast({
-          toastId: toastId || actionToastId,
-          title: 'Done',
-          message: 'Approval already sufficient',
-          type: 'success',
-          timeoutMs: 2500,
-          dismissible: true,
-        });
-        this._showStatus('Approval not needed', 'Current allowance already covers this amount.');
-        this._updateActionStates();
+    this._bridgeProgressVisibilityCleanup = session.onVisibilityChange(({ hidden, active }) => {
+      if (this._bridgeProgressSession !== session) {
         return;
       }
-
-      const token = new window.ethers.Contract(tokenAddr, this._erc20Abi(), signer);
-      toastId = this._showActionLoadingToast({
-        toastId: toastId || actionToastId,
-        message: 'Confirm the approval in your wallet',
-      });
-
-      const tx = await token.approve(vault, amountWei);
-      this._showStatus('Approval submitted', this._txLinkHtml(this.config.BRIDGE.CHAINS.SOURCE.BLOCK_EXPLORER, tx.hash));
-
-      toastId = this._showActionToast({
-        toastId,
-        title: 'Approval submitted',
-        message: `Tx: ${tx.hash}`,
-        type: 'info',
-        timeoutMs: 3500,
-        dismissible: true,
-      });
-
-      await tx.wait(1);
-
-      this._showActionToast({
-        toastId,
-        title: 'Done',
-        message: 'Approval confirmed',
-        type: 'success',
-        timeoutMs: 2500,
-        dismissible: true,
-      });
-      await this._refreshBalances();
+      if (hidden && !active) {
+        this._clearBridgeProgressSession();
+        return;
+      }
       this._updateActionStates();
-    } catch (error) {
-      toastId = toastId || error?._actionToastId || actionToastId;
-      const message = this._actionErrorMessage(error, 'Approval failed');
-      this._showActionToast({ toastId, title: 'Error', message, type: 'error', timeoutMs: 0, dismissible: true });
-      this._showStatus('Approval failed', this._escapeHtml(message));
-    }
+    });
+
+    this._updateActionStates();
   }
 
   async _onBridgeClicked() {
+    if (this._bridgeProgressSession) {
+      if (this._bridgeProgressSession.isHidden()) {
+        this._bridgeProgressSession.reopen();
+      }
+      this._updateActionStates();
+      return;
+    }
+
+    if (this._isBridgePreflightPending) {
+      return;
+    }
+
     const actionToastId = this._nextActionToastId('bridgeOut');
-    let toastId = null;
+    this._isBridgePreflightPending = true;
+    this._updateActionStates();
+
     try {
       const address = this.walletManager?.getAddress?.();
       if (!address) throw new Error('Wallet not connected');
+
+      const amountInput = this._els.amount;
+      if (!amountInput) throw new Error('Amount input is required');
 
       const recipient = this._getRecipientAddress();
       if (!this._isAddress(recipient)) throw new Error('Invalid recipient address');
 
-      const amountWei = this._parseAmountToWei(this._els.amount?.value);
+      const amountWei = this._parseAmountToWei(amountInput.value);
       if (!amountWei || amountWei.lte(0)) throw new Error('Enter a valid amount');
 
-      const snapshot = this.contractManager?.getStatusSnapshot?.();
-      if (snapshot?.bridgeOutEnabled === false) throw new Error('Bridge out is currently disabled');
-      if (snapshot?.halted === true) throw new Error('Vault is currently halted');
-      if (snapshot?.maxBridgeOutAmount && amountWei.gt(this._bn(snapshot.maxBridgeOutAmount))) {
-        throw new Error('Amount exceeds max bridge out limit');
-      }
+      const bridgeRequest = {
+        address: String(address).trim(),
+        recipient,
+        amountWei: amountWei.toString(),
+      };
 
+      this._assertBridgeSubmitStillAllowed(amountWei);
+
+      const snapshot = this.contractManager?.getStatusSnapshot?.();
       const bridgeChainId = this._getBridgeOutChainId(snapshot);
       if (!bridgeChainId) throw new Error('Bridge chain ID is not configured');
 
       const switchResult = await this._ensureRequiredNetworkForAction(actionToastId);
-      toastId = switchResult.toastId || null;
+      if (switchResult.toastId) {
+        this.toastManager?.dismiss?.(switchResult.toastId);
+      }
 
-      const contract = this.contractManager?.getWriteContract?.();
-      const activeAddress = this.walletManager?.getAddress?.();
-      if (!contract || !activeAddress) throw new Error('Wallet not connected');
+      this._assertActionRequestContext(bridgeRequest);
 
-      if (this._needsApproval(amountWei)) throw new Error('Approval required before bridging');
+      const tokenAddr = await this._getTokenAddress();
+      if (!tokenAddr) throw new Error('Token address not available');
 
-      toastId = this._showActionLoadingToast({
-        toastId: toastId || actionToastId,
-        message: 'Confirm the bridge transaction in your wallet',
+      const vault = this.config.BRIDGE.CONTRACTS.SOURCE.ADDRESS;
+      if (!vault) throw new Error('Vault address not configured');
+
+      const signer = this._getRequestSigner(bridgeRequest.address);
+      if (!signer) throw new Error('Wallet not connected');
+
+      let contract = this.contractManager?.getWriteContract?.();
+      contract = this._bindWriteContractToRequestAddress(contract, bridgeRequest.address);
+      if (!contract) throw new Error('Wallet not connected');
+
+      if (this._balanceCache?.allowanceWei == null) {
+        await this._refreshBalances().catch(() => {});
+      }
+
+      const needsApproval = this._balanceCache?.allowanceWei == null ? true : this._needsApproval(amountWei);
+      const stepId = {
+        approve: 'approve-bridge-token',
+        submit: 'submit-bridge-out',
+        confirm: 'confirm-bridge-out',
+      };
+      const progressSession = createTransactionProgressSession(this.toastManager, {
+        title: 'Bridging Out',
+        successTitle: 'Bridge Out Confirmed',
+        failureTitle: 'Bridge Out Failed',
+        cancelledTitle: 'Bridge Out Cancelled',
+        summary: 'Complete the steps below in your wallet and on-chain.',
+        steps: [
+          {
+            id: stepId.approve,
+            label: `Approve ${this._tokenSymbol()}`,
+            status: needsApproval ? 'pending' : 'completed',
+            detail: needsApproval ? '' : 'Already approved',
+          },
+          { id: stepId.submit, label: 'Submit bridge out', status: 'pending', detail: '' },
+          { id: stepId.confirm, label: 'Confirm bridge on-chain', status: 'pending', detail: '' },
+        ],
       });
-      const tx = await contract.bridgeOut(amountWei, recipient, bridgeChainId);
+      this._isBridgePreflightPending = false;
+      this._setBridgeProgressSession(progressSession);
 
-      this._showStatus('Bridge transaction submitted', this._txLinkHtml(this.config.BRIDGE.CHAINS.SOURCE.BLOCK_EXPLORER, tx.hash));
-      toastId = this._showActionToast({
-        toastId,
-        title: 'Bridge submitted',
-        message: `Tx: ${tx.hash}`,
-        type: 'info',
-        timeoutMs: 3500,
-        dismissible: true,
+      const finishProgressFailure = ({ step, error, fallback }) => {
+        const message = this._actionErrorMessage(error, fallback);
+        progressSession.updateStep(step, { status: 'failed', detail: message });
+        progressSession.finishFailure(message);
+      };
+
+      const failForPreApprovalContext = ({ step }) => {
+        try {
+          this._assertActionRequestContext(bridgeRequest);
+          return false;
+        } catch (error) {
+          finishProgressFailure({ step, error, fallback: 'Bridge failed' });
+          return true;
+        }
+      };
+
+      const failForChangedRequest = ({ step }) => {
+        try {
+          this._assertBridgeRequestUnchanged(bridgeRequest);
+          return false;
+        } catch (error) {
+          finishProgressFailure({ step, error, fallback: 'Bridge failed' });
+          return true;
+        }
+      };
+
+      if (failForPreApprovalContext({ step: needsApproval ? stepId.approve : stepId.submit })) {
+        return;
+      }
+
+      if (needsApproval) {
+        const token = new window.ethers.Contract(tokenAddr, this._erc20Abi(), signer);
+        progressSession.updateStep(stepId.approve, { status: 'active', detail: 'Confirm in wallet' });
+
+        let approveTx;
+        try {
+          approveTx = await token.approve(vault, amountWei);
+        } catch (error) {
+          if (this._isUserRejectionError(error)) {
+            progressSession.updateStep(stepId.approve, {
+              status: 'cancelled',
+              detail: 'Wallet request rejected',
+            });
+            progressSession.finishCancelled('Cancelled during token approval.');
+            return;
+          }
+
+          const message = this._actionErrorMessage(error, 'Approval failed');
+          progressSession.updateStep(stepId.approve, { status: 'failed', detail: message });
+          progressSession.finishFailure(message);
+          return;
+        }
+
+        progressSession.updateStep(stepId.approve, { status: 'active', detail: 'Waiting for confirmation' });
+        try {
+          await approveTx.wait(1);
+        } catch (error) {
+          const message = this._actionErrorMessage(error, 'Approval failed');
+          progressSession.updateStep(stepId.approve, { status: 'failed', detail: message });
+          progressSession.finishFailure(message);
+          return;
+        }
+
+        await this._refreshBalances().catch(() => {});
+        await this.contractManager?.refreshStatus?.({ reason: 'bridgeApprovalConfirmed' }).catch(() => {});
+        progressSession.updateStep(stepId.approve, { status: 'completed', detail: 'Approved' });
+      }
+
+      if (failForChangedRequest({ step: stepId.submit })) {
+        return;
+      }
+
+      try {
+        this._assertBridgeSubmitStillAllowed(amountWei);
+      } catch (error) {
+        finishProgressFailure({ step: stepId.submit, error, fallback: 'Bridge failed' });
+        return;
+      }
+
+      let postApprovalSwitchResult;
+      try {
+        postApprovalSwitchResult = await this._ensureRequiredNetworkForAction(actionToastId);
+      } catch (error) {
+        const dismissId = error?._actionToastId;
+        if (dismissId) {
+          this.toastManager?.dismiss?.(dismissId);
+        }
+        finishProgressFailure({ step: stepId.submit, error, fallback: 'Bridge failed' });
+        return;
+      }
+      if (postApprovalSwitchResult.toastId) {
+        this.toastManager?.dismiss?.(postApprovalSwitchResult.toastId);
+      }
+
+      if (failForChangedRequest({ step: stepId.submit })) {
+        return;
+      }
+
+      const submitSigner = this._getRequestSigner(bridgeRequest.address);
+      if (!submitSigner) {
+        finishProgressFailure({
+          step: stepId.submit,
+          error: new Error('Wallet not connected'),
+          fallback: 'Bridge failed',
+        });
+        return;
+      }
+
+      contract = this.contractManager?.getWriteContract?.();
+      contract = this._bindWriteContractToRequestAddress(contract, bridgeRequest.address);
+      if (!contract) {
+        finishProgressFailure({
+          step: stepId.submit,
+          error: new Error('Wallet not connected'),
+          fallback: 'Bridge failed',
+        });
+        return;
+      }
+
+      progressSession.updateStep(stepId.submit, { status: 'active', detail: 'Confirm in wallet' });
+
+      let tx;
+      try {
+        tx = await contract.bridgeOut(amountWei, recipient, bridgeChainId);
+      } catch (error) {
+        if (this._isUserRejectionError(error)) {
+          progressSession.updateStep(stepId.submit, {
+            status: 'cancelled',
+            detail: 'Wallet request rejected',
+          });
+          progressSession.finishCancelled('Cancelled before bridge submission.');
+          return;
+        }
+
+        const message = this._actionErrorMessage(error, 'Bridge failed');
+        progressSession.updateStep(stepId.submit, { status: 'failed', detail: message });
+        progressSession.finishFailure(message);
+        return;
+      }
+
+      progressSession.updateStep(stepId.submit, { status: 'completed', detail: 'Submitted' });
+      progressSession.setTransactionLink({
+        hash: tx.hash,
+        url: this._getTransactionExplorerUrl(tx.hash),
       });
+      progressSession.updateStep(stepId.confirm, { status: 'active', detail: 'Waiting for confirmation' });
 
-      const receipt = await tx.wait(1);
+      let receipt;
+      try {
+        receipt = await tx.wait(1);
+      } catch (error) {
+        const message = this._actionErrorMessage(error, 'Bridge failed');
+        progressSession.updateStep(stepId.confirm, { status: 'failed', detail: message });
+        progressSession.finishFailure(message);
+        return;
+      }
+
+      if (receipt?.status === 0) {
+        const message = 'Bridge transaction failed on-chain';
+        progressSession.updateStep(stepId.confirm, { status: 'failed', detail: message });
+        progressSession.finishFailure(message);
+        return;
+      }
 
       const bridgedOut = this._parseBridgedOutFromReceipt(receipt);
+      progressSession.updateStep(stepId.confirm, { status: 'completed', detail: 'Confirmed' });
+      progressSession.finishSuccess(bridgedOut ? 'Bridge out confirmed.' : 'Bridge confirmed.');
+
       if (bridgedOut) {
-        const { from, amount, targetAddress, chainId } = bridgedOut;
-        const msg = `From ${this._shortAddress(from)} • ${this._formatTokenUnits(amount)} ${this._tokenSymbol()} → ${this._shortAddress(
-          targetAddress
-        )} (chain ${chainId})`;
-        this._showActionToast({
-          toastId,
-          title: 'Done',
-          message: 'Bridge out confirmed',
-          type: 'success',
-          timeoutMs: 3500,
-          dismissible: true,
-        });
-        this._showStatus('Bridge out confirmed', this._escapeHtml(msg));
         const detail = {
           txHash: tx.hash,
-          from,
-          amount,
-          targetAddress,
-          targetChainId: Number(chainId),
+          from: bridgedOut.from,
+          amount: bridgedOut.amount,
+          targetAddress: bridgedOut.targetAddress,
+          targetChainId: Number(bridgedOut.chainId),
           sourceChainId: this.config.BRIDGE.CHAINS.SOURCE.CHAIN_ID,
           timestamp: Math.floor(Date.now() / 1000),
         };
         document.dispatchEvent(new CustomEvent('bridgeOutEvent', { detail }));
-      } else {
-        const sourceName = this.config.BRIDGE.CHAINS.SOURCE.NAME;
-        this._showActionToast({
-          toastId,
-          title: 'Done',
-          message: 'Bridge confirmed',
-          type: 'success',
-          timeoutMs: 2500,
-          dismissible: true,
-        });
-        this._showStatus('Bridge confirmed', this._escapeHtml(`Transaction confirmed on ${sourceName}`));
       }
 
       await this._refreshBalances();
-      this._updateActionStates();
     } catch (error) {
-      toastId = toastId || error?._actionToastId || actionToastId;
+      const toastId = error?._actionToastId || actionToastId;
       const message = this._actionErrorMessage(error, 'Bridge failed');
       this._showActionToast({ toastId, title: 'Error', message, type: 'error', timeoutMs: 0, dismissible: true });
-      this._showStatus('Bridge failed', this._escapeHtml(message));
+    } finally {
+      this._isBridgePreflightPending = false;
+      this._updateActionStates();
     }
   }
 
@@ -523,7 +757,6 @@ export class PolygonBscBridgeModule {
     if (!provider || !address) {
       this._balanceCache = null;
       if (this._els.userBalance) this._els.userBalance.textContent = `- ${this._tokenSymbol()} Available`;
-      if (this._els.userAllowance) this._els.userAllowance.textContent = '-';
       this._updateActionStates();
       return;
     }
@@ -545,8 +778,6 @@ export class PolygonBscBridgeModule {
     this._balanceCache = { balanceWei, allowanceWei };
     if (this._els.userBalance)
       this._els.userBalance.textContent = balanceWei ? `${this._formatTokenUnits(balanceWei.toString())} ${this._tokenSymbol()} Available` : `- ${this._tokenSymbol()} Available`;
-    if (this._els.userAllowance)
-      this._els.userAllowance.textContent = allowanceWei ? this._formatTokenUnits(allowanceWei.toString()) : '-';
 
     this._updateActionStates();
   }
@@ -611,17 +842,6 @@ export class PolygonBscBridgeModule {
     }
   }
 
-  _showActionLoadingToast({ toastId = null, message }) {
-    return this._showActionToast({
-      toastId,
-      title: 'Loading',
-      message,
-      type: 'loading',
-      timeoutMs: 0,
-      dismissible: false,
-    });
-  }
-
   _showActionToast({ toastId = null, title, message, type = 'info', timeoutMs = 0, dismissible = true, allowHtml = false }) {
     return (
       this.toastManager?.show?.({
@@ -650,6 +870,14 @@ export class PolygonBscBridgeModule {
       return this._extractActionErrorMessage(error) || `Failed to switch to ${requiredNetworkName}.`;
     }
     return this._extractActionErrorMessage(error) || fallback;
+  }
+
+  _isUserRejectionError(error) {
+    if (error?.code === 4001 || error?.code === 'ACTION_REJECTED') {
+      return true;
+    }
+    const message = this._extractActionErrorMessage(error);
+    return typeof message === 'string' && /rejected/i.test(message);
   }
 
   _extractActionErrorMessage(error) {
@@ -701,17 +929,12 @@ export class PolygonBscBridgeModule {
     }, 250);
   }
 
-  _showStatus(title, bodyHtml) {
-    if (!this._els.status || !this._els.statusTitle || !this._els.statusBody) return;
-    this._els.status.hidden = false;
-    this._els.statusTitle.textContent = String(title || '');
-    this._els.statusBody.innerHTML = String(bodyHtml || '');
-  }
-
-  _txLinkHtml(explorerBase, txHash) {
-    const href = explorerBase ? `${explorerBase.replace(/\/$/, '')}/tx/${txHash}` : '#';
-    const safeHash = this._escapeHtml(txHash);
-    return `<a href="${href}" target="_blank" rel="noopener">${safeHash}</a>`;
+  _getTransactionExplorerUrl(txHash) {
+    const explorerBase = this.config.BRIDGE.CHAINS.SOURCE.BLOCK_EXPLORER;
+    if (!explorerBase || !txHash) {
+      return '';
+    }
+    return `${explorerBase.replace(/\/$/, '')}/tx/${txHash}`;
   }
 
   _erc20Abi() {
@@ -781,6 +1004,10 @@ export class PolygonBscBridgeModule {
     const a = String(address || '');
     if (!/^0x[a-fA-F0-9]{40}$/.test(a)) return a || '-';
     return `${a.slice(0, 6)}...${a.slice(-4)}`;
+  }
+
+  _comparableAddress(address) {
+    return String(address || '').trim().toLowerCase();
   }
 
   _getRecipientAddress() {
@@ -908,14 +1135,5 @@ export class PolygonBscBridgeModule {
     } catch (_) {
       return false;
     }
-  }
-
-  _escapeHtml(text) {
-    return String(text || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
   }
 }

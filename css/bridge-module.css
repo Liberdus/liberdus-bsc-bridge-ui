@@ -314,7 +314,7 @@
 .bridge-actions {
   margin-top: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   min-width: 0;
 }
@@ -323,32 +323,6 @@
   width: 100%;
   min-height: 52px;
   font-weight: var(--font-weight-semibold);
-}
-
-.bridge-status {
-  padding: 14px 16px;
-  border-radius: 16px;
-  border: 1px solid var(--border-color);
-  background: rgba(255, 255, 255, 0.92);
-}
-
-.bridge-status-title {
-  font-weight: var(--font-weight-bold);
-  margin-bottom: 6px;
-}
-
-.bridge-status-body {
-  color: var(--secondary-text-color);
-}
-
-.bridge-status-body a {
-  color: var(--primary-color);
-  text-decoration: none;
-  font-weight: var(--font-weight-semibold);
-}
-
-.bridge-status-body a:hover {
-  text-decoration: underline;
 }
 
 @media (max-width: 720px) {
@@ -419,8 +393,7 @@
   }
 
   .bridge-amount-field,
-  .bridge-meta-card,
-  .bridge-status {
+  .bridge-meta-card {
     padding: 12px;
     border-radius: 16px;
   }
@@ -469,7 +442,6 @@
   }
 
   .bridge-actions {
-    grid-template-columns: 1fr;
     gap: 10px;
   }
 }

@@ -168,6 +168,110 @@
   opacity: 1;
 }
 
+.notification-transaction {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.notification-transaction .notification-icon {
+  margin-top: 2px;
+}
+
+.notification-summary,
+.notification-terminal-message {
+  margin: 0;
+  font-size: 12px;
+  color: var(--secondary-text-color);
+  line-height: 1.45;
+}
+
+.notification-terminal-message {
+  margin-top: 10px;
+}
+
+.notification-checklist {
+  list-style: none;
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.notification-checklist-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.notification-checklist-icon {
+  width: 18px;
+  line-height: 1;
+  font-size: 14px;
+  text-align: center;
+  color: var(--secondary-text-color);
+}
+
+.notification-checklist-content {
+  display: grid;
+  gap: 2px;
+}
+
+.notification-checklist-label {
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.4;
+  color: var(--text-color);
+}
+
+.notification-checklist-detail {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--secondary-text-color);
+}
+
+.notification-checklist-item.is-active .notification-checklist-icon,
+.notification-checklist-item.is-active .notification-checklist-label {
+  color: var(--primary-color);
+}
+
+.notification-checklist-item.is-completed .notification-checklist-icon {
+  color: var(--success-color);
+}
+
+.notification-checklist-item.is-failed .notification-checklist-icon,
+.notification-checklist-item.is-failed .notification-checklist-label {
+  color: var(--danger-color);
+}
+
+.notification-checklist-item.is-cancelled .notification-checklist-icon,
+.notification-checklist-item.is-cancelled .notification-checklist-label {
+  color: var(--warning-color);
+}
+
+.notification-transaction-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.notification-transaction-hash {
+  font-size: 11px;
+  color: var(--secondary-text-color);
+  background: var(--hover-background);
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+
+.notification-transaction-link {
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold);
+  color: #0066cc;
+  text-decoration: underline;
+}
+
 /* Close Button */
 .notification-close {
   flex-shrink: 0;
@@ -198,6 +302,12 @@
     left: 50%;
     width: calc(100% - 40px);
     max-width: none;
+  }
+
+  .notification-transaction-meta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
   }
 }
 
