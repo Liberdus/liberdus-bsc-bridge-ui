@@ -382,24 +382,24 @@
     display: grid;
     grid-template-columns: max-content max-content;
     justify-content: end;
-    align-items: center;
     column-gap: 8px;
     row-gap: 8px;
-    margin-top: 8px;
-    padding-top: 8px;
+  }
+
+  .bridge-amount-available-value,
+  .bridge-amount-max-value {
+    justify-self: start;
   }
 
   .bridge-amount-max-value {
     grid-column: 1 / 3;
     grid-row: 2;
-    justify-self: start;
     text-align: left;
   }
 
   .bridge-amount-available-value {
     grid-column: 1;
     grid-row: 1;
-    justify-self: start;
   }
 
   .bridge-max-btn {
