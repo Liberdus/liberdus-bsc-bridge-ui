@@ -103,13 +103,11 @@ export function createTransactionProgressSession(toastApi, options) {
 
   function finishPhase(phase) {
     state.phase = phase;
-    if (state.hidden && state.controller === null) {
-      notifyVisibility();
-      return;
-    }
-
+    const wasHidden = state.hidden && state.controller === null;
     applyPhase(controllerOrMount(), phase);
-    notifyVisibility();
+    if (!wasHidden) {
+      notifyVisibility();
+    }
   }
 
   mountController();
