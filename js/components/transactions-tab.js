@@ -298,6 +298,7 @@ export class TransactionsTab {
     this.onlyMine = false;
     this.onlyMineCheckbox = null;
     this.onlyMineHintEl = null;
+    this._pendingPollerTimer = null;
   }
 
   load() {
@@ -430,13 +431,21 @@ export class TransactionsTab {
 
     document.addEventListener('tabActivated', (e) => {
       if (e?.detail?.tabName === 'transactions') {
-        if (e?.detail?.isFirstActivation && this._rows.length === 0) this.refresh();
+        if (e?.detail?.isFirstActivation && this._rows.length === 0) {
+          this.refresh();
+        } else {
+          this._checkPendingStatuses();
+        }
         this._startIssuedTicker();
+        this._startPendingPoller();
       }
     });
 
     document.addEventListener('tabDeactivated', (e) => {
-      if (e?.detail?.tabName === 'transactions') this._stopIssuedTicker();
+      if (e?.detail?.tabName === 'transactions') {
+        this._stopIssuedTicker();
+        this._stopPendingPoller();
+      }
     });
 
     document.addEventListener('walletConnected', () => {
@@ -776,5 +785,40 @@ export class TransactionsTab {
   _stopIssuedTicker() {
     if (this._refreshTimer) clearInterval(this._refreshTimer);
     this._refreshTimer = null;
+  }
+
+  _startPendingPoller() {
+    if (this._pendingPollerTimer) return;
+    this._pendingPollerTimer = setInterval(() => this._checkPendingStatuses(), 30000);
+  }
+
+  _stopPendingPoller() {
+    if (this._pendingPollerTimer) {
+      clearInterval(this._pendingPollerTimer);
+      this._pendingPollerTimer = null;
+    }
+  }
+
+  async _checkPendingStatuses() {
+    const hasPending = this._rows.some(r => {
+      const s = String(r.status || '').toLowerCase();
+      return s === 'pending' || s === 'processing';
+    });
+    if (!hasPending) return;
+
+    try {
+      const fetched = await loadTransactionsFromCoordinator({ limit: 50 });
+      const before = JSON.stringify(this._rows);
+      this._rows = mergeTransactions(fetched, this._rows, { limit: 500 });
+      const after = JSON.stringify(this._rows);
+      
+      if (before !== after) {
+        this.render();
+      }
+    } catch (error) {
+      try {
+        console.debug?.('[Transactions] Pending poll failed', error);
+      } catch {}
+    }
   }
 }
