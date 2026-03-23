@@ -23,7 +23,7 @@ async function start() {
     bootstrapLoading?.classList.add('hidden');
   } catch (error) {
     console.error('Bootstrap failed', error);
-    setBootstrapLoadingTitle('Failed to load bridge UI. Refresh to retry.');
+    setBootstrapLoadingTitle('Failed to load bridge. Refresh to retry.');
   }
 }
 
