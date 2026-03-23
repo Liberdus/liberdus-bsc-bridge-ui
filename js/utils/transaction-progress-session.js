@@ -126,10 +126,6 @@ export function createTransactionProgressSession(toastApi, options) {
 
       state.controller?.updateStep(stepId, update);
     },
-    setSummary(message) {
-      state.summary = message == null ? '' : String(message);
-      state.controller?.setSummary(state.summary);
-    },
     setTransactionLink(transactionLink) {
       state.transactionLink = transactionLink;
       state.controller?.setTransactionLink(transactionLink);

@@ -173,7 +173,6 @@ export class ToastManager {
           detail,
         });
       },
-      setSummary,
       setTransactionLink: ({ hash, url }) => {
         const hashText = toDisplayText(hash);
         const urlText = toDisplayText(url);
@@ -201,9 +200,6 @@ export class ToastManager {
             closeCallback = null;
           }
         };
-      },
-      close: () => {
-        this.dismiss(toastId);
       },
     };
   }
