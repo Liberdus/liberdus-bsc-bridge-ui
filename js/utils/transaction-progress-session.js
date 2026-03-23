@@ -94,6 +94,16 @@ export function createTransactionProgressSession(toastApi, options) {
     return state.controller ?? mountController();
   }
 
+  function finishPhase(phase) {
+    state.phase = phase;
+    if (state.hidden && state.controller === null) {
+      notifyVisibility();
+      return;
+    }
+    applyPhase(controllerOrMount(), phase);
+    notifyVisibility();
+  }
+
   function stepById(stepId) {
     const step = state.steps.find((s) => s.id === stepId);
     assert(step, `Unknown progress step: ${stepId}`);
@@ -118,19 +128,13 @@ export function createTransactionProgressSession(toastApi, options) {
       state.controller?.setTransactionLink(transactionLink);
     },
     finishSuccess(message) {
-      state.phase = { type: 'success', message };
-      controllerOrMount().finishSuccess(message);
-      notifyVisibility();
+      finishPhase({ type: 'success', message });
     },
     finishFailure(message) {
-      state.phase = { type: 'failure', message };
-      controllerOrMount().finishFailure(message);
-      notifyVisibility();
+      finishPhase({ type: 'failure', message });
     },
     finishCancelled(message) {
-      state.phase = { type: 'cancelled', message };
-      controllerOrMount().finishCancelled(message);
-      notifyVisibility();
+      finishPhase({ type: 'cancelled', message });
     },
     reopen() {
       controllerOrMount();
