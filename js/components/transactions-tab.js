@@ -602,7 +602,7 @@ export class TransactionsTab {
       txHash: d.txHash,
       receiptTxHash: '',
       status: 'Pending',
-      type: 1,
+      type: 0,
     };
     const next = mergeTransactions([row], this._rows, { limit: 500 });
     this._rows = next;
@@ -658,7 +658,7 @@ export class TransactionsTab {
             txHash,
             receiptTxHash: '',
             status: 'Pending',
-            type: 1,
+            type: 0,
           };
 
           const next = mergeTransactions([row], this._rows, { limit: 500 });
