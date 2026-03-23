@@ -107,6 +107,55 @@ export class ContractManager {
     return { ...this._statusSnapshot, signers: [...(this._statusSnapshot.signers || [])] };
   }
 
+  async getAccessState(address) {
+    const normalizedAddress = this._normalizeAddress(address);
+    const contract = this.getReadContract();
+
+    if (!normalizedAddress) {
+      return {
+        address: null,
+        owner: null,
+        isOwner: false,
+        isSigner: false,
+        ownerError: null,
+        signerError: null,
+        error: 'Invalid address',
+      };
+    }
+
+    if (!contract) {
+      return {
+        address: normalizedAddress,
+        owner: null,
+        isOwner: false,
+        isSigner: false,
+        ownerError: null,
+        signerError: null,
+        error: 'Contract not ready',
+      };
+    }
+
+    const [ownerResult, signerResult] = await Promise.all([
+      this._safeRead(contract, 'owner'),
+      this._safeRead(contract, 'isSigner', [normalizedAddress]),
+    ]);
+
+    const owner = this._normalizeAddress(ownerResult.value);
+    const isOwner = !!owner && owner === normalizedAddress;
+    const isSigner = !signerResult.error && !!signerResult.value;
+    const error = ownerResult.error || signerResult.error || null;
+
+    return {
+      address: normalizedAddress,
+      owner,
+      isOwner,
+      isSigner,
+      ownerError: ownerResult.error,
+      signerError: signerResult.error,
+      error,
+    };
+  }
+
   async refreshStatus({ reason = 'refresh' } = {}) {
     const snapshot = this._emptySnapshot();
     const contract = this.getReadContract();
@@ -245,6 +294,15 @@ export class ContractManager {
   _toStringOrNull(value) {
     if (value == null) return null;
     return String(value?.toString?.() ?? value);
+  }
+
+  _normalizeAddress(value) {
+    if (!value || !window.ethers?.utils?.getAddress) return null;
+    try {
+      return window.ethers.utils.getAddress(String(value));
+    } catch {
+      return null;
+    }
   }
 
   _emitUpdatedEvent({ reason = 'updated' } = {}) {
