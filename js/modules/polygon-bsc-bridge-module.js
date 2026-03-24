@@ -388,8 +388,9 @@ export class PolygonBscBridgeModule {
     }
 
     const maxWei = this._bn(maxStr);
-    await this._refreshBalance().catch(() => {});
-    const userBalWei = this._availableBalanceWei || null;
+    const lastKnownBalanceWei = this._availableBalanceWei || null;
+    const refreshedBalanceWei = await this._refreshBalance({ clearOnReadFailure: false }).catch(() => null);
+    const userBalWei = refreshedBalanceWei || this._availableBalanceWei || lastKnownBalanceWei || null;
     const setWei = userBalWei && userBalWei.lt(maxWei) ? userBalWei : maxWei;
     this._els.amount.value = this._formatEditableTokenUnits(setWei.toString());
     this._syncAmountInput();
@@ -596,17 +597,7 @@ export class PolygonBscBridgeModule {
           return;
         }
 
-        try {
-          const balanceWei = await this._refreshBalance();
-          if (balanceWei == null) {
-            throw new Error('Unable to refresh available balance. Please try again.');
-          }
-        } catch (error) {
-          const message = this._actionErrorMessage(error, 'Approval failed');
-          progressSession.updateStep(stepId.approve, { status: 'failed', detail: message });
-          progressSession.finishFailure(message);
-          return;
-        }
+        await this._refreshBalance({ clearOnReadFailure: false }).catch(() => {});
         await this.contractManager?.refreshStatus?.({ reason: 'bridgeApprovalConfirmed' }).catch(() => {});
         progressSession.updateStep(stepId.approve, { status: 'completed', detail: 'Approved' });
       }
@@ -797,7 +788,7 @@ export class PolygonBscBridgeModule {
     };
   }
 
-  async _refreshBalance() {
+  async _refreshBalance({ clearOnReadFailure = true } = {}) {
     if (!window.ethers) return null;
 
     const provider = this.contractManager?.provider || null;
@@ -809,7 +800,7 @@ export class PolygonBscBridgeModule {
 
     const { balanceWei } = await this._readSourceTokenState({ address });
     if (balanceWei == null) {
-      this._setAvailableBalance(null);
+      if (clearOnReadFailure) this._setAvailableBalance(null);
       return null;
     }
 
