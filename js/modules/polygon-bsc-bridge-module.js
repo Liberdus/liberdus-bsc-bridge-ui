@@ -378,7 +378,7 @@ export class PolygonBscBridgeModule {
     return contract;
   }
 
-  async _onSetMaxClicked() {
+  _onSetMaxClicked() {
     const snapshot = this.contractManager?.getStatusSnapshot?.() || this._lastSnapshot;
     const maxStr = snapshot?.maxBridgeOutAmount || null;
     if (!this._els.amount) return;
@@ -388,9 +388,7 @@ export class PolygonBscBridgeModule {
     }
 
     const maxWei = this._bn(maxStr);
-    const lastKnownBalanceWei = this._availableBalanceWei || null;
-    const refreshedBalanceWei = await this._refreshBalance({ clearOnReadFailure: false }).catch(() => null);
-    const userBalWei = refreshedBalanceWei || this._availableBalanceWei || lastKnownBalanceWei || null;
+    const userBalWei = this._availableBalanceWei || null;
     const setWei = userBalWei && userBalWei.lt(maxWei) ? userBalWei : maxWei;
     this._els.amount.value = this._formatEditableTokenUnits(setWei.toString());
     this._syncAmountInput();
