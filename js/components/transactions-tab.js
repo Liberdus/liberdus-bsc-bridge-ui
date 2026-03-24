@@ -789,7 +789,7 @@ export class TransactionsTab {
 
   _startPendingPoller() {
     if (this._pendingPollerTimer) return;
-    this._pendingPollerTimer = setInterval(() => this._checkPendingStatuses(), 30000);
+    this._pendingPollerTimer = setInterval(() => this._checkPendingStatuses(), 10000);
   }
 
   _stopPendingPoller() {
