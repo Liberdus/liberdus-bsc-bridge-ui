@@ -499,7 +499,13 @@ export class PolygonBscBridgeModule {
         vaultAddr: vault,
         address: bridgeRequest.address,
       });
+      if (balanceWei == null) {
+        throw new Error('Unable to refresh available balance. Please try again.');
+      }
       this._setAvailableBalance(balanceWei);
+      if (allowanceWei == null) {
+        throw new Error('Unable to refresh token allowance. Please try again.');
+      }
       this._assertActionRequestContext(bridgeRequest);
       this._assertBridgeSubmitStillAllowed(amountWei);
 
@@ -592,7 +598,17 @@ export class PolygonBscBridgeModule {
           return;
         }
 
-        await this._refreshBalance().catch(() => {});
+        try {
+          const balanceWei = await this._refreshBalance();
+          if (balanceWei == null) {
+            throw new Error('Unable to refresh available balance. Please try again.');
+          }
+        } catch (error) {
+          const message = this._actionErrorMessage(error, 'Approval failed');
+          progressSession.updateStep(stepId.approve, { status: 'failed', detail: message });
+          progressSession.finishFailure(message);
+          return;
+        }
         await this.contractManager?.refreshStatus?.({ reason: 'bridgeApprovalConfirmed' }).catch(() => {});
         progressSession.updateStep(stepId.approve, { status: 'completed', detail: 'Approved' });
       }
@@ -784,8 +800,22 @@ export class PolygonBscBridgeModule {
   }
 
   async _refreshBalance() {
-    const { balanceWei } = await this._readSourceTokenState();
+    if (!window.ethers) return null;
+
+    const provider = this.contractManager?.provider || null;
+    const address = this.walletManager?.getAddress?.() || null;
+    if (!provider || !address) {
+      this._setAvailableBalance(null);
+      return null;
+    }
+
+    const { balanceWei } = await this._readSourceTokenState({ address });
+    if (balanceWei == null) {
+      return null;
+    }
+
     this._setAvailableBalance(balanceWei);
+    return balanceWei;
   }
 
   async _getTokenAddress() {
