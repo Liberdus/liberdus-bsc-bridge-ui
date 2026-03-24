@@ -1,44 +1,66 @@
 .bridge-module {
+  --bridge-route-gap: 10px;
+  --bridge-shell-max-width: 550px;
+  --bridge-route-card-gap: 14px;
+  --bridge-route-card-padding: 12px 14px;
+  --bridge-route-card-radius: 18px;
+  --bridge-route-card-min-height: 122px;
+  --bridge-route-title-gap: 8px;
+  --bridge-route-icon-size: 56px;
+  --bridge-route-icon-radius: 18px;
+  --bridge-route-icon-image-size: 40px;
+  --bridge-route-arrow-size: 36px;
   display: grid;
   gap: 18px;
   background: var(--background-color);
+  width: min(100%, 580px);
+  margin-inline: auto;
 }
 
 .bridge-module > * {
   min-width: 0;
 }
 
+.bridge-route-shell,
+.bridge-amount-field,
+.bridge-actions {
+  width: min(100%, var(--bridge-shell-max-width));
+  margin-inline: auto;
+}
+
 .bridge-route-shell {
-  display: grid;
-  gap: 10px;
+  display: block;
   min-width: 0;
 }
 
 .bridge-route-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--bridge-route-gap);
   align-items: center;
   min-width: 0;
+  position: relative;
+  width: 100%;
 }
 
 .bridge-route-card {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 14px;
-  padding: 16px 18px;
+  gap: var(--bridge-route-card-gap);
+  padding: var(--bridge-route-card-padding);
   border: 1px solid rgba(61, 61, 206, 0.12);
-  border-radius: 18px;
+  border-radius: var(--bridge-route-card-radius);
   background: rgba(255, 255, 255, 0.92);
   min-width: 0;
+  min-height: var(--bridge-route-card-min-height);
 }
 
 .bridge-route-icon {
   flex: 0 0 auto;
-  width: 56px;
-  height: 56px;
-  border-radius: 18px;
+  width: var(--bridge-route-icon-size);
+  height: var(--bridge-route-icon-size);
+  border-radius: var(--bridge-route-icon-radius);
   display: grid;
   place-items: center;
   background: var(--hover-background);
@@ -46,8 +68,8 @@
 }
 
 .bridge-route-icon img {
-  width: 40px;
-  height: 40px;
+  width: var(--bridge-route-icon-image-size);
+  height: var(--bridge-route-icon-image-size);
   display: block;
 }
 
@@ -60,28 +82,38 @@
   text-align: left;
 }
 
-.bridge-route-label {
+.bridge-route-title-row {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--bridge-route-title-gap);
+}
+
+.bridge-route-label,
+.bridge-route-wallet-label {
   color: var(--secondary-text-color);
-  font-size: 12px;
   font-weight: var(--font-weight-semibold);
   letter-spacing: 0.03em;
   text-transform: uppercase;
+}
+
+.bridge-route-label {
+  font-size: 12px;
 }
 
 .bridge-route-name {
   margin-top: 2px;
-  font-size: clamp(1.5rem, 2vw + 0.75rem, 1.75rem);
+  font-size: clamp(1.35rem, 1.4vw + 0.85rem, 1.6rem);
   line-height: 1.1;
   font-weight: var(--font-weight-bold);
+  min-width: 0;
 }
 
 .bridge-route-wallet-label {
   margin-top: 10px;
-  color: var(--secondary-text-color);
   font-size: 11px;
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
 }
 
 .bridge-route-wallet-row {
@@ -89,21 +121,29 @@
 }
 
 .bridge-route-arrow {
-  width: 44px;
-  height: 44px;
+  width: var(--bridge-route-arrow-size);
+  height: var(--bridge-route-arrow-size);
   border-radius: 999px;
   display: grid;
   place-items: center;
+  opacity: 0.88;
   color: var(--primary-color);
   background: var(--background-color);
   border: 1px solid rgba(61, 61, 206, 0.16);
   box-shadow: 0 8px 18px rgba(61, 61, 206, 0.12);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 2;
+  line-height: 0;
+  transform: translate(-50%, -50%);
 }
 
 .bridge-route-arrow-icon {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   display: block;
+  transform: translateY(0.5px);
 }
 
 .bridge-route-address {
@@ -125,12 +165,11 @@
   cursor: pointer;
 }
 
-.bridge-route-address-full,
 .bridge-route-address-short {
   display: inline;
 }
 
-.bridge-route-address-short {
+.bridge-route-address-full {
   display: none;
 }
 
@@ -186,6 +225,7 @@
   font-weight: var(--font-weight-bold);
   line-height: 1;
   color: var(--text-color);
+  text-align: right;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -286,42 +326,27 @@
 
 @media (max-width: 720px) {
   .bridge-module {
+    --bridge-route-gap: 8px;
+    --bridge-route-card-gap: 10px;
+    --bridge-route-card-padding: 10px;
+    --bridge-route-card-radius: 16px;
+    --bridge-route-card-min-height: 108px;
+    --bridge-route-title-gap: 6px;
+    --bridge-route-icon-size: 36px;
+    --bridge-route-icon-radius: 12px;
+    --bridge-route-icon-image-size: 22px;
+    --bridge-route-arrow-size: 28px;
     gap: 14px;
   }
 
-  .bridge-route-grid {
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-
-  .bridge-route-arrow {
-    display: none;
-  }
-
-  .bridge-route-card {
-    gap: 12px;
-    padding: 12px;
-    border-radius: 16px;
-  }
-
-  .bridge-route-icon {
-    width: 42px;
-    height: 42px;
-    border-radius: 12px;
-  }
-
-  .bridge-route-icon img {
-    width: 28px;
-    height: 28px;
-  }
-
   .bridge-route-name {
-    font-size: 20px;
+    font-size: 18px;
   }
 
   .bridge-route-wallet-label {
-    margin-top: 10px;
+    margin-top: 0;
     font-size: 10px;
+    flex: 0 0 auto;
   }
 
   .bridge-route-wallet-row {
@@ -331,24 +356,11 @@
     flex-wrap: wrap;
   }
 
-  .bridge-route-wallet-label {
-    margin-top: 0;
-    flex: 0 0 auto;
-  }
-
   .bridge-route-address {
     width: auto;
     margin-top: 0;
     flex: 1 1 auto;
     font-size: clamp(11px, 3vw, 12px);
-  }
-
-  .bridge-route-address-full {
-    display: none;
-  }
-
-  .bridge-route-address-short {
-    display: inline;
   }
 
   .bridge-amount-field {
