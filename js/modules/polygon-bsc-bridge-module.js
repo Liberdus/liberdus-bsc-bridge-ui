@@ -333,6 +333,10 @@ export class PolygonBscBridgeModule {
     }
   }
 
+  _isCurrentAccount(address) {
+    return this._comparableAddress(this.walletManager?.getAddress?.()) === this._comparableAddress(address);
+  }
+
   _assertBridgeSubmitStillAllowed(amountWei) {
     if (!amountWei || typeof amountWei.gt !== 'function') {
       throw new Error('Bridge amount is required');
@@ -498,12 +502,12 @@ export class PolygonBscBridgeModule {
         vaultAddr: vault,
         address: bridgeRequest.address,
       });
+      this._assertActionRequestContext(bridgeRequest);
       if (balanceWei == null) {
         this._setAvailableBalance(null);
         throw new Error('Unable to refresh available balance. Please try again.');
       }
       this._setAvailableBalance(balanceWei);
-      this._assertActionRequestContext(bridgeRequest);
       this._assertBridgeSubmitStillAllowed(amountWei);
 
       const needsApproval = this._needsApproval(amountWei, allowanceWei);
@@ -797,6 +801,9 @@ export class PolygonBscBridgeModule {
     }
 
     const { balanceWei } = await this._readSourceTokenState({ address });
+    if (!this._isCurrentAccount(address)) {
+      return null;
+    }
     if (balanceWei == null) {
       if (clearOnReadFailure) this._setAvailableBalance(null);
       return null;
