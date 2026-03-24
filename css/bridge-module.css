@@ -1,19 +1,13 @@
 .bridge-module {
   --bridge-route-gap: 10px;
-  --bridge-shell-max-width: 470px;
   --bridge-route-card-gap: 14px;
   --bridge-route-card-padding: 12px 14px;
   --bridge-route-card-radius: 18px;
   --bridge-route-card-min-height: 122px;
   --bridge-route-title-gap: 8px;
   --bridge-route-icon-size: 56px;
-  --bridge-route-icon-radius: 18px;
   --bridge-route-icon-image-size: 40px;
   --bridge-route-arrow-size: 36px;
-  --bridge-route-name-size: 1.6rem;
-  --bridge-route-wallet-label-size: 11px;
-  --bridge-route-address-size: 13px;
-  --bridge-amount-input-size: 3rem;
   display: grid;
   gap: 18px;
   background: var(--background-color);
@@ -28,7 +22,7 @@
 .bridge-route-shell,
 .bridge-amount-field,
 .bridge-actions {
-  width: min(100%, var(--bridge-shell-max-width));
+  width: min(100%, 470px);
   margin-inline: auto;
 }
 
@@ -109,7 +103,7 @@
 
 .bridge-route-name {
   margin-top: 2px;
-  font-size: var(--bridge-route-name-size);
+  font-size: 1.6rem;
   line-height: 1.1;
   font-weight: var(--font-weight-bold);
   min-width: 0;
@@ -117,7 +111,7 @@
 
 .bridge-route-wallet-label {
   margin-top: 10px;
-  font-size: var(--bridge-route-wallet-label-size);
+  font-size: 11px;
 }
 
 .bridge-route-wallet-row {
@@ -158,7 +152,7 @@
   border: 0;
   background: transparent;
   font-family: var(--font-monospace);
-  font-size: var(--bridge-route-address-size);
+  font-size: 13px;
   line-height: 1.45;
   text-align: left;
   color: var(--text-color);
@@ -225,7 +219,7 @@
   box-shadow: none;
   resize: none;
   overflow: hidden;
-  font-size: var(--bridge-amount-input-size);
+  font-size: 3rem;
   font-weight: var(--font-weight-bold);
   line-height: 1;
   color: var(--text-color);
@@ -337,7 +331,6 @@
     --bridge-route-card-min-height: 108px;
     --bridge-route-title-gap: 6px;
     --bridge-route-icon-size: 36px;
-    --bridge-route-icon-radius: 12px;
     --bridge-route-icon-image-size: 22px;
     --bridge-route-arrow-size: 28px;
     gap: 14px;
