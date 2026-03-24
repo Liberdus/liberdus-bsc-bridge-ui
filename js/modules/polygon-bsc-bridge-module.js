@@ -500,12 +500,10 @@ export class PolygonBscBridgeModule {
         address: bridgeRequest.address,
       });
       if (balanceWei == null) {
+        this._setAvailableBalance(null);
         throw new Error('Unable to refresh available balance. Please try again.');
       }
       this._setAvailableBalance(balanceWei);
-      if (allowanceWei == null) {
-        throw new Error('Unable to refresh token allowance. Please try again.');
-      }
       this._assertActionRequestContext(bridgeRequest);
       this._assertBridgeSubmitStillAllowed(amountWei);
 
@@ -811,6 +809,7 @@ export class PolygonBscBridgeModule {
 
     const { balanceWei } = await this._readSourceTokenState({ address });
     if (balanceWei == null) {
+      this._setAvailableBalance(null);
       return null;
     }
 
