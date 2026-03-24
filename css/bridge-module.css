@@ -1,13 +1,4 @@
 .bridge-module {
-  --bridge-route-gap: 10px;
-  --bridge-route-card-gap: 14px;
-  --bridge-route-card-padding: 12px 14px;
-  --bridge-route-card-radius: 18px;
-  --bridge-route-card-min-height: 122px;
-  --bridge-route-title-gap: 8px;
-  --bridge-route-icon-size: 56px;
-  --bridge-route-icon-image-size: 40px;
-  --bridge-route-arrow-size: 36px;
   display: grid;
   gap: 18px;
   background: var(--background-color);
@@ -34,7 +25,7 @@
 .bridge-route-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--bridge-route-gap);
+  gap: 10px;
   align-items: stretch;
   min-width: 0;
   position: relative;
@@ -45,29 +36,29 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--bridge-route-card-gap);
-  padding: var(--bridge-route-card-padding);
+  gap: 14px;
+  padding: 12px 14px;
   border: 1px solid rgba(61, 61, 206, 0.12);
-  border-radius: var(--bridge-route-card-radius);
+  border-radius: 18px;
   background: rgba(255, 255, 255, 0.92);
   min-width: 0;
   height: 100%;
-  min-height: var(--bridge-route-card-min-height);
+  min-height: 122px;
   position: relative;
 }
 
 .bridge-route-icon {
   flex: 0 0 auto;
-  width: var(--bridge-route-icon-size);
-  height: var(--bridge-route-icon-size);
+  width: 56px;
+  height: 56px;
   display: grid;
   place-items: center;
   padding-bottom: 5px;
 }
 
 .bridge-route-icon img {
-  width: var(--bridge-route-icon-image-size);
-  height: var(--bridge-route-icon-image-size);
+  width: 40px;
+  height: 40px;
   display: block;
 }
 
@@ -86,7 +77,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
-  gap: var(--bridge-route-title-gap);
+  gap: 8px;
 }
 
 .bridge-route-label,
@@ -119,8 +110,8 @@
 }
 
 .bridge-route-arrow {
-  width: var(--bridge-route-arrow-size);
-  height: var(--bridge-route-arrow-size);
+  width: 36px;
+  height: 36px;
   border-radius: 999px;
   display: grid;
   place-items: center;
@@ -324,16 +315,18 @@
 
 @media (max-width: 720px) {
   .bridge-module {
-    --bridge-route-gap: 8px;
-    --bridge-route-card-gap: 10px;
-    --bridge-route-card-padding: 10px;
-    --bridge-route-card-radius: 16px;
-    --bridge-route-card-min-height: 108px;
-    --bridge-route-title-gap: 6px;
-    --bridge-route-icon-size: 36px;
-    --bridge-route-icon-image-size: 22px;
-    --bridge-route-arrow-size: 28px;
     gap: 14px;
+  }
+
+  .bridge-route-grid {
+    gap: 8px;
+  }
+
+  .bridge-route-card {
+    gap: 10px;
+    padding: 10px;
+    border-radius: 16px;
+    min-height: 108px;
   }
 
   .bridge-route-wallet-label {
@@ -342,8 +335,9 @@
 
   .bridge-route-title-row {
     grid-template-columns: minmax(0, 1fr);
-    min-height: var(--bridge-route-icon-size);
-    padding-right: calc(var(--bridge-route-icon-size) + 8px);
+    min-height: 36px;
+    gap: 6px;
+    padding-right: 44px;
   }
 
   .bridge-route-copy {
@@ -351,9 +345,21 @@
   }
 
   .bridge-route-icon {
+    width: 36px;
+    height: 36px;
     position: absolute;
-    top: var(--bridge-route-card-padding);
-    right: var(--bridge-route-card-padding);
+    top: 10px;
+    right: 10px;
+  }
+
+  .bridge-route-icon img {
+    width: 22px;
+    height: 22px;
+  }
+
+  .bridge-route-arrow {
+    width: 28px;
+    height: 28px;
   }
 
   .bridge-route-wallet-row {
