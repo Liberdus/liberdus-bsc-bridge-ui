@@ -98,15 +98,8 @@ export class PolygonBscBridgeModule {
 
   _render() {
     if (!this.container) return;
-    const sourceName = this.config.BRIDGE.CHAINS.SOURCE.NAME;
-    const destName = this.config.BRIDGE.CHAINS.DESTINATION.NAME;
 
     this.container.innerHTML = `
-      <div class="panel-header">
-        <h2>Bridge</h2>
-        <p class="muted">Bridge ${this._tokenSymbol()} from ${sourceName} to ${destName}.</p>
-      </div>
-
       <div class="card bridge-module" data-bridge-module>
         <div class="bridge-route-shell">
           <div class="bridge-route-grid">

@@ -10,6 +10,10 @@
   --bridge-route-icon-radius: 18px;
   --bridge-route-icon-image-size: 40px;
   --bridge-route-arrow-size: 36px;
+  --bridge-route-name-size: 1.6rem;
+  --bridge-route-wallet-label-size: 11px;
+  --bridge-route-address-size: 13px;
+  --bridge-amount-input-size: 3rem;
   display: grid;
   gap: 18px;
   background: var(--background-color);
@@ -55,17 +59,15 @@
   min-width: 0;
   height: 100%;
   min-height: var(--bridge-route-card-min-height);
+  position: relative;
 }
 
 .bridge-route-icon {
   flex: 0 0 auto;
   width: var(--bridge-route-icon-size);
   height: var(--bridge-route-icon-size);
-  border-radius: var(--bridge-route-icon-radius);
   display: grid;
   place-items: center;
-  background: var(--hover-background);
-  border: 1px solid rgba(61, 61, 206, 0.1);
 }
 
 .bridge-route-icon img {
@@ -106,7 +108,7 @@
 
 .bridge-route-name {
   margin-top: 2px;
-  font-size: clamp(1.35rem, 1.4vw + 0.85rem, 1.6rem);
+  font-size: var(--bridge-route-name-size);
   line-height: 1.1;
   font-weight: var(--font-weight-bold);
   min-width: 0;
@@ -114,7 +116,7 @@
 
 .bridge-route-wallet-label {
   margin-top: 10px;
-  font-size: 11px;
+  font-size: var(--bridge-route-wallet-label-size);
 }
 
 .bridge-route-wallet-row {
@@ -155,7 +157,7 @@
   border: 0;
   background: transparent;
   font-family: var(--font-monospace);
-  font-size: clamp(12px, 1.1vw, 13px);
+  font-size: var(--bridge-route-address-size);
   line-height: 1.45;
   text-align: left;
   color: var(--text-color);
@@ -222,7 +224,7 @@
   box-shadow: none;
   resize: none;
   overflow: hidden;
-  font-size: clamp(2.25rem, 3vw + 1rem, 3rem);
+  font-size: var(--bridge-amount-input-size);
   font-weight: var(--font-weight-bold);
   line-height: 1;
   color: var(--text-color);
@@ -340,13 +342,22 @@
     gap: 14px;
   }
 
-  .bridge-route-name {
-    font-size: 18px;
-  }
-
   .bridge-route-wallet-label {
     margin-top: 0;
-    font-size: 10px;
+  }
+
+  .bridge-route-title-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bridge-route-copy {
+    padding-right: calc(var(--bridge-route-icon-size) + 8px);
+  }
+
+  .bridge-route-icon {
+    position: absolute;
+    top: var(--bridge-route-card-padding);
+    right: var(--bridge-route-card-padding);
   }
 
   .bridge-route-wallet-row {
@@ -357,7 +368,6 @@
   .bridge-route-address {
     width: 100%;
     margin-top: 0;
-    font-size: clamp(11px, 3vw, 12px);
   }
 
   .bridge-amount-field {
@@ -372,7 +382,6 @@
 
   .bridge-amount-input {
     min-height: 44px;
-    font-size: 28px;
   }
 
   .bridge-token-chip {
