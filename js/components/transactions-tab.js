@@ -63,8 +63,9 @@ function getExplorer(chainKey) {
 function linkTx(chainKey, txHash) {
   if (!chainKey) return '';
   const explorer = getExplorer(chainKey);
-  if (!explorer || !txHash) return '';
-  return `${explorer}/tx/${txHash}`;
+  const canonical = canonicalizeTxHash(txHash);
+  if (!explorer || !canonical) return '';
+  return `${explorer}/tx/${canonical}`;
 }
 
 async function fetchAbi() {
@@ -93,9 +94,30 @@ function sortByTimestampDesc(a, b) {
   return String(b?.txHash || '').localeCompare(String(a?.txHash || ''));
 }
 
-function normalizeTxHash(value) {
-  const v = String(value || '');
-  return v ? v.toLowerCase() : '';
+export function normalizeTxHash(value) {
+  const v = String(value || '').trim().toLowerCase();
+  if (!v) return '';
+  return v.startsWith('0x') ? v.slice(2) : v;
+}
+
+export const TRANSACTION_STATUS = Object.freeze({
+  PENDING: 0,
+  PROCESSING: 1,
+  COMPLETED: 2,
+  FAILED: 3,
+  REVERTED: 4,
+});
+
+function canonicalizeTxHash(value) {
+  const normalized = normalizeTxHash(value);
+  return normalized ? `0x${normalized}` : '';
+}
+
+export function isPendingStatus(status) {
+  const num = Number(status);
+  if (num === TRANSACTION_STATUS.PENDING || num === TRANSACTION_STATUS.PROCESSING) return true;
+  const s = String(status || '').toLowerCase();
+  return s === 'pending' || s === 'processing';
 }
 
 function mergeTransactionRow(base, incoming) {
@@ -105,11 +127,11 @@ function mergeTransactionRow(base, incoming) {
   const merged = { ...base };
   const baseStatus = String(base.status || '');
   const incomingStatus = String(incoming.status || '');
-  const baseIsPending = baseStatus.toLowerCase() === 'pending';
-  const incomingIsPending = incomingStatus.toLowerCase() === 'pending';
+  const baseIsPending = isPendingStatus(base.status);
+  const incomingIsPending = isPendingStatus(incoming.status);
 
   if (!merged.receiptTxHash && incoming.receiptTxHash) merged.receiptTxHash = incoming.receiptTxHash;
-  if (baseIsPending && !incomingIsPending && incomingStatus) merged.status = incomingStatus;
+  if (baseIsPending && !incomingIsPending && incomingStatus) merged.status = incoming.status;
   if (!merged.dstChainKey && incoming.dstChainKey) merged.dstChainKey = incoming.dstChainKey;
   if (!merged.dstName && incoming.dstName) merged.dstName = incoming.dstName;
   if (!merged.from && incoming.from) merged.from = incoming.from;
@@ -119,7 +141,7 @@ function mergeTransactionRow(base, incoming) {
   return merged;
 }
 
-function mergeTransactions(primary, secondary, { limit = 500 } = {}) {
+export function mergeTransactions(primary, secondary, { limit = 500 } = {}) {
   const map = new Map();
   for (const row of [...(primary || []), ...(secondary || [])]) {
     const key = normalizeTxHash(row?.txHash);
@@ -141,11 +163,9 @@ function normalizeCoordinatorUrl(url) {
 
 function renderTxLink(chainKey, txHash) {
   if (!txHash) return '<span class="tx-muted">--</span>';
-  const raw = String(txHash || '');
+  const raw = normalizeTxHash(txHash) || String(txHash || '');
   const url = linkTx(chainKey, raw);
-  const label = raw.startsWith('0x')
-    ? shortenHex(raw, { head: 4, tail: 4 })
-    : shortenAny(raw, { head: 4, tail: 4 });
+  const label = shortenAny(raw, { head: 4, tail: 4 });
   if (!url) return `<code class="tx-code">${label}</code>`;
   return `<a class="tx-link" href="${url}" target="_blank" rel="noopener"><code class="tx-code">${label}</code><span class="tx-ext">↗</span></a>`;
 }
@@ -182,10 +202,10 @@ function renderChainRoute(src, dst, srcName, dstName) {
 
 function renderStatus(status) {
   const num = Number(status);
-  if (num === 2) return `<span class="tx-status tx-status--ok">Completed</span>`;
-  if (num === 1) return `<span class="tx-status tx-status--pending">Processing</span>`;
-  if (num === 0) return `<span class="tx-status tx-status--pending">Pending</span>`;
-  if (num === 3 || num === 4) return `<span class="tx-status tx-status--error">error</span>`;
+  if (num === TRANSACTION_STATUS.COMPLETED) return `<span class="tx-status tx-status--ok">Completed</span>`;
+  if (num === TRANSACTION_STATUS.PROCESSING) return `<span class="tx-status tx-status--pending">Processing</span>`;
+  if (num === TRANSACTION_STATUS.PENDING) return `<span class="tx-status tx-status--pending">Pending</span>`;
+  if (num === TRANSACTION_STATUS.FAILED || num === TRANSACTION_STATUS.REVERTED) return `<span class="tx-status tx-status--error">error</span>`;
   const s = String(status || '').toLowerCase();
   if (s === 'completed') return `<span class="tx-status tx-status--ok">Completed</span>`;
   if (s === 'pending') return `<span class="tx-status tx-status--pending">Pending</span>`;
@@ -226,7 +246,7 @@ function mapCoordinatorTransaction(tx, chains, chainIdIndex) {
   const timestamp = rawTimestamp > 1e12 ? Math.floor(rawTimestamp / 1000) : rawTimestamp;
 
   return {
-    id: tx?.txId,
+    id: normalizeTxHash(tx?.txId),
     srcChainKey,
     dstChainKey,
     srcName: srcChainId === 0 ? 'Liberdus Network' : chains[srcChainKey]?.NAME || `Chain ${srcChainId}`,
@@ -234,8 +254,8 @@ function mapCoordinatorTransaction(tx, chains, chainIdIndex) {
     from: tx?.sender,
     amount: tx?.value,
     timestamp,
-    txHash: tx?.txId,
-    receiptTxHash: tx?.receiptId || '',
+    txHash: normalizeTxHash(tx?.txId),
+    receiptTxHash: normalizeTxHash(tx?.receiptId),
     status: tx?.status,
     type,
   };
@@ -494,7 +514,7 @@ export class TransactionsTab {
 
   render() {
     if (!this.panel || !this.tableBody) return;
-    const q = String(this.searchInput?.value || '').trim().toLowerCase();
+    const q = normalizeTxHash(this.searchInput?.value);
 
     const connected = !!window.walletManager?.isConnected?.();
     const addr = connected ? String(window.walletManager?.getAddress?.() || '').toLowerCase() : '';
@@ -509,8 +529,8 @@ export class TransactionsTab {
     }
     if (q) {
       filtered = filtered.filter((r) => {
-        const a = String(r.txHash || '').toLowerCase();
-        const b = String(r.receiptTxHash || '').toLowerCase();
+        const a = normalizeTxHash(r.txHash);
+        const b = normalizeTxHash(r.receiptTxHash);
         return a.includes(q) || b.includes(q);
       });
     }
@@ -584,6 +604,8 @@ export class TransactionsTab {
   _onBridgeOutEvent(e) {
     const d = e?.detail || null;
     if (!d) return;
+    const txHash = normalizeTxHash(d.txHash);
+    if (!txHash) return;
     const chains = CONFIG.BRIDGE.CHAINS;
     const chainIdIndex = buildChainIdIndex(chains);
     const srcChainKey = chainIdIndex.get(Number(d.sourceChainId)) || 'SOURCE';
@@ -591,7 +613,7 @@ export class TransactionsTab {
     const srcName = chains[srcChainKey].NAME;
     const dstName = dstChainKey ? chains[dstChainKey]?.NAME || `Chain ${d.targetChainId}` : `Chain ${d.targetChainId}`;
     const row = {
-      id: d.txHash,
+      id: txHash,
       srcChainKey,
       dstChainKey,
       srcName,
@@ -599,9 +621,9 @@ export class TransactionsTab {
       from: d.from,
       amount: d.amount,
       timestamp: Number(d.timestamp || Math.floor(Date.now() / 1000)),
-      txHash: d.txHash,
+      txHash,
       receiptTxHash: '',
-      status: 'Pending',
+      status: TRANSACTION_STATUS.PENDING,
       type: 1,
     };
     const next = mergeTransactions([row], this._rows, { limit: 500 });
@@ -631,9 +653,9 @@ export class TransactionsTab {
       const handler = (log) => {
         try {
           const parsed = iface.parseLog(log);
-          const txHash = log?.transactionHash;
+          const txHash = normalizeTxHash(log?.transactionHash);
           if (!txHash) return;
-          const key = normalizeTxHash(txHash);
+          const key = txHash;
           if (this._seenBridgeOutTx.has(key)) return;
           this._seenBridgeOutTx.add(key);
           if (this._seenBridgeOutTx.size > 2000) this._seenBridgeOutTx.clear();
@@ -657,7 +679,7 @@ export class TransactionsTab {
             timestamp: Number(parsed.args?.timestamp || Math.floor(Date.now() / 1000)),
             txHash,
             receiptTxHash: '',
-            status: 'Pending',
+            status: TRANSACTION_STATUS.PENDING,
             type: 1,
           };
 
@@ -800,10 +822,7 @@ export class TransactionsTab {
   }
 
   async _checkPendingStatuses() {
-    const hasPending = this._rows.some(r => {
-      const s = String(r.status || '').toLowerCase();
-      return s === 'pending' || s === 'processing';
-    });
+    const hasPending = this._rows.some((r) => isPendingStatus(r.status));
     if (!hasPending) return;
 
     try {
