@@ -347,20 +347,16 @@
   .bridge-route-wallet-label {
     margin-top: 0;
     font-size: 10px;
-    flex: 0 0 auto;
   }
 
   .bridge-route-wallet-row {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    flex-wrap: wrap;
+    display: grid;
+    gap: 2px;
   }
 
   .bridge-route-address {
-    width: auto;
+    width: 100%;
     margin-top: 0;
-    flex: 1 1 auto;
     font-size: clamp(11px, 3vw, 12px);
   }
 
