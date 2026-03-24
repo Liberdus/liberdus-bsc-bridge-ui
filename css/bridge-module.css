@@ -1,6 +1,6 @@
 .bridge-module {
   --bridge-route-gap: 10px;
-  --bridge-shell-max-width: 550px;
+  --bridge-shell-max-width: 470px;
   --bridge-route-card-gap: 14px;
   --bridge-route-card-padding: 12px 14px;
   --bridge-route-card-radius: 18px;
@@ -17,7 +17,7 @@
   display: grid;
   gap: 18px;
   background: var(--background-color);
-  width: min(100%, 580px);
+  width: min(100%, 470px);
   margin-inline: auto;
 }
 
@@ -68,6 +68,7 @@
   height: var(--bridge-route-icon-size);
   display: grid;
   place-items: center;
+  padding-bottom: 5px;
 }
 
 .bridge-route-icon img {
@@ -348,10 +349,12 @@
 
   .bridge-route-title-row {
     grid-template-columns: minmax(0, 1fr);
+    min-height: var(--bridge-route-icon-size);
+    padding-right: calc(var(--bridge-route-icon-size) + 8px);
   }
 
   .bridge-route-copy {
-    padding-right: calc(var(--bridge-route-icon-size) + 8px);
+    padding-right: 0;
   }
 
   .bridge-route-icon {
