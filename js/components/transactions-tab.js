@@ -316,7 +316,6 @@ export class TransactionsTab {
     this._bridgeOutWatchRetryTimer = null;
     this.onlyMine = false;
     this.onlyMineCheckbox = null;
-    this.onlyMineHintEl = null;
     this._pendingPollerTimer = null;
     this._pendingOnlyMineDefault = false;
   }
@@ -347,7 +346,6 @@ export class TransactionsTab {
         </div>
 
         <div class="tx-search">
-          <div class="tx-search-prefix">Transaction ID</div>
           <input class="field-input tx-search-input" type="text" placeholder="Enter transaction ID..." data-tx-search />
         </div>
         <div class="tx-filters">
@@ -355,7 +353,6 @@ export class TransactionsTab {
             <input type="checkbox" data-tx-onlymine />
             <span>Only my transactions</span>
           </label>
-          <span class="tx-muted" data-tx-onlymine-hint></span>
         </div>
       </div>
 
@@ -407,7 +404,6 @@ export class TransactionsTab {
     this.pageInfoEl = this.panel.querySelector('[data-tx-page-info]');
     this.pageSizeEl = this.panel.querySelector('[data-tx-page-size]');
     this.onlyMineCheckbox = this.panel.querySelector('[data-tx-onlymine]');
-    this.onlyMineHintEl = this.panel.querySelector('[data-tx-onlymine-hint]');
     this._pendingOnlyMineDefault = !!window.walletManager?.isConnected?.();
 
     this.refreshBtn?.addEventListener('click', () => this.refresh());
@@ -435,6 +431,13 @@ export class TransactionsTab {
       this.page = 1;
       this._updateOnlyMineUI();
       this.render();
+    });
+    this.onlyMineCheckbox?.addEventListener('pointerdown', (event) => {
+      if (!this.onlyMineCheckbox?.disabled) return;
+      if (typeof event.button === 'number' && event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      window.toastManager?.warning?.('Connect wallet to use this filter', { timeoutMs: 2500 });
     });
     if (!this._bridgeListenerBound) {
       document.addEventListener('bridgeOutEvent', (e) => this._onBridgeOutEvent(e));
@@ -748,19 +751,9 @@ export class TransactionsTab {
 
   _updateOnlyMineUI() {
     const connected = !!window.walletManager?.isConnected?.();
-    const addr = connected ? String(window.walletManager?.getAddress?.() || '') : '';
-    const short =
-      addr && addr.startsWith('0x') && addr.length > 10 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr || '';
     if (this.onlyMineCheckbox) {
       this.onlyMineCheckbox.checked = !!this.onlyMine;
       this.onlyMineCheckbox.disabled = !connected;
-    }
-    if (this.onlyMineHintEl) {
-      if (connected && addr) {
-        this.onlyMineHintEl.textContent = this.onlyMine ? `Filtering for ${short}` : short;
-      } else {
-        this.onlyMineHintEl.textContent = 'Connect wallet to enable';
-      }
     }
   }
 

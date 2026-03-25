@@ -86,7 +86,6 @@ describe('TransactionsTab only-my-transactions defaulting', () => {
     expect(tab.onlyMineCheckbox.checked).toBe(true);
     expect(tab.page).toBe(1);
     expect(tab.totalEl.textContent).toBe('1');
-    expect(tab.onlyMineHintEl.textContent).toContain('Filtering for');
   });
 
   it('preserves a manual uncheck across later transactions activations in the same wallet context', () => {
@@ -105,7 +104,6 @@ describe('TransactionsTab only-my-transactions defaulting', () => {
 
     expect(tab.onlyMine).toBe(false);
     expect(tab.totalEl.textContent).toBe('2');
-    expect(tab.onlyMineHintEl.textContent).toBe('0x1111…1111');
 
     dispatchTransactionsActivated();
 
@@ -161,6 +159,25 @@ describe('TransactionsTab only-my-transactions defaulting', () => {
     expect(tab.totalEl.textContent).toBe('1');
   });
 
+  it('shows a warning when the disabled only mine filter is clicked', () => {
+    const tab = createTab({
+      connected: false,
+      address: null,
+      rows: [
+        makeRow({ txHash: '0xaaa1', from: ADDRESS_ONE }),
+        makeRow({ txHash: '0xbbb2', from: ADDRESS_TWO }),
+      ],
+    });
+
+    tab.onlyMineCheckbox.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true }));
+
+    expect(window.toastManager.warning).toHaveBeenCalledWith('Connect wallet to use this filter', {
+      timeoutMs: 2500,
+    });
+    expect(tab.onlyMine).toBe(false);
+    expect(tab.onlyMineCheckbox.checked).toBe(false);
+  });
+
   it('unchecks only mine and clears the pending default on disconnect', () => {
     const tab = createTab({
       connected: true,
@@ -184,7 +201,6 @@ describe('TransactionsTab only-my-transactions defaulting', () => {
     expect(tab.onlyMineCheckbox.disabled).toBe(true);
     expect(tab.page).toBe(1);
     expect(tab.totalEl.textContent).toBe('2');
-    expect(tab.onlyMineHintEl.textContent).toBe('Connect wallet to enable');
 
     dispatchTransactionsActivated({ isFirstActivation: true });
 
