@@ -6,7 +6,6 @@ import { flushPromises, installCommonWindowStubs, normalizeAddress, setupOperati
 const OWNER = '0x1111111111111111111111111111111111111111';
 const SIGNER = '0x2222222222222222222222222222222222222222';
 const OTHER_SIGNER = '0x4444444444444444444444444444444444444444';
-
 describe('OperationsTab access behavior', () => {
   beforeEach(() => {
     setupOperationsTabDom();
@@ -234,5 +233,63 @@ describe('OperationsTab access behavior', () => {
     expect(tab._access.isMultisig).toBe(true);
     expect(document.querySelector('[data-ops-role]').textContent).toBe('Multisig');
     expect(document.querySelector('[data-ops-owner]').textContent).toBe(normalizeAddress(OWNER));
+  });
+
+  it('shows only the request-operation fields relevant to the selected operation type', async () => {
+    window.walletManager.isConnected = vi.fn(() => true);
+    window.walletManager.getAddress = vi.fn(() => OWNER);
+    window.contractManager.getAccessState = vi.fn(async () => ({
+      owner: OWNER,
+      isOwner: true,
+      isSigner: false,
+      ownerError: null,
+      signerError: null,
+      error: null,
+    }));
+
+    const tab = new OperationsTab();
+    tab.load();
+    await tab._syncAccess();
+
+    const typeSelect = document.querySelector('[data-op-type]');
+    const amountField = document.querySelector('[data-op-field="amount"]');
+    const enabledField = document.querySelector('[data-op-field="enabled"]');
+    const oldSignerField = document.querySelector('[data-op-field="oldSigner"]');
+    const newSignerField = document.querySelector('[data-op-field="newSigner"]');
+
+    expect(typeSelect).toBeInstanceOf(HTMLSelectElement);
+    expect(amountField).toBeInstanceOf(HTMLElement);
+    expect(enabledField).toBeInstanceOf(HTMLElement);
+    expect(oldSignerField).toBeInstanceOf(HTMLElement);
+    expect(newSignerField).toBeInstanceOf(HTMLElement);
+
+    const setType = async (value) => {
+      typeSelect.value = String(value);
+      typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      await flushPromises();
+    };
+
+    expect(amountField.hidden).toBe(false);
+    expect(enabledField.hidden).toBe(true);
+    expect(oldSignerField.hidden).toBe(true);
+    expect(newSignerField.hidden).toBe(true);
+
+    await setType(2);
+    expect(amountField.hidden).toBe(true);
+    expect(enabledField.hidden).toBe(false);
+    expect(oldSignerField.hidden).toBe(true);
+    expect(newSignerField.hidden).toBe(true);
+
+    await setType(1);
+    expect(amountField.hidden).toBe(true);
+    expect(enabledField.hidden).toBe(true);
+    expect(oldSignerField.hidden).toBe(false);
+    expect(newSignerField.hidden).toBe(false);
+
+    await setType(3);
+    expect(amountField.hidden).toBe(true);
+    expect(enabledField.hidden).toBe(true);
+    expect(oldSignerField.hidden).toBe(true);
+    expect(newSignerField.hidden).toBe(true);
   });
 });
