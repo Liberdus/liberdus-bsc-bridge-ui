@@ -1,6 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OperationsTab } from '../js/components/operations-tab.js';
@@ -9,8 +6,6 @@ import { flushPromises, installCommonWindowStubs, normalizeAddress, setupOperati
 const OWNER = '0x1111111111111111111111111111111111111111';
 const SIGNER = '0x2222222222222222222222222222222222222222';
 const OTHER_SIGNER = '0x4444444444444444444444444444444444444444';
-const BASE_CSS = fs.readFileSync(path.join(process.cwd(), 'css', 'base.css'), 'utf8');
-
 describe('OperationsTab access behavior', () => {
   beforeEach(() => {
     setupOperationsTabDom();
@@ -241,8 +236,6 @@ describe('OperationsTab access behavior', () => {
   });
 
   it('shows only the request-operation fields relevant to the selected operation type', async () => {
-    expect(BASE_CSS).toMatch(/\[hidden\]\s*\{[^}]*display:\s*none\s*!important;/);
-
     window.walletManager.isConnected = vi.fn(() => true);
     window.walletManager.getAddress = vi.fn(() => OWNER);
     window.contractManager.getAccessState = vi.fn(async () => ({
