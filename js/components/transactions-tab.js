@@ -319,6 +319,7 @@ export class TransactionsTab {
     this.onlyMineCheckbox = null;
     this.onlyMineHintEl = null;
     this._pendingPollerTimer = null;
+    this._pendingOnlyMineDefault = false;
   }
 
   load() {
@@ -332,13 +333,14 @@ export class TransactionsTab {
     const chains = CONFIG.BRIDGE.CHAINS;
     const sourceName = chains.SOURCE?.NAME || 'source chain';
     const destinationName = chains.DESTINATION?.NAME || 'destination chain';
+    const defaultStatus = `Load recent bridge transactions from ${sourceName} and ${destinationName}.`;
 
     this.panel.innerHTML = `
       <div class="tx-header card">
         <div class="tx-header-row">
           <div>
             <div class="tx-title">Search Transactions</div>
-            <div class="muted" data-tx-status>Load recent bridge transactions from ${sourceName} and ${destinationName}.</div>
+            <div class="muted" data-tx-status>${defaultStatus}</div>
           </div>
           <div class="tx-header-actions">
             <div class="tx-total"><span class="tx-total-label">Total Transactions:</span> <strong data-tx-total>0</strong></div>
@@ -414,6 +416,7 @@ export class TransactionsTab {
     this.pageSizeEl = this.panel.querySelector('[data-tx-page-size]');
     this.onlyMineCheckbox = this.panel.querySelector('[data-tx-onlymine]');
     this.onlyMineHintEl = this.panel.querySelector('[data-tx-onlymine-hint]');
+    this._pendingOnlyMineDefault = !!window.walletManager?.isConnected?.();
 
     this.refreshBtn?.addEventListener('click', () => this.refresh());
     this.panel.addEventListener('click', (event) => this._handleClick(event));
@@ -446,11 +449,22 @@ export class TransactionsTab {
       this._bridgeListenerBound = true;
     }
 
+    const armOnlyMineDefault = () => {
+      this._pendingOnlyMineDefault = true;
+      if (this._isActive()) {
+        this._applyPendingOnlyMineDefault();
+        return;
+      }
+      this._updateOnlyMineUI();
+      if (this.onlyMine) this.render();
+    };
+
     this._ensureBridgeOutWatch();
     window.addEventListener('beforeunload', () => this._teardownBridgeOutWatch());
 
     document.addEventListener('tabActivated', (e) => {
       if (e?.detail?.tabName === 'transactions') {
+        this._applyPendingOnlyMineDefault();
         if (e?.detail?.isFirstActivation && this._rows.length === 0) {
           this.refresh();
         } else {
@@ -468,18 +482,16 @@ export class TransactionsTab {
       }
     });
 
-    document.addEventListener('walletConnected', () => {
-      this._updateOnlyMineUI();
-      if (this.onlyMine) this.render();
-    });
+    document.addEventListener('walletConnected', armOnlyMineDefault);
     document.addEventListener('walletDisconnected', () => {
+      this._pendingOnlyMineDefault = false;
+      this.onlyMine = false;
+      this.page = 1;
       this._updateOnlyMineUI();
-      if (this.onlyMine) this.render();
+      this.render();
+      this._setStatus(defaultStatus);
     });
-    document.addEventListener('walletAccountChanged', () => {
-      this._updateOnlyMineUI();
-      if (this.onlyMine) this.render();
-    });
+    document.addEventListener('walletAccountChanged', armOnlyMineDefault);
     this._updateOnlyMineUI();
   }
 
@@ -739,13 +751,29 @@ export class TransactionsTab {
     if (this.refreshBtn) this.refreshBtn.disabled = !!isLoading;
   }
 
+  _applyPendingOnlyMineDefault() {
+    if (!this._pendingOnlyMineDefault) return;
+    if (!window.walletManager?.isConnected?.()) return;
+
+    this.onlyMine = true;
+    this.page = 1;
+    this._pendingOnlyMineDefault = false;
+    this._updateOnlyMineUI();
+    this.render();
+  }
+
+  _isActive() {
+    return !!this.panel && this.panel.classList.contains('is-active') && !this.panel.hidden;
+  }
+
   _updateOnlyMineUI() {
     const connected = !!window.walletManager?.isConnected?.();
     const addr = connected ? String(window.walletManager?.getAddress?.() || '') : '';
     const short =
       addr && addr.startsWith('0x') && addr.length > 10 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr || '';
     if (this.onlyMineCheckbox) {
-      this.onlyMineCheckbox.disabled = false;
+      this.onlyMineCheckbox.checked = !!this.onlyMine;
+      this.onlyMineCheckbox.disabled = !connected;
     }
     if (this.onlyMineHintEl) {
       if (connected && addr) {
