@@ -1,5 +1,6 @@
 import { CONFIG } from '../config.js';
 import { getReadOnlyProviderForNetwork } from '../utils/read-only-provider.js';
+import { REFRESH_ICON, setRefreshButtonLoading } from './refresh-button.js';
 
 function shortenHex(value, { head = 4, tail = 4 } = {}) {
   const s = String(value || '');
@@ -336,11 +337,13 @@ export class TransactionsTab {
           </div>
           <div class="tx-header-actions">
             <div class="tx-total"><span class="tx-total-label">Total Transactions:</span> <strong data-tx-total>0</strong></div>
-            <button type="button" class="btn btn--icon" title="Refresh" data-tx-refresh aria-label="Refresh transactions">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                <path d="M20 4v6h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
+            <button
+              type="button"
+              class="btn btn--icon refresh-button"
+              data-tx-refresh
+              aria-label="Refresh transactions"
+            >
+              ${REFRESH_ICON}
             </button>
           </div>
         </div>
@@ -725,7 +728,7 @@ export class TransactionsTab {
   }
 
   _setLoading(isLoading) {
-    if (this.refreshBtn) this.refreshBtn.disabled = !!isLoading;
+    setRefreshButtonLoading(this.refreshBtn, isLoading);
   }
 
   _applyPendingOnlyMineDefault() {

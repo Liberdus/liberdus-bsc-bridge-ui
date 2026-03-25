@@ -300,6 +300,39 @@ textarea:focus-visible {
   height: 16px;
 }
 
+.refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.refresh-button__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+
+.refresh-button__icon-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.refresh-button.is-loading .refresh-button__icon-svg {
+  animation: refreshButtonSpin 0.8s linear infinite;
+}
+
+@keyframes refreshButtonSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .card {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
@@ -1085,6 +1118,12 @@ textarea:focus-visible {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .refresh-button.is-loading .refresh-button__icon-svg {
+    animation: none;
+  }
 }
 
 @media (max-width: 768px) {

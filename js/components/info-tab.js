@@ -1,3 +1,5 @@
+import { REFRESH_ICON, setRefreshButtonLoading } from './refresh-button.js';
+
 export class InfoTab {
   constructor() {
     this.panel = null;
@@ -15,7 +17,9 @@ export class InfoTab {
         <div class="panel-header info-hero">
           <div class="card-title-row info-hero-row">
             <h2>Contract Info</h2>
-            <button type="button" class="btn btn--ghost btn--footer info-refresh-btn" data-info-refresh>Refresh</button>
+            <button type="button" class="btn btn--icon refresh-button" data-info-refresh aria-label="Refresh contract info">
+              ${REFRESH_ICON}
+            </button>
           </div>
         </div>
 
@@ -268,9 +272,7 @@ export class InfoTab {
   }
 
   _setLoading(isLoading) {
-    if (!this.refreshBtn) return;
-    this.refreshBtn.disabled = !!isLoading;
-    this.refreshBtn.textContent = isLoading ? 'Refreshing...' : 'Refresh';
+    setRefreshButtonLoading(this.refreshBtn, isLoading);
   }
 
   _setText(selector, text) {
