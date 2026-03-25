@@ -185,7 +185,6 @@ describe('TransactionsTab only-my-transactions defaulting', () => {
     expect(tab.page).toBe(1);
     expect(tab.totalEl.textContent).toBe('2');
     expect(tab.onlyMineHintEl.textContent).toBe('Connect wallet to enable');
-    expect(tab.statusEl.textContent).toContain('Load recent bridge transactions');
 
     dispatchTransactionsActivated({ isFirstActivation: true });
 
