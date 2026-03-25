@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InfoTab } from '../js/components/info-tab.js';
+import { OperationsTab } from '../js/components/operations-tab.js';
 import { TransactionsTab } from '../js/components/transactions-tab.js';
 import { installCommonWindowStubs } from './helpers/test-utils.js';
 
@@ -16,8 +17,10 @@ function createDeferred() {
 
 function setupDom() {
   document.body.innerHTML = `
+    <button class="tab-button" data-tab="operations">Admin</button>
     <button class="tab-button" data-tab="transactions">Transactions</button>
     <div class="tab-panel" data-panel="info"></div>
+    <div class="tab-panel" data-panel="operations"></div>
     <div class="tab-panel" data-panel="transactions"></div>
   `;
 }
@@ -109,5 +112,44 @@ describe('shared refresh button treatment', () => {
     expect(txTab.refreshBtn?.disabled).toBe(false);
     expect(txTab.refreshBtn?.classList.contains('is-loading')).toBe(false);
     expect(txTab.refreshBtn?.hasAttribute('aria-busy')).toBe(false);
+  });
+
+  it('uses the same refresh icon on admin and spins it during loading', async () => {
+    const deferred = createDeferred();
+    window.contractManager = {
+      getAccessState: vi.fn(async () => ({
+        owner: null,
+        isOwner: false,
+        isSigner: false,
+        ownerError: null,
+        signerError: null,
+        error: null,
+      })),
+      refreshStatus: vi.fn(() => deferred.promise),
+    };
+
+    const infoTab = new InfoTab();
+    infoTab.load();
+
+    const opsTab = new OperationsTab();
+    opsTab.load();
+
+    const infoIcon = infoTab.refreshBtn?.querySelector('[data-refresh-icon]');
+    const opsIcon = opsTab.refreshBtn?.querySelector('[data-refresh-icon]');
+
+    expect(infoIcon?.outerHTML).toBe(opsIcon?.outerHTML);
+
+    const refreshPromise = opsTab._onClick({ target: opsTab.refreshBtn });
+
+    expect(opsTab.refreshBtn?.disabled).toBe(true);
+    expect(opsTab.refreshBtn?.classList.contains('is-loading')).toBe(true);
+    expect(opsTab.refreshBtn?.getAttribute('aria-busy')).toBe('true');
+
+    deferred.resolve();
+    await refreshPromise;
+
+    expect(opsTab.refreshBtn?.disabled).toBe(false);
+    expect(opsTab.refreshBtn?.classList.contains('is-loading')).toBe(false);
+    expect(opsTab.refreshBtn?.hasAttribute('aria-busy')).toBe(false);
   });
 });

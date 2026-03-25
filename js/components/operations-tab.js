@@ -1,7 +1,10 @@
+import { REFRESH_ICON, setRefreshButtonLoading } from './refresh-button.js';
+
 export class OperationsTab {
   constructor() {
     this.panel = null;
     this.tabButton = null;
+    this.refreshBtn = null;
     this._access = {
       connected: false,
       address: null,
@@ -34,7 +37,9 @@ export class OperationsTab {
       <div class="panel-header">
         <div class="card-title-row">
           <h2>Admin</h2>
-          <button type="button" class="btn btn--ghost btn--footer" data-ops-refresh>Refresh</button>
+          <button type="button" class="btn btn--icon refresh-button" data-ops-refresh aria-label="Refresh admin access">
+            ${REFRESH_ICON}
+          </button>
         </div>
         <p class="muted" data-ops-status>Connect a wallet to check access.</p>
       </div>
@@ -202,6 +207,7 @@ export class OperationsTab {
       </div>
     `;
 
+    this.refreshBtn = this.panel.querySelector('[data-ops-refresh]');
     this.panel.addEventListener('click', (e) => this._onClick(e));
     this.panel.addEventListener('change', (e) => this._onChange(e));
     document.addEventListener('walletConnected', () => void this._syncAccess());
@@ -443,8 +449,14 @@ export class OperationsTab {
     if (!(target instanceof Element)) return;
 
     if (target.closest('[data-ops-refresh]')) {
-      await window.contractManager?.refreshStatus?.({ reason: 'operationsTabRefresh' }).catch(() => {});
-      await this._syncAccess().catch(() => {});
+      setRefreshButtonLoading(this.refreshBtn, true);
+      try {
+        await window.contractManager?.refreshStatus?.({ reason: 'operationsTabRefresh' });
+        await this._syncAccess();
+      } catch {}
+      finally {
+        setRefreshButtonLoading(this.refreshBtn, false);
+      }
       return;
     }
 
