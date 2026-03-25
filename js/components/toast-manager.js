@@ -78,10 +78,6 @@ export class ToastManager {
     return this.show({ id, title, message, type: 'success', timeoutMs, dismissible: true, allowHtml });
   }
 
-  warning(message, { title = 'Warning', timeoutMs = 0, id, allowHtml = false } = {}) {
-    return this.show({ id, title, message, type: 'warning', timeoutMs, dismissible: true, allowHtml });
-  }
-
   error(message, { title = 'Error', timeoutMs = 0, id, allowHtml = false } = {}) {
     return this.show({ id, title, message, type: 'error', timeoutMs, dismissible: true, allowHtml });
   }

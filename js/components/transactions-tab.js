@@ -404,7 +404,7 @@ export class TransactionsTab {
     this.pageInfoEl = this.panel.querySelector('[data-tx-page-info]');
     this.pageSizeEl = this.panel.querySelector('[data-tx-page-size]');
     this.onlyMineCheckbox = this.panel.querySelector('[data-tx-onlymine]');
-    const onlyMineLabel = this.panel.querySelector('[data-tx-onlymine-label]');
+    this.onlyMineLabel = this.panel.querySelector('[data-tx-onlymine-label]');
     this._pendingOnlyMineDefault = !!window.walletManager?.isConnected?.();
 
     this.refreshBtn?.addEventListener('click', () => this.refresh());
@@ -432,13 +432,6 @@ export class TransactionsTab {
       this.page = 1;
       this._updateOnlyMineUI();
       this.render();
-    });
-    onlyMineLabel?.addEventListener('pointerdown', (event) => {
-      if (!this.onlyMineCheckbox?.disabled) return;
-      if (typeof event.button === 'number' && event.button !== 0) return;
-      event.preventDefault();
-      event.stopPropagation();
-      window.toastManager?.warning?.('Connect wallet to use this filter', { timeoutMs: 2500 });
     });
     if (!this._bridgeListenerBound) {
       document.addEventListener('bridgeOutEvent', (e) => this._onBridgeOutEvent(e));
@@ -755,6 +748,9 @@ export class TransactionsTab {
     if (this.onlyMineCheckbox) {
       this.onlyMineCheckbox.checked = !!this.onlyMine;
       this.onlyMineCheckbox.disabled = !connected;
+    }
+    if (this.onlyMineLabel) {
+      this.onlyMineLabel.hidden = !connected;
     }
   }
 

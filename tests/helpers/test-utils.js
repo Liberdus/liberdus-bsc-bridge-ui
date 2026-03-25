@@ -56,7 +56,6 @@ export function installCommonWindowStubs({ txEnabled = true } = {}) {
 
   window.toastManager = {
     show: vi.fn(() => null),
-    warning: vi.fn(),
     error: vi.fn(),
     success: vi.fn(),
   };
