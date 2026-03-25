@@ -200,4 +200,69 @@ describe('read-only provider utility', () => {
     expect(sendCalls.filter((call) => call.method === 'eth_chainId')).toHaveLength(2);
     expect(blockCalls).toEqual([{ url: 'https://rpc.good.example' }]);
   });
+
+  it('throws a combined error when every RPC endpoint fails', async () => {
+    const sourceNetwork = makeNetwork({
+      chainId: 80002,
+      name: 'Polygon Amoy',
+      rpcUrl: 'https://rpc.bad-chain.example',
+      fallbackRpcs: ['https://rpc.bad-block.example'],
+    });
+    CONFIG.BRIDGE.CHAINS.SOURCE = sourceNetwork;
+
+    installEthersProviderStub({
+      chainIdByUrl: {
+        'https://rpc.bad-chain.example': 99999,
+        'https://rpc.bad-block.example': 80002,
+      },
+      blockErrorsByUrl: {
+        'https://rpc.bad-block.example': new Error('block lookup failed'),
+      },
+    });
+
+    await expect(getReadOnlyProvider()).rejects.toThrow(
+      /Failed to initialize read-only RPC provider/,
+    );
+    await expect(getReadOnlyProvider()).rejects.toThrow(
+      /https:\/\/rpc\.bad-chain\.example -> Unexpected chainId 99999/,
+    );
+    await expect(getReadOnlyProvider()).rejects.toThrow(
+      /https:\/\/rpc\.bad-block\.example -> block lookup failed/,
+    );
+  });
+
+  it('cleans up a failed in-flight provider promise so the next attempt can retry', async () => {
+    const network = makeNetwork({
+      chainId: 97,
+      name: 'BNB Testnet',
+      rpcUrl: 'https://rpc.retry.example',
+    });
+
+    installEthersProviderStub({
+      sendErrorsByUrl: {
+        'https://rpc.retry.example': new Error('temporary send failure'),
+      },
+    });
+
+    const [firstAttempt, secondAttempt] = await Promise.allSettled([
+      getReadOnlyProviderForNetwork(network),
+      getReadOnlyProviderForNetwork(network),
+    ]);
+
+    expect(firstAttempt.status).toBe('rejected');
+    expect(secondAttempt.status).toBe('rejected');
+    expect(peekReadOnlyProviderForNetwork(network)).toBeNull();
+
+    const { instances } = installEthersProviderStub({
+      chainIdByUrl: {
+        'https://rpc.retry.example': 97,
+      },
+    });
+
+    const provider = await getReadOnlyProviderForNetwork(network);
+
+    expect(provider.url).toBe('https://rpc.retry.example');
+    expect(peekReadOnlyProviderForNetwork(network)).toBe(provider);
+    expect(instances).toHaveLength(1);
+  });
 });
