@@ -349,7 +349,7 @@ export class TransactionsTab {
           <input class="field-input tx-search-input" type="text" placeholder="Enter transaction ID..." data-tx-search />
         </div>
         <div class="tx-filters">
-          <label class="field-checkbox">
+          <label class="field-checkbox" data-tx-onlymine-label>
             <input type="checkbox" data-tx-onlymine />
             <span>Only my transactions</span>
           </label>
@@ -404,6 +404,7 @@ export class TransactionsTab {
     this.pageInfoEl = this.panel.querySelector('[data-tx-page-info]');
     this.pageSizeEl = this.panel.querySelector('[data-tx-page-size]');
     this.onlyMineCheckbox = this.panel.querySelector('[data-tx-onlymine]');
+    const onlyMineLabel = this.panel.querySelector('[data-tx-onlymine-label]');
     this._pendingOnlyMineDefault = !!window.walletManager?.isConnected?.();
 
     this.refreshBtn?.addEventListener('click', () => this.refresh());
@@ -432,7 +433,7 @@ export class TransactionsTab {
       this._updateOnlyMineUI();
       this.render();
     });
-    this.onlyMineCheckbox?.addEventListener('pointerdown', (event) => {
+    onlyMineLabel?.addEventListener('pointerdown', (event) => {
       if (!this.onlyMineCheckbox?.disabled) return;
       if (typeof event.button === 'number' && event.button !== 0) return;
       event.preventDefault();

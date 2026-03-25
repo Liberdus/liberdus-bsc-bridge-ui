@@ -159,7 +159,7 @@ describe('TransactionsTab only-my-transactions defaulting', () => {
     expect(tab.totalEl.textContent).toBe('1');
   });
 
-  it('shows a warning when the disabled only mine filter is clicked', () => {
+  it('shows a warning when the disabled only mine filter is pressed', () => {
     const tab = createTab({
       connected: false,
       address: null,
@@ -168,10 +168,16 @@ describe('TransactionsTab only-my-transactions defaulting', () => {
         makeRow({ txHash: '0xbbb2', from: ADDRESS_TWO }),
       ],
     });
+    const onlyMineLabel = tab.panel.querySelector('[data-tx-onlymine-label]');
 
     tab.onlyMineCheckbox.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true }));
+    onlyMineLabel.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true }));
 
-    expect(window.toastManager.warning).toHaveBeenCalledWith('Connect wallet to use this filter', {
+    expect(window.toastManager.warning).toHaveBeenCalledTimes(2);
+    expect(window.toastManager.warning).toHaveBeenNthCalledWith(1, 'Connect wallet to use this filter', {
+      timeoutMs: 2500,
+    });
+    expect(window.toastManager.warning).toHaveBeenNthCalledWith(2, 'Connect wallet to use this filter', {
       timeoutMs: 2500,
     });
     expect(tab.onlyMine).toBe(false);
