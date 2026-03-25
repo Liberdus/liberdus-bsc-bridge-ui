@@ -294,7 +294,6 @@ export class TransactionsTab {
   constructor() {
     this.panel = null;
     this.refreshBtn = null;
-    this.statusEl = null;
     this.searchInput = null;
     this.totalEl = null;
     this.tableBody = null;
@@ -317,7 +316,6 @@ export class TransactionsTab {
     this._bridgeOutWatchRetryTimer = null;
     this.onlyMine = false;
     this.onlyMineCheckbox = null;
-    this.onlyMineHintEl = null;
     this._pendingPollerTimer = null;
     this._pendingOnlyMineDefault = false;
   }
@@ -330,17 +328,11 @@ export class TransactionsTab {
     this.panel = document.querySelector('.tab-panel[data-panel="transactions"]');
     if (!this.panel) return;
 
-    const chains = CONFIG.BRIDGE.CHAINS;
-    const sourceName = chains.SOURCE?.NAME || 'source chain';
-    const destinationName = chains.DESTINATION?.NAME || 'destination chain';
-    const defaultStatus = `Load recent bridge transactions from ${sourceName} and ${destinationName}.`;
-
     this.panel.innerHTML = `
       <div class="tx-header card">
         <div class="tx-header-row">
           <div>
             <div class="tx-title">Search Transactions</div>
-            <div class="muted" data-tx-status>${defaultStatus}</div>
           </div>
           <div class="tx-header-actions">
             <div class="tx-total"><span class="tx-total-label">Total Transactions:</span> <strong data-tx-total>0</strong></div>
@@ -354,15 +346,13 @@ export class TransactionsTab {
         </div>
 
         <div class="tx-search">
-          <div class="tx-search-prefix">Transaction ID</div>
           <input class="field-input tx-search-input" type="text" placeholder="Enter transaction ID..." data-tx-search />
         </div>
         <div class="tx-filters">
-          <label class="field-checkbox">
+          <label class="field-checkbox" data-tx-onlymine-label>
             <input type="checkbox" data-tx-onlymine />
             <span>Only my transactions</span>
           </label>
-          <span class="tx-muted" data-tx-onlymine-hint></span>
         </div>
       </div>
 
@@ -406,7 +396,6 @@ export class TransactionsTab {
     `;
 
     this.refreshBtn = this.panel.querySelector('[data-tx-refresh]');
-    this.statusEl = this.panel.querySelector('[data-tx-status]');
     this.searchInput = this.panel.querySelector('[data-tx-search]');
     this.totalEl = this.panel.querySelector('[data-tx-total]');
     this.tableBody = this.panel.querySelector('[data-tx-body]');
@@ -415,7 +404,7 @@ export class TransactionsTab {
     this.pageInfoEl = this.panel.querySelector('[data-tx-page-info]');
     this.pageSizeEl = this.panel.querySelector('[data-tx-page-size]');
     this.onlyMineCheckbox = this.panel.querySelector('[data-tx-onlymine]');
-    this.onlyMineHintEl = this.panel.querySelector('[data-tx-onlymine-hint]');
+    this.onlyMineLabel = this.panel.querySelector('[data-tx-onlymine-label]');
     this._pendingOnlyMineDefault = !!window.walletManager?.isConnected?.();
 
     this.refreshBtn?.addEventListener('click', () => this.refresh());
@@ -489,7 +478,6 @@ export class TransactionsTab {
       this.page = 1;
       this._updateOnlyMineUI();
       this.render();
-      this._setStatus(defaultStatus);
     });
     document.addEventListener('walletAccountChanged', armOnlyMineDefault);
     this._updateOnlyMineUI();
@@ -499,7 +487,6 @@ export class TransactionsTab {
     if (this._isLoading) return;
     this._isLoading = true;
     this._setLoading(true);
-    this._setStatus('Loading recent transactions...');
     try {
       console.debug?.('[Transactions] Prefetch: starting');
     } catch {}
@@ -508,13 +495,12 @@ export class TransactionsTab {
       const fetched = await loadTransactionsFromCoordinator({ limit: 250 });
       this._rows = mergeTransactions(fetched, this._rows, { limit: 500 });
       this.render();
-      this._setStatus('Transactions updated.');
       try {
         console.debug?.(`[Transactions] Prefetch: completed with ${this._rows.length} rows`);
       } catch {}
     } catch (error) {
       this.render();
-      this._setStatus(error?.message || 'Failed to load transactions.');
+      window.toastManager?.error?.(error?.message || 'Failed to load transactions.');
       try {
         console.debug?.('[Transactions] Prefetch: failed', error);
       } catch {}
@@ -532,12 +518,7 @@ export class TransactionsTab {
     const addr = connected ? String(window.walletManager?.getAddress?.() || '').toLowerCase() : '';
     let filtered = this._rows;
     if (this.onlyMine) {
-      if (connected && addr) {
-        filtered = filtered.filter((r) => String(r.from || '').toLowerCase() === addr);
-        this._setStatus('Filtering: Only my transactions');
-      } else {
-        this._setStatus('Only my transactions is inactive — connect wallet');
-      }
+      if (connected && addr) filtered = filtered.filter((r) => String(r.from || '').toLowerCase() === addr);
     }
     if (q) {
       filtered = filtered.filter((r) => {
@@ -743,10 +724,6 @@ export class TransactionsTab {
     }, 15000);
   }
 
-  _setStatus(text) {
-    if (this.statusEl) this.statusEl.textContent = String(text || '');
-  }
-
   _setLoading(isLoading) {
     if (this.refreshBtn) this.refreshBtn.disabled = !!isLoading;
   }
@@ -768,19 +745,12 @@ export class TransactionsTab {
 
   _updateOnlyMineUI() {
     const connected = !!window.walletManager?.isConnected?.();
-    const addr = connected ? String(window.walletManager?.getAddress?.() || '') : '';
-    const short =
-      addr && addr.startsWith('0x') && addr.length > 10 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr || '';
     if (this.onlyMineCheckbox) {
       this.onlyMineCheckbox.checked = !!this.onlyMine;
       this.onlyMineCheckbox.disabled = !connected;
     }
-    if (this.onlyMineHintEl) {
-      if (connected && addr) {
-        this.onlyMineHintEl.textContent = this.onlyMine ? `Filtering for ${short}` : `Connected: ${short}`;
-      } else {
-        this.onlyMineHintEl.textContent = 'Connect wallet to enable';
-      }
+    if (this.onlyMineLabel) {
+      this.onlyMineLabel.hidden = !connected;
     }
   }
 
