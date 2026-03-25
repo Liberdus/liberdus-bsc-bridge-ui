@@ -1,4 +1,4 @@
-import { REFRESH_ICON, setRefreshButtonLoading } from './refresh-button.js';
+import { REFRESH_ICON, setRefreshButtonLoading, waitForMinimumRefreshSpin } from './refresh-button.js';
 
 export class OperationsTab {
   constructor() {
@@ -449,12 +449,14 @@ export class OperationsTab {
     if (!(target instanceof Element)) return;
 
     if (target.closest('[data-ops-refresh]')) {
+      const startedAt = Date.now();
       setRefreshButtonLoading(this.refreshBtn, true);
       try {
         await window.contractManager?.refreshStatus?.({ reason: 'operationsTabRefresh' });
         await this._syncAccess();
       } catch {}
       finally {
+        await waitForMinimumRefreshSpin(startedAt);
         setRefreshButtonLoading(this.refreshBtn, false);
       }
       return;

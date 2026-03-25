@@ -1,4 +1,4 @@
-import { REFRESH_ICON, setRefreshButtonLoading } from './refresh-button.js';
+import { REFRESH_ICON, setRefreshButtonLoading, waitForMinimumRefreshSpin } from './refresh-button.js';
 
 export class InfoTab {
   constructor() {
@@ -123,18 +123,17 @@ export class InfoTab {
 
   async refresh() {
     if (this._isLoading) return;
+    const startedAt = Date.now();
     this._isLoading = true;
     this._setLoading(true);
 
-    const contractManager = window.contractManager;
-    if (!contractManager) {
-      window.toastManager?.error?.('Contract manager is not available.', { timeoutMs: 4000 });
-      this._isLoading = false;
-      this._setLoading(false);
-      return;
-    }
-
     try {
+      const contractManager = window.contractManager;
+      if (!contractManager) {
+        window.toastManager?.error?.('Contract manager is not available.', { timeoutMs: 4000 });
+        return;
+      }
+
       const snapshot = await contractManager.refreshStatus({ reason: 'infoTabRefresh' });
       this.render(snapshot);
       this._notifyReadError(snapshot);
@@ -143,6 +142,7 @@ export class InfoTab {
       if (fallback) this.render(fallback);
       window.toastManager?.error?.(error?.message || 'Failed to refresh contract status.', { timeoutMs: 4000 });
     } finally {
+      await waitForMinimumRefreshSpin(startedAt);
       this._isLoading = false;
       this._setLoading(false);
     }

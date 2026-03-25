@@ -1,6 +1,6 @@
 import { CONFIG } from '../config.js';
 import { getReadOnlyProviderForNetwork } from '../utils/read-only-provider.js';
-import { REFRESH_ICON, setRefreshButtonLoading } from './refresh-button.js';
+import { REFRESH_ICON, setRefreshButtonLoading, waitForMinimumRefreshSpin } from './refresh-button.js';
 
 function shortenHex(value, { head = 4, tail = 4 } = {}) {
   const s = String(value || '');
@@ -488,6 +488,7 @@ export class TransactionsTab {
 
   async refresh() {
     if (this._isLoading) return;
+    const startedAt = Date.now();
     this._isLoading = true;
     this._setLoading(true);
     try {
@@ -508,6 +509,7 @@ export class TransactionsTab {
         console.debug?.('[Transactions] Prefetch: failed', error);
       } catch {}
     } finally {
+      await waitForMinimumRefreshSpin(startedAt);
       this._isLoading = false;
       this._setLoading(false);
     }

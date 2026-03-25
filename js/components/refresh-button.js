@@ -17,6 +17,8 @@ export const REFRESH_ICON = `
   </span>
 `;
 
+export const MIN_REFRESH_SPIN_MS = 1000;
+
 export function setRefreshButtonLoading(button, isLoading) {
   if (!button) return;
 
@@ -30,4 +32,10 @@ export function setRefreshButtonLoading(button, isLoading) {
   }
 
   button.removeAttribute('aria-busy');
+}
+
+export async function waitForMinimumRefreshSpin(startedAt) {
+  const remaining = MIN_REFRESH_SPIN_MS - (Date.now() - startedAt);
+  if (remaining <= 0) return;
+  await new Promise((resolve) => setTimeout(resolve, remaining));
 }

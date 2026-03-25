@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InfoTab } from '../js/components/info-tab.js';
 import { OperationsTab } from '../js/components/operations-tab.js';
+import { MIN_REFRESH_SPIN_MS } from '../js/components/refresh-button.js';
 import { TransactionsTab } from '../js/components/transactions-tab.js';
 import { installCommonWindowStubs } from './helpers/test-utils.js';
 
@@ -66,6 +67,12 @@ describe('shared refresh button treatment', () => {
     expect(tab.refreshBtn?.getAttribute('aria-busy')).toBe('true');
 
     deferred.resolve(snapshot);
+    await Promise.resolve();
+
+    expect(tab.refreshBtn?.disabled).toBe(true);
+    expect(tab.refreshBtn?.classList.contains('is-loading')).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(MIN_REFRESH_SPIN_MS);
     await refreshPromise;
 
     expect(tab.refreshBtn?.textContent?.trim()).toBe('');
@@ -107,6 +114,12 @@ describe('shared refresh button treatment', () => {
         },
       })),
     });
+    await Promise.resolve();
+
+    expect(txTab.refreshBtn?.disabled).toBe(true);
+    expect(txTab.refreshBtn?.classList.contains('is-loading')).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(MIN_REFRESH_SPIN_MS);
     await refreshPromise;
 
     expect(txTab.refreshBtn?.disabled).toBe(false);
@@ -146,6 +159,12 @@ describe('shared refresh button treatment', () => {
     expect(opsTab.refreshBtn?.getAttribute('aria-busy')).toBe('true');
 
     deferred.resolve();
+    await Promise.resolve();
+
+    expect(opsTab.refreshBtn?.disabled).toBe(true);
+    expect(opsTab.refreshBtn?.classList.contains('is-loading')).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(MIN_REFRESH_SPIN_MS);
     await refreshPromise;
 
     expect(opsTab.refreshBtn?.disabled).toBe(false);
