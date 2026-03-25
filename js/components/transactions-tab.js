@@ -777,7 +777,7 @@ export class TransactionsTab {
     }
     if (this.onlyMineHintEl) {
       if (connected && addr) {
-        this.onlyMineHintEl.textContent = this.onlyMine ? `Filtering for ${short}` : `Connected: ${short}`;
+        this.onlyMineHintEl.textContent = this.onlyMine ? `Filtering for ${short}` : short;
       } else {
         this.onlyMineHintEl.textContent = 'Connect wallet to enable';
       }

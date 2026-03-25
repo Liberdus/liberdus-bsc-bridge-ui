@@ -105,6 +105,7 @@ describe('TransactionsTab only-my-transactions defaulting', () => {
 
     expect(tab.onlyMine).toBe(false);
     expect(tab.totalEl.textContent).toBe('2');
+    expect(tab.onlyMineHintEl.textContent).toBe('0x1111…1111');
 
     dispatchTransactionsActivated();
 
