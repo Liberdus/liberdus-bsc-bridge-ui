@@ -319,6 +319,7 @@ export class TransactionsTab {
     this.onlyMineCheckbox = null;
     this.onlyMineHintEl = null;
     this._pendingPollerTimer = null;
+    this._pendingOnlyMineDefault = false;
   }
 
   load() {
@@ -414,6 +415,7 @@ export class TransactionsTab {
     this.pageSizeEl = this.panel.querySelector('[data-tx-page-size]');
     this.onlyMineCheckbox = this.panel.querySelector('[data-tx-onlymine]');
     this.onlyMineHintEl = this.panel.querySelector('[data-tx-onlymine-hint]');
+    this._pendingOnlyMineDefault = !!window.walletManager?.isConnected?.();
 
     this.refreshBtn?.addEventListener('click', () => this.refresh());
     this.panel.addEventListener('click', (event) => this._handleClick(event));
@@ -451,6 +453,7 @@ export class TransactionsTab {
 
     document.addEventListener('tabActivated', (e) => {
       if (e?.detail?.tabName === 'transactions') {
+        this._applyPendingOnlyMineDefault();
         if (e?.detail?.isFirstActivation && this._rows.length === 0) {
           this.refresh();
         } else {
@@ -469,14 +472,23 @@ export class TransactionsTab {
     });
 
     document.addEventListener('walletConnected', () => {
+      this._pendingOnlyMineDefault = true;
+      const applied = this._applyPendingOnlyMineDefault({ immediate: true });
+      if (applied) return;
       this._updateOnlyMineUI();
       if (this.onlyMine) this.render();
     });
     document.addEventListener('walletDisconnected', () => {
+      this._pendingOnlyMineDefault = false;
+      this.onlyMine = false;
+      this.page = 1;
       this._updateOnlyMineUI();
-      if (this.onlyMine) this.render();
+      this.render();
     });
     document.addEventListener('walletAccountChanged', () => {
+      this._pendingOnlyMineDefault = true;
+      const applied = this._applyPendingOnlyMineDefault({ immediate: true });
+      if (applied) return;
       this._updateOnlyMineUI();
       if (this.onlyMine) this.render();
     });
@@ -739,12 +751,30 @@ export class TransactionsTab {
     if (this.refreshBtn) this.refreshBtn.disabled = !!isLoading;
   }
 
+  _applyPendingOnlyMineDefault({ immediate = false } = {}) {
+    if (!this._pendingOnlyMineDefault) return false;
+    if (!window.walletManager?.isConnected?.()) return false;
+    if (immediate && !this._isActive()) return false;
+
+    this.onlyMine = true;
+    this.page = 1;
+    this._pendingOnlyMineDefault = false;
+    this._updateOnlyMineUI();
+    this.render();
+    return true;
+  }
+
+  _isActive() {
+    return !!this.panel && this.panel.classList.contains('is-active') && !this.panel.hidden;
+  }
+
   _updateOnlyMineUI() {
     const connected = !!window.walletManager?.isConnected?.();
     const addr = connected ? String(window.walletManager?.getAddress?.() || '') : '';
     const short =
       addr && addr.startsWith('0x') && addr.length > 10 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr || '';
     if (this.onlyMineCheckbox) {
+      this.onlyMineCheckbox.checked = !!this.onlyMine;
       this.onlyMineCheckbox.disabled = false;
     }
     if (this.onlyMineHintEl) {
