@@ -146,6 +146,8 @@ describe('TransactionsTab only-my-transactions defaulting', () => {
       ],
     });
 
+    expect(tab.onlyMineCheckbox.disabled).toBe(true);
+
     tab.panel.classList.add('is-active');
     tab.panel.hidden = false;
 
@@ -154,6 +156,7 @@ describe('TransactionsTab only-my-transactions defaulting', () => {
 
     expect(tab.onlyMine).toBe(true);
     expect(tab.onlyMineCheckbox.checked).toBe(true);
+    expect(tab.onlyMineCheckbox.disabled).toBe(false);
     expect(tab.totalEl.textContent).toBe('1');
   });
 
@@ -177,9 +180,11 @@ describe('TransactionsTab only-my-transactions defaulting', () => {
 
     expect(tab.onlyMine).toBe(false);
     expect(tab.onlyMineCheckbox.checked).toBe(false);
+    expect(tab.onlyMineCheckbox.disabled).toBe(true);
     expect(tab.page).toBe(1);
     expect(tab.totalEl.textContent).toBe('2');
     expect(tab.onlyMineHintEl.textContent).toBe('Connect wallet to enable');
+    expect(tab.statusEl.textContent).toContain('Load recent bridge transactions');
 
     dispatchTransactionsActivated({ isFirstActivation: true });
 
