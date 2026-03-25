@@ -18,7 +18,7 @@ export class PolygonBscBridgeModule {
 
     this._els = {};
     this._lastSnapshot = null;
-    this._balanceCache = null;
+    this._availableBalanceWei = null;
     this._refreshTimerId = null;
     this._actionToastSequence = 0;
     this._bridgeProgressSession = null;
@@ -55,7 +55,7 @@ export class PolygonBscBridgeModule {
   async refresh() {
     if (!this.contractManager?.isReady?.()) return;
     await this.contractManager.refreshStatus({ reason: 'bridgeModuleRefresh' });
-    await this._refreshBalances();
+    await this._refreshBalance();
   }
 
   _bind() {
@@ -207,7 +207,7 @@ export class PolygonBscBridgeModule {
     this._lastSnapshot = e?.detail?.status || null;
     this._renderFromSnapshot();
     this._updateActionStates();
-    this._scheduleRefreshBalances();
+    this._scheduleRefreshBalance();
   }
 
   _renderFromSnapshot() {
@@ -251,7 +251,7 @@ export class PolygonBscBridgeModule {
     const amountInput = this._els.amount;
     if (!amountInput) return;
 
-    const balanceWei = this._balanceCache?.balanceWei || null;
+    const balanceWei = this._availableBalanceWei || null;
     const formLocked = this._isBridgePreflightPending || !!session;
     amountInput.disabled = formLocked;
 
@@ -296,9 +296,8 @@ export class PolygonBscBridgeModule {
     if (this._els.setMaxBtn) this._els.setMaxBtn.disabled = !txEnabled || formLocked;
   }
 
-  _needsApproval(amountWei) {
+  _needsApproval(amountWei, allowanceWei) {
     if (!amountWei || amountWei.lte(0)) return true;
-    const allowanceWei = this._balanceCache?.allowanceWei || null;
     if (!allowanceWei) return true;
     return allowanceWei.lt(amountWei);
   }
@@ -334,12 +333,16 @@ export class PolygonBscBridgeModule {
     }
   }
 
+  _isCurrentAccount(address) {
+    return this._comparableAddress(this.walletManager?.getAddress?.()) === this._comparableAddress(address);
+  }
+
   _assertBridgeSubmitStillAllowed(amountWei) {
     if (!amountWei || typeof amountWei.gt !== 'function') {
       throw new Error('Bridge amount is required');
     }
 
-    const balanceWei = this._balanceCache?.balanceWei || null;
+    const balanceWei = this._availableBalanceWei;
     if (balanceWei && amountWei.gt(balanceWei)) {
       throw new Error('Amount exceeds available balance. Please review and try again.');
     }
@@ -389,7 +392,11 @@ export class PolygonBscBridgeModule {
     }
 
     const maxWei = this._bn(maxStr);
-    const userBalWei = this._balanceCache?.balanceWei || null;
+    const lastKnownBalanceWei = this._availableBalanceWei || null;
+    const address = this.walletManager?.getAddress?.() || null;
+    const refreshedBalanceWei = address ? await this._refreshBalance({ clearOnReadFailure: false }).catch(() => null) : null;
+    if (address && !this._isCurrentAccount(address)) return;
+    const userBalWei = refreshedBalanceWei || this._availableBalanceWei || lastKnownBalanceWei || null;
     const setWei = userBalWei && userBalWei.lt(maxWei) ? userBalWei : maxWei;
     this._els.amount.value = this._formatEditableTokenUnits(setWei.toString());
     this._syncAmountInput();
@@ -494,11 +501,20 @@ export class PolygonBscBridgeModule {
       contract = this._bindWriteContractToRequestAddress(contract, bridgeRequest.address);
       if (!contract) throw new Error('Wallet not connected');
 
-      if (this._balanceCache?.allowanceWei == null) {
-        await this._refreshBalances().catch(() => {});
+      const { balanceWei, allowanceWei } = await this._readSourceTokenState({
+        tokenAddr,
+        vaultAddr: vault,
+        address: bridgeRequest.address,
+      });
+      this._assertActionRequestContext(bridgeRequest);
+      if (balanceWei == null) {
+        this._setAvailableBalance(null);
+        throw new Error('Unable to refresh available balance. Please try again.');
       }
+      this._setAvailableBalance(balanceWei);
+      this._assertBridgeSubmitStillAllowed(amountWei);
 
-      const needsApproval = this._balanceCache?.allowanceWei == null ? true : this._needsApproval(amountWei);
+      const needsApproval = this._needsApproval(amountWei, allowanceWei);
       const stepId = {
         approve: 'approve-bridge-token',
         submit: 'submit-bridge-out',
@@ -587,7 +603,7 @@ export class PolygonBscBridgeModule {
           return;
         }
 
-        await this._refreshBalances().catch(() => {});
+        await this._refreshBalance({ clearOnReadFailure: false }).catch(() => {});
         await this.contractManager?.refreshStatus?.({ reason: 'bridgeApprovalConfirmed' }).catch(() => {});
         progressSession.updateStep(stepId.approve, { status: 'completed', detail: 'Approved' });
       }
@@ -705,7 +721,7 @@ export class PolygonBscBridgeModule {
         document.dispatchEvent(new CustomEvent('bridgeOutEvent', { detail }));
       }
 
-      await this._refreshBalances();
+      await this._refreshBalance();
     } catch (error) {
       const toastId = error?._actionToastId || actionToastId;
       const message = this._actionErrorMessage(error, 'Bridge failed');
@@ -739,37 +755,66 @@ export class PolygonBscBridgeModule {
     }
   }
 
-  async _refreshBalances() {
-    if (!window.ethers) return;
-    // Approval and spend happen on the source chain, so read token state from the app's source-chain provider.
-    const provider = this.contractManager?.provider || null;
-    const address = this.walletManager?.getAddress?.() || null;
-    if (!provider || !address) {
-      this._balanceCache = null;
-      if (this._els.userBalance) this._els.userBalance.textContent = `- ${this._tokenSymbol()} Available`;
-      this._updateActionStates();
-      return;
-    }
-
-    const tokenAddr = await this._getTokenAddress();
-    const vaultAddr = this.config.BRIDGE.CONTRACTS.SOURCE.ADDRESS;
-    if (!tokenAddr || !vaultAddr) return;
-
-    const token = new window.ethers.Contract(tokenAddr, this._erc20Abi(), provider);
-
-    const [bal, allowance] = await Promise.all([
-      token.balanceOf(address).catch(() => null),
-      token.allowance(address, vaultAddr).catch(() => null),
-    ]);
-
-    const balanceWei = bal ? this._bn(bal.toString()) : null;
-    const allowanceWei = allowance ? this._bn(allowance.toString()) : null;
-
-    this._balanceCache = { balanceWei, allowanceWei };
+  _setAvailableBalance(balanceWei) {
+    this._availableBalanceWei = balanceWei || null;
     if (this._els.userBalance)
       this._els.userBalance.textContent = balanceWei ? `${this._formatTokenUnits(balanceWei.toString())} ${this._tokenSymbol()} Available` : `- ${this._tokenSymbol()} Available`;
 
     this._updateActionStates();
+  }
+
+  async _readSourceTokenState({ tokenAddr = null, vaultAddr = null, address = null } = {}) {
+    if (!window.ethers) {
+      return { balanceWei: null, allowanceWei: null };
+    }
+
+    const provider = this.contractManager?.provider || null;
+    const accountAddress = address || this.walletManager?.getAddress?.() || null;
+    if (!provider || !accountAddress) {
+      return { balanceWei: null, allowanceWei: null };
+    }
+
+    const resolvedTokenAddr = tokenAddr || (await this._getTokenAddress());
+    if (!resolvedTokenAddr) {
+      return { balanceWei: null, allowanceWei: null };
+    }
+
+    const token = new window.ethers.Contract(resolvedTokenAddr, this._erc20Abi(), provider);
+    const reads = [token.balanceOf(accountAddress).catch(() => null)];
+    if (vaultAddr) {
+      reads.push(token.allowance(accountAddress, vaultAddr).catch(() => null));
+    } else {
+      reads.push(Promise.resolve(null));
+    }
+
+    const [bal, allowance] = await Promise.all(reads);
+    return {
+      balanceWei: bal ? this._bn(bal.toString()) : null,
+      allowanceWei: allowance ? this._bn(allowance.toString()) : null,
+    };
+  }
+
+  async _refreshBalance({ clearOnReadFailure = true } = {}) {
+    if (!window.ethers) return null;
+
+    const provider = this.contractManager?.provider || null;
+    const address = this.walletManager?.getAddress?.() || null;
+    if (!provider || !address) {
+      this._setAvailableBalance(null);
+      return null;
+    }
+
+    const { balanceWei } = await this._readSourceTokenState({ address });
+    if (!this._isCurrentAccount(address)) {
+      return null;
+    }
+    if (balanceWei == null) {
+      if (clearOnReadFailure) this._setAvailableBalance(null);
+      return null;
+    }
+
+    this._setAvailableBalance(balanceWei);
+    return balanceWei;
   }
 
   async _getTokenAddress() {
@@ -820,7 +865,7 @@ export class PolygonBscBridgeModule {
     try {
       const result = await this.networkManager?.ensureRequiredNetwork?.();
       await this.contractManager?.refreshStatus?.({ reason: 'requiredNetworkEnsured' }).catch(() => {});
-      await this._refreshBalances().catch(() => {});
+      await this._refreshBalance().catch(() => {});
       this._updateActionStates();
       return { switched: !!result?.switched, toastId: activeToastId };
     } catch (error) {
@@ -911,11 +956,11 @@ export class PolygonBscBridgeModule {
     }, 200);
   }
 
-  _scheduleRefreshBalances() {
+  _scheduleRefreshBalance() {
     if (this._refreshTimerId) window.clearTimeout(this._refreshTimerId);
     this._refreshTimerId = window.setTimeout(() => {
       this._refreshTimerId = null;
-      this._refreshBalances().catch(() => {});
+      this._refreshBalance().catch(() => {});
     }, 250);
   }
 
