@@ -1,21 +1,18 @@
 import { CONFIG } from '../config.js';
 
-let providerInstance = null;
-let providerPromise = null;
+const providers = new Map();
+const providerPromises = new Map();
 
 function hashString(str) {
-  // Fast non-crypto hash (good enough for cache keys)
   const s = String(str || '');
   let h = 5381;
   for (let i = 0; i < s.length; i += 1) {
     h = (h * 33) ^ s.charCodeAt(i);
   }
-  // Convert to unsigned 32-bit
   return (h >>> 0).toString(16);
 }
 
 function makeRpcKey(method, params) {
-  // Keep keys small (avoid storing huge calldata/log filters as full strings).
   try {
     if (method === 'eth_chainId' || method === 'eth_blockNumber') return method;
 
@@ -44,10 +41,9 @@ function makeRpcKey(method, params) {
       return `eth_getLogs:${address}:${fromBlock}:${toBlock}:${topics}`;
     }
   } catch {
-    // fall through
+    // Fall through to the generic key path.
   }
 
-  // Default: hash the params blob
   try {
     return `${method}:${hashString(JSON.stringify(params || []))}`;
   } catch {
@@ -56,7 +52,6 @@ function makeRpcKey(method, params) {
 }
 
 function getRpcCacheTtlMs(method) {
-  // Short TTL cache for read-only requests (Phase 9.5)
   if (method === 'eth_chainId') return 24 * 60 * 60 * 1000;
   if (method === 'eth_blockNumber') return 1500;
   if (method === 'eth_getCode') return 60 * 1000;
@@ -70,8 +65,8 @@ function wrapProviderWithRpcCache(provider, { maxEntries = 500 } = {}) {
   if (provider.__rpcCacheWrapped) return provider;
 
   const originalSend = provider.send.bind(provider);
-  const cache = new Map(); // key -> { expiresAt, value }
-  const inflight = new Map(); // key -> Promise
+  const cache = new Map();
+  const inflight = new Map();
 
   const prune = () => {
     while (cache.size > maxEntries) {
@@ -124,39 +119,50 @@ function getEthers() {
   return ethers;
 }
 
-async function createReadOnlyProvider() {
-  const ethers = getEthers();
-  const sourceNetwork = CONFIG.BRIDGE.CHAINS.SOURCE;
-  const primaryRpcUrl = sourceNetwork.RPC_URL;
-  const fallbackRpcs = sourceNetwork.FALLBACK_RPCS;
-  const chainId = sourceNetwork.CHAIN_ID;
-  const networkName = sourceNetwork.NAME;
-
+function normalizeNetworkConfig(network) {
+  const chainId = Number(network?.CHAIN_ID);
+  const name = String(network?.NAME || 'unknown');
+  const primaryRpcUrl = network?.RPC_URL;
+  const fallbackRpcs = Array.isArray(network?.FALLBACK_RPCS) ? network.FALLBACK_RPCS : [];
   const rpcUrls = Array.from(new Set([primaryRpcUrl, ...fallbackRpcs].filter(Boolean)));
 
-  // Best practice:
-  // - Prefer a static network provider (prevents repeated network detection / eth_chainId bursts).
-  // - Reuse the same provider instance across the whole app.
+  if (!Number.isFinite(chainId)) throw new Error('Missing/invalid chainId');
+  if (rpcUrls.length === 0) throw new Error('Missing RPC_URL');
+
+  return { chainId, name, rpcUrls };
+}
+
+function makeKey(network) {
+  try {
+    const { chainId, name, rpcUrls } = normalizeNetworkConfig(network);
+    return `${chainId}:${name}:${hashString(rpcUrls.join('|'))}`;
+  } catch {
+    return hashString(JSON.stringify(network || {}));
+  }
+}
+
+function getSourceNetwork() {
+  return CONFIG?.BRIDGE?.CHAINS?.SOURCE || null;
+}
+
+async function createProvider(network) {
+  const ethers = getEthers();
+  const { chainId, name, rpcUrls } = normalizeNetworkConfig(network);
   const ProviderCtor = ethers.providers.StaticJsonRpcProvider || ethers.providers.JsonRpcProvider;
   const failures = [];
 
   for (const rpcUrl of rpcUrls) {
-    const provider = new ProviderCtor(rpcUrl, { chainId, name: networkName });
+    const provider = new ProviderCtor(rpcUrl, { chainId, name });
     wrapProviderWithRpcCache(provider);
 
     try {
-      // Validate the RPC is actually on the expected chain (single call).
-      // Some providers return a hex string (e.g. "0x89").
       const chainIdHex = await provider.send('eth_chainId', []);
       const actualChainId = typeof chainIdHex === 'string' ? parseInt(chainIdHex, 16) : Number(chainIdHex);
       if (Number(actualChainId) !== chainId) {
         throw new Error(`Unexpected chainId ${actualChainId} (expected ${chainId})`);
       }
 
-      // Basic health check
       await provider.getBlockNumber();
-
-      providerInstance = provider;
       return provider;
     } catch (error) {
       const msg = error?.reason || error?.message || String(error);
@@ -167,17 +173,49 @@ async function createReadOnlyProvider() {
   throw new Error(`Failed to initialize read-only RPC provider. Tried: ${failures.join(' | ')}`);
 }
 
+export async function getReadOnlyProviderForNetwork(network) {
+  const key = makeKey(network);
+  const existing = providers.get(key);
+  if (existing) return existing;
+
+  const inFlight = providerPromises.get(key);
+  if (inFlight) return await inFlight;
+
+  const promise = createProvider(network)
+    .then((provider) => {
+      providers.set(key, provider);
+      providerPromises.delete(key);
+      return provider;
+    })
+    .catch((error) => {
+      providerPromises.delete(key);
+      throw error;
+    });
+
+  providerPromises.set(key, promise);
+  return await promise;
+}
+
 export async function getReadOnlyProvider() {
-  if (providerInstance) return providerInstance;
-  if (!providerPromise) providerPromise = createReadOnlyProvider();
-  return await providerPromise;
+  return await getReadOnlyProviderForNetwork(getSourceNetwork());
+}
+
+export function peekReadOnlyProviderForNetwork(network) {
+  return providers.get(makeKey(network)) || null;
 }
 
 export function peekReadOnlyProvider() {
-  return providerInstance;
+  return peekReadOnlyProviderForNetwork(getSourceNetwork());
+}
+
+export function resetReadOnlyProvidersForNetworks() {
+  providers.clear();
+  providerPromises.clear();
 }
 
 export function resetReadOnlyProvider() {
-  providerInstance = null;
-  providerPromise = null;
+  const sourceNetwork = getSourceNetwork();
+  const key = makeKey(sourceNetwork);
+  providers.delete(key);
+  providerPromises.delete(key);
 }

@@ -1,5 +1,5 @@
 import { CONFIG } from '../config.js';
-import { getReadOnlyProviderForNetwork } from '../utils/read-only-provider-for-network.js';
+import { getReadOnlyProviderForNetwork } from '../utils/read-only-provider.js';
 
 function shortenHex(value, { head = 4, tail = 4 } = {}) {
   const s = String(value || '');

@@ -31,7 +31,6 @@ const CRITICAL_FILES = [
   'js/contracts/contract-manager.js',
   'js/modules/polygon-bsc-bridge-module.js',
   'js/utils/assert.js',
-  'js/utils/read-only-provider-for-network.js',
   'js/utils/read-only-provider.js',
   'js/utils/transaction-progress-session.js',
   'js/wallet/metamask-connector.js',
