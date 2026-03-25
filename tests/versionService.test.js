@@ -90,7 +90,7 @@ describe('initializeVersionService', () => {
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
-  it('falls back to the embedded list when the manifest is missing', async () => {
+  it('skips refresh when the manifest is missing', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url) => {
@@ -106,16 +106,16 @@ describe('initializeVersionService', () => {
       })
     );
 
-    await expect(initializeVersionService()).resolves.toBe(true);
+    await expect(initializeVersionService()).resolves.toBe(false);
 
     const fetchedUrls = fetch.mock.calls.map(([url]) => url);
     expect(fetchedUrls).toContain('critical-files.json');
-    expect(fetchedUrls).toContain('js/components/bridge-out-tab.js');
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Falling back to embedded critical files list'),
+      'Version refresh skipped, continuing with current app',
       expect.any(Error)
     );
-    expect(reloadSpy).toHaveBeenCalledOnce();
+    expect(localStorage.getItem('app_version')).toBeNull();
+    expect(reloadSpy).not.toHaveBeenCalled();
   });
 
   it('does not request removed legacy assets when the manifest omits them', async () => {

@@ -3,42 +3,6 @@ const REQUEST_TIMEOUT_MS = 3000;
 const VERSION_URL = 'version.html';
 const CRITICAL_FILES_MANIFEST_URL = 'critical-files.json';
 const RELOAD_BATCH_SIZE = 4;
-const CRITICAL_FILES = [
-  'index.html',
-  'version.html',
-  'assets/chain-bnb.png',
-  'assets/chain-polygon.png',
-  'assets/lib-token.png',
-  'assets/logo.png',
-  'abi/vault.json',
-  'css/base.css',
-  'css/bridge-module.css',
-  'css/header.css',
-  'css/notifications.css',
-  'css/tabs.css',
-  'css/wallet-popup.css',
-  'libs/ethers.umd.min.js',
-  'js/bootstrap.js',
-  'js/app.js',
-  'js/config.js',
-  'js/version-service.js',
-  'js/components/bridge-out-tab.js',
-  'js/components/header.js',
-  'js/components/info-tab.js',
-  'js/components/operations-tab.js',
-  'js/components/tab-bar.js',
-  'js/components/toast-manager.js',
-  'js/components/transactions-tab.js',
-  'js/contracts/contract-manager.js',
-  'js/modules/polygon-bsc-bridge-module.js',
-  'js/utils/assert.js',
-  'js/utils/read-only-provider.js',
-  'js/utils/transaction-progress-session.js',
-  'js/wallet/metamask-connector.js',
-  'js/wallet/network-manager.js',
-  'js/wallet/wallet-manager.js',
-  'js/wallet/wallet-popup.js',
-];
 
 function assert(condition, message) {
   if (!condition) {
@@ -81,25 +45,20 @@ function normalizeManifestPayload(payload) {
 }
 
 async function loadCriticalFiles() {
-  try {
-    const response = await fetchNoCache(CRITICAL_FILES_MANIFEST_URL);
+  const response = await fetchNoCache(CRITICAL_FILES_MANIFEST_URL);
 
-    if (!response.ok) {
-      throw new Error(`Failed to load ${CRITICAL_FILES_MANIFEST_URL}: ${response.status} ${response.statusText}`);
-    }
-
-    const payload = await response.json();
-    const files = normalizeManifestPayload(payload)
-      .filter((file) => typeof file === 'string')
-      .map((file) => file.trim())
-      .filter(Boolean);
-
-    assert(files.length > 0, `${CRITICAL_FILES_MANIFEST_URL} is empty`);
-    return files;
-  } catch (error) {
-    console.warn(`Falling back to embedded critical files list because ${CRITICAL_FILES_MANIFEST_URL} could not be used`, error);
-    return CRITICAL_FILES;
+  if (!response.ok) {
+    throw new Error(`Failed to load ${CRITICAL_FILES_MANIFEST_URL}: ${response.status} ${response.statusText}`);
   }
+
+  const payload = await response.json();
+  const files = normalizeManifestPayload(payload)
+    .filter((file) => typeof file === 'string')
+    .map((file) => file.trim())
+    .filter(Boolean);
+
+  assert(files.length > 0, `${CRITICAL_FILES_MANIFEST_URL} is empty`);
+  return files;
 }
 
 async function reloadCriticalFiles(files) {
