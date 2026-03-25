@@ -108,12 +108,6 @@ export class InfoTab {
       this._notifyReadError(snapshot);
     });
 
-    document.addEventListener('tabActivated', (event) => {
-      if (event?.detail?.tabName === 'info') {
-        this.refresh();
-      }
-    });
-
     const snapshot = window.contractManager?.getStatusSnapshot?.();
     if (snapshot) {
       this.render(snapshot);
