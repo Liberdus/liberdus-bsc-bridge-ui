@@ -17,7 +17,7 @@ const PROFILES = {
       NATIVE_CURRENCY: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
     },
     SOURCE_CONTRACT: {
-      ADDRESS: '0xaA2616CD3A3d3d63F8e1ac9c7d7BDc37f16709dA',
+      ADDRESS: '0xf563937Bc07cEFE9Cf028956EDF575234d8303ED',
       ABI_PATH: './abi/vault.json',
     },
     DESTINATION_NETWORK: {
@@ -32,7 +32,7 @@ const PROFILES = {
       NATIVE_CURRENCY: { name: 'BNB', symbol: 'tBNB', decimals: 18 },
     },
     DESTINATION_CONTRACT: {
-      ADDRESS: '0xf5A75e4bC827c9cC31BacD4c4d365107C698b465',
+      ADDRESS: '0x4113aED4Cb0930A7DFD76c8fF694Be7c669b50f1',
     },
     BRIDGE: {
       COORDINATOR_URL: 'https://tss1-test.liberdus.com',
@@ -57,7 +57,7 @@ const PROFILES = {
       NATIVE_CURRENCY: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
     },
     SOURCE_CONTRACT: {
-      ADDRESS: '0xaA2616CD3A3d3d63F8e1ac9c7d7BDc37f16709dA',
+      ADDRESS: '0xf563937Bc07cEFE9Cf028956EDF575234d8303ED',
       ABI_PATH: './abi/vault.json',
     },
     DESTINATION_NETWORK: {
@@ -72,7 +72,7 @@ const PROFILES = {
       NATIVE_CURRENCY: { name: 'BNB', symbol: 'tBNB', decimals: 18 },
     },
     DESTINATION_CONTRACT: {
-      ADDRESS: '0xf5A75e4bC827c9cC31BacD4c4d365107C698b465',
+      ADDRESS: '0x4113aED4Cb0930A7DFD76c8fF694Be7c669b50f1',
     },
     BRIDGE: {
       COORDINATOR_URL: 'https://tss1-test.liberdus.com',
