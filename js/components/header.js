@@ -116,16 +116,24 @@ export class Header {
       walletPopup?.show?.(btn);
     } catch (error) {
       if (error?.code === 4001) {
-        window.alert('Connection request was rejected.');
+        this._showWalletError('Connection request was rejected.');
       } else if (error?.code === -32002) {
-        window.alert('Connection request already pending in your wallet.');
+        this._showWalletError('Connection request already pending in your wallet.');
       } else {
-        window.alert(error?.message || 'Failed to connect wallet');
+        this._showWalletError(error?.message || 'Failed to connect wallet');
       }
       this._renderWalletPicker();
     } finally {
       this.updateConnectButtonStatus();
     }
+  }
+
+  _showWalletError(message) {
+    if (window.toastManager?.error) {
+      window.toastManager.error(message, { title: 'Wallet Error' });
+      return;
+    }
+    window.alert(message);
   }
 
   _renderWalletPicker() {

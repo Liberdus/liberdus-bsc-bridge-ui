@@ -37,6 +37,10 @@ describe('Header wallet picker', () => {
       toggle: vi.fn(),
     };
 
+    window.toastManager = {
+      error: vi.fn(),
+    };
+
     vi.spyOn(window, 'alert').mockImplementation(() => {});
   });
 
@@ -44,6 +48,7 @@ describe('Header wallet picker', () => {
     document.body.innerHTML = '';
     delete window.walletManager;
     delete window.walletPopup;
+    delete window.toastManager;
     vi.restoreAllMocks();
   });
 
@@ -77,5 +82,24 @@ describe('Header wallet picker', () => {
 
     expect(document.body.textContent).toContain('No browser wallet found');
     expect(document.body.textContent).toContain('Install or unlock a compatible injected wallet to continue.');
+  });
+
+  it('uses the toast manager instead of browser alerts for wallet connection errors', async () => {
+    window.walletManager.connect = vi.fn(async () => {
+      const error = new Error('Connection request was rejected.');
+      error.code = 4001;
+      throw error;
+    });
+
+    const header = new Header();
+    header.load();
+
+    document.getElementById('connect-wallet-btn').click();
+    document.querySelector('[data-wallet-picker-id="brave-wallet"]').click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(window.toastManager.error).toHaveBeenCalledWith('Connection request was rejected.', { title: 'Wallet Error' });
+    expect(window.alert).not.toHaveBeenCalled();
   });
 });
