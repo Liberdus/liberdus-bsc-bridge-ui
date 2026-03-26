@@ -1,0 +1,111 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { MetaMaskConnector } from '../js/wallet/metamask-connector.js';
+
+function makeInjectedProvider(flags = {}) {
+  const listeners = new Map();
+  const request = vi.fn(async ({ method }) => {
+    if (method === 'eth_requestAccounts') return ['0x1111111111111111111111111111111111111111'];
+    if (method === 'eth_chainId') return '0x13882';
+    if (method === 'eth_accounts') return ['0x1111111111111111111111111111111111111111'];
+    return null;
+  });
+
+  return {
+    ...flags,
+    request,
+    on: vi.fn((event, handler) => listeners.set(event, handler)),
+    removeListener: vi.fn((event) => listeners.delete(event)),
+  };
+}
+
+describe('MetaMaskConnector multi-wallet discovery', () => {
+  beforeEach(() => {
+    delete window.ethereum;
+    window.ethers = {
+      providers: {
+        Web3Provider: class FakeWeb3Provider {
+          constructor(provider, network) {
+            this.provider = provider;
+            this.network = network;
+          }
+
+          getSigner() {
+            return { kind: 'signer' };
+          }
+        },
+      },
+    };
+  });
+
+  afterEach(() => {
+    delete window.ethereum;
+    delete window.ethers;
+    vi.restoreAllMocks();
+  });
+
+  it('discovers multiple wallets without auto-selecting one and connects only the chosen provider', async () => {
+    const brave = makeInjectedProvider({ isMetaMask: true, isBraveWallet: true });
+    const metamask = makeInjectedProvider({ isMetaMask: true });
+
+    window.ethereum = {
+      providers: [brave, metamask],
+    };
+
+    const connector = new MetaMaskConnector();
+    connector.load();
+
+    window.dispatchEvent(new CustomEvent('eip6963:announceProvider', {
+      detail: {
+        info: {
+          uuid: 'brave-wallet',
+          name: 'Brave Wallet',
+          icon: 'data:image/svg+xml;base64,brave',
+          rdns: 'com.brave.wallet',
+        },
+        provider: brave,
+      },
+    }));
+
+    window.dispatchEvent(new CustomEvent('eip6963:announceProvider', {
+      detail: {
+        info: {
+          uuid: 'metamask-wallet',
+          name: 'MetaMask',
+          icon: 'data:image/svg+xml;base64,metamask',
+          rdns: 'io.metamask',
+        },
+        provider: metamask,
+      },
+    }));
+
+    const wallets = connector.getAvailableWallets();
+    const metamaskWallet = wallets.find((wallet) => wallet.name === 'MetaMask');
+
+    expect(wallets).toHaveLength(2);
+    expect(wallets.map((wallet) => wallet.name)).toEqual(['Brave Wallet', 'MetaMask']);
+    expect(connector.peekEip1193Provider()).toBeNull();
+
+    await connector.connect(metamaskWallet.id);
+
+    expect(metamask.request).toHaveBeenCalledWith({ method: 'eth_requestAccounts' });
+    expect(brave.request).not.toHaveBeenCalledWith({ method: 'eth_requestAccounts' });
+    expect(connector.getActiveWallet().id).toBe(metamaskWallet.id);
+  });
+
+  it('falls back to legacy injected providers when EIP-6963 is unavailable', () => {
+    const brave = makeInjectedProvider({ isMetaMask: true, isBraveWallet: true });
+    const metamask = makeInjectedProvider({ isMetaMask: true });
+
+    window.ethereum = {
+      providers: [brave, metamask],
+    };
+
+    const connector = new MetaMaskConnector();
+    const wallets = connector.getAvailableWallets();
+
+    expect(wallets).toHaveLength(2);
+    expect(wallets[0].flags.isBraveWallet).toBe(true);
+    expect(wallets[1].flags.isMetaMask).toBe(true);
+  });
+});

@@ -1,7 +1,19 @@
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export class Header {
   constructor() {
     this.connectWalletBtn = null;
     this._connectBtnText = 'Connect Wallet';
+    this._pickerContainer = null;
+    this._isPickerOpen = false;
+    this._pickerSelectionId = null;
   }
 
   load() {
@@ -9,15 +21,47 @@ export class Header {
     if (!this.connectWalletBtn) return;
 
     this._connectBtnText = this.connectWalletBtn.textContent?.trim() || this._connectBtnText;
+    this._ensurePickerContainer();
 
-    // Phase 2: MetaMask-only connection with config-driven tx network
     this.connectWalletBtn.addEventListener('click', () => this.onConnectWalletClick());
 
-    // React to wallet events
-    document.addEventListener('walletConnected', () => this.updateConnectButtonStatus());
+    document.addEventListener('walletConnected', () => {
+      this.hideWalletPicker();
+      this.updateConnectButtonStatus();
+    });
     document.addEventListener('walletDisconnected', () => this.updateConnectButtonStatus());
     document.addEventListener('walletAccountChanged', () => this.updateConnectButtonStatus());
     document.addEventListener('walletChainChanged', () => this.updateConnectButtonStatus());
+
+    document.addEventListener('keydown', (event) => {
+      if (!this._isPickerOpen || event.key !== 'Escape') return;
+      if (window.walletManager?.isConnecting) return;
+      this.hideWalletPicker();
+    });
+
+    this._pickerContainer.addEventListener('click', async (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      if (target.closest('[data-wallet-picker-close]')) {
+        if (window.walletManager?.isConnecting) return;
+        this.hideWalletPicker();
+        return;
+      }
+
+      if (target.classList.contains('wallet-picker-backdrop')) {
+        if (window.walletManager?.isConnecting) return;
+        this.hideWalletPicker();
+        return;
+      }
+
+      const walletButton = target.closest('[data-wallet-picker-id]');
+      if (!walletButton) return;
+
+      const walletId = walletButton.getAttribute('data-wallet-picker-id');
+      if (!walletId) return;
+      await this._connectSelectedWallet(walletId);
+    });
 
     this.updateConnectButtonStatus();
   }
@@ -27,58 +71,140 @@ export class Header {
     if (!btn) return;
 
     const walletManager = window.walletManager;
-    const networkManager = window.networkManager;
     const walletPopup = window.walletPopup;
 
-    // No MetaMask
-    if (!walletManager?.hasAvailableWallet?.()) {
-      window.alert('MetaMask is required for this app (Phase 2).');
-      return;
-    }
-
-    // Connecting
     if (walletManager?.isConnecting) {
       return;
     }
 
-    // Connected → open wallet popup
     if (walletManager?.isConnected?.()) {
       walletPopup?.toggle?.(btn);
       return;
     }
 
-    // Not connected → connect
-    this.renderConnectButton({ text: 'Connecting…', disabled: true });
+    this.showWalletPicker();
+  }
+
+  showWalletPicker() {
+    this._ensurePickerContainer();
+    this._pickerSelectionId = window.walletManager?.getLastSelectedWalletId?.() || null;
+    this._isPickerOpen = true;
+    this._renderWalletPicker();
+  }
+
+  hideWalletPicker() {
+    if (!this._pickerContainer) return;
+    this._pickerContainer.innerHTML = '';
+    this._pickerContainer.classList.add('hidden');
+    this._isPickerOpen = false;
+  }
+
+  async _connectSelectedWallet(walletId) {
+    const btn = this.connectWalletBtn;
+    const walletManager = window.walletManager;
+    const walletPopup = window.walletPopup;
+
+    if (!btn || !walletManager) return;
+
+    this._pickerSelectionId = walletId;
+    this.renderConnectButton({ text: 'Connecting...', disabled: true });
+    this._renderWalletPicker();
+
     try {
-      await walletManager?.connectMetaMask?.();
+      await walletManager.connect({ walletId, userInitiated: true });
+      this.hideWalletPicker();
       walletPopup?.show?.(btn);
-    } catch (e) {
-      if (e?.code === 4001) {
+    } catch (error) {
+      if (error?.code === 4001) {
         window.alert('Connection request was rejected.');
-      } else if (e?.code === -32002) {
-        window.alert('Connection request already pending in MetaMask.');
+      } else if (error?.code === -32002) {
+        window.alert('Connection request already pending in your wallet.');
       } else {
-        window.alert(e?.message || 'Failed to connect wallet');
+        window.alert(error?.message || 'Failed to connect wallet');
       }
+      this._renderWalletPicker();
     } finally {
       this.updateConnectButtonStatus();
     }
   }
 
+  _renderWalletPicker() {
+    if (!this._pickerContainer || !this._isPickerOpen) return;
+
+    const walletManager = window.walletManager;
+    const wallets = walletManager?.getAvailableWallets?.() || [];
+    const isConnecting = !!walletManager?.isConnecting;
+    const selectedId = this._pickerSelectionId || walletManager?.getLastSelectedWalletId?.() || wallets[0]?.id || null;
+
+    const walletOptions = wallets.length
+      ? wallets.map((wallet) => {
+          const isSelected = wallet.id === selectedId;
+          const iconHtml = wallet.icon
+            ? `<img class="wallet-picker-option-icon-image" src="${escapeHtml(wallet.icon)}" alt="" />`
+            : `<span class="wallet-picker-option-icon-fallback" aria-hidden="true">${escapeHtml(wallet.name?.slice?.(0, 1) || 'W')}</span>`;
+
+          return `
+            <button
+              type="button"
+              class="wallet-picker-option${isSelected ? ' is-selected' : ''}"
+              data-wallet-picker-id="${escapeHtml(wallet.id)}"
+              ${isConnecting ? 'disabled' : ''}
+            >
+              <span class="wallet-picker-option-icon">${iconHtml}</span>
+              <span class="wallet-picker-option-name">${escapeHtml(wallet.name || 'Browser Wallet')}</span>
+            </button>
+          `;
+        }).join('')
+      : `
+        <div class="wallet-picker-empty">
+          <p class="wallet-picker-empty-title">No browser wallet found</p>
+          <p class="wallet-picker-empty-copy">Install or unlock a compatible injected wallet to continue.</p>
+        </div>
+      `;
+
+    this._pickerContainer.classList.remove('hidden');
+    this._pickerContainer.innerHTML = `
+      <div class="modal-backdrop wallet-picker-backdrop" role="presentation">
+        <div class="modal wallet-picker-modal" role="dialog" aria-modal="true" aria-label="Choose a wallet">
+          <div class="modal-header wallet-picker-header">
+            <div class="modal-title">Choose a wallet</div>
+            <button
+              type="button"
+              class="wallet-picker-close"
+              aria-label="Close wallet picker"
+              data-wallet-picker-close
+              ${isConnecting ? 'disabled' : ''}
+            >
+              ×
+            </button>
+          </div>
+          <div class="modal-body wallet-picker-body">
+            ${walletOptions}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  _ensurePickerContainer() {
+    if (this._pickerContainer) return;
+
+    this._pickerContainer = document.getElementById('wallet-picker-container');
+    if (!this._pickerContainer) {
+      this._pickerContainer = document.createElement('div');
+      this._pickerContainer.id = 'wallet-picker-container';
+      this._pickerContainer.className = 'hidden';
+      document.body.appendChild(this._pickerContainer);
+    }
+  }
+
   updateConnectButtonStatus() {
     const walletManager = window.walletManager;
-    const networkManager = window.networkManager;
 
     if (!this.connectWalletBtn) return;
 
-    // MetaMask not installed
-    if (!walletManager?.hasAvailableWallet?.()) {
-      this.renderConnectButton({ text: 'Install MetaMask', disabled: false });
-      return;
-    }
-
     if (walletManager?.isConnecting) {
-      this.renderConnectButton({ text: 'Connecting…', disabled: true });
+      this.renderConnectButton({ text: 'Connecting...', disabled: true });
       return;
     }
 

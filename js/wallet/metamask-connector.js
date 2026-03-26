@@ -1,11 +1,38 @@
 /**
- * MetaMaskConnector (Phase 2)
- * - Low-level MetaMask interactions (EIP-1193)
- * - EIP-6963 discovery first, legacy injected fallback
- * - Creates an ethers Web3Provider when connected
+ * Multi-wallet injected connector.
  *
- * This stays intentionally small; higher-level app logic lives in WalletManager.
+ * The file name stays the same to minimize churn in the current bridge app,
+ * but the implementation now discovers and connects explicit injected wallets
+ * rather than auto-selecting a MetaMask-compatible provider.
  */
+
+function isRequestCapableProvider(provider) {
+  return !!provider && typeof provider.request === 'function';
+}
+
+function normalizeString(value) {
+  return String(value || '').trim();
+}
+
+function normalizeRdns(value) {
+  return normalizeString(value).toLowerCase();
+}
+
+function toSafeIdFragment(value) {
+  return normalizeString(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64);
+}
+
+function cloneWalletOption(wallet) {
+  if (!wallet) return null;
+  return {
+    ...wallet,
+    flags: { ...(wallet.flags || {}) },
+  };
+}
 
 export class MetaMaskConnector {
   constructor() {
@@ -15,9 +42,14 @@ export class MetaMaskConnector {
     this.signer = null; // ethers.Signer
     this.isConnected = false;
 
-    this.eip1193Provider = null; // currently selected wallet provider
-    this.providerInfo = null; // EIP-6963 provider info
-    this.discoveredProviders = new Map();
+    this.activeWalletId = null;
+    this.discoveredWallets = new Map();
+    this._walletIdByProvider = new Map();
+    this._walletIdByUuid = new Map();
+    this._walletIdByRdns = new Map();
+    this._generatedWalletCount = 0;
+    this._eip6963Order = 0;
+
     this._eventProvider = null;
     this._discoveryLoaded = false;
     this._boundAnnounceProvider = null;
@@ -34,12 +66,6 @@ export class MetaMaskConnector {
     this.onDisconnected = null;
   }
 
-  isAvailable() {
-    this.load();
-    this._refreshLegacyFallbackProvider();
-    return !!this.eip1193Provider;
-  }
-
   load() {
     if (this._discoveryLoaded || typeof window === 'undefined') return;
 
@@ -48,61 +74,92 @@ export class MetaMaskConnector {
       const detail = event?.detail || {};
       const info = detail.info || null;
       const provider = detail.provider || null;
-      if (!provider || typeof provider.request !== 'function') return;
-
-      const key = String(info?.uuid || info?.rdns || `provider_${Date.now()}_${Math.random()}`);
-      this.discoveredProviders.set(key, { info, provider });
-
-      if (this._isMetaMaskProvider(provider, info)) {
-        this.eip1193Provider = provider;
-        this.providerInfo = info || null;
-      }
+      this._registerWallet({
+        provider,
+        info,
+        source: 'eip6963',
+        sortIndex: this._eip6963Order++,
+      });
     };
 
     window.addEventListener('eip6963:announceProvider', this._boundAnnounceProvider);
     window.dispatchEvent(new Event('eip6963:requestProvider'));
-
-    // Fallback for legacy single-provider injection.
-    this._refreshLegacyFallbackProvider();
+    this._registerLegacyWallets();
   }
 
-  async getEip1193Provider({ waitMs = 0 } = {}) {
+  isAvailable() {
+    return this.hasAvailableWallets();
+  }
+
+  hasAvailableWallets() {
+    return this.getAvailableWallets().length > 0;
+  }
+
+  getAvailableWallets() {
     this.load();
-    this._refreshLegacyFallbackProvider();
-    if (this.eip1193Provider) return this.eip1193Provider;
+    this._registerLegacyWallets();
+
+    return Array.from(this.discoveredWallets.values())
+      .sort((a, b) => {
+        if (a.sourcePriority !== b.sourcePriority) return a.sourcePriority - b.sourcePriority;
+        if (a.sortIndex !== b.sortIndex) return a.sortIndex - b.sortIndex;
+        return String(a.name || '').localeCompare(String(b.name || ''));
+      })
+      .map((wallet) => cloneWalletOption(wallet));
+  }
+
+  getWalletById(walletId) {
+    this.load();
+    this._registerLegacyWallets();
+    if (!walletId) return null;
+    return cloneWalletOption(this.discoveredWallets.get(String(walletId)));
+  }
+
+  getActiveWallet() {
+    return this.getWalletById(this.activeWalletId);
+  }
+
+  async getEip1193Provider({ walletId = null, waitMs = 0 } = {}) {
+    const wallet = walletId ? this.getWalletById(walletId) : this.getActiveWallet();
+    if (wallet?.provider) return wallet.provider;
     if (!waitMs || waitMs <= 0) return null;
 
     await new Promise((resolve) => setTimeout(resolve, waitMs));
-    this._refreshLegacyFallbackProvider();
-    return this.eip1193Provider || null;
+    const waitedWallet = walletId ? this.getWalletById(walletId) : this.getActiveWallet();
+    return waitedWallet?.provider || null;
   }
 
   peekEip1193Provider() {
-    this.load();
-    this._refreshLegacyFallbackProvider();
-    return this.eip1193Provider || null;
+    return this.getActiveWallet()?.provider || null;
   }
 
-  async connect() {
-    const walletProvider = await this.getEip1193Provider({ waitMs: 300 });
-    if (!walletProvider) {
-      throw new Error('MetaMask is not installed');
+  async connect(walletId) {
+    const wallet = this.getWalletById(walletId);
+    if (!wallet?.provider) {
+      if (!this.hasAvailableWallets()) {
+        throw new Error('No injected wallet detected');
+      }
+      throw new Error('Selected wallet is not available');
     }
     if (!window.ethers) {
       throw new Error('Ethers.js not loaded');
     }
 
+    const walletProvider = wallet.provider;
     const accounts = await walletProvider.request({ method: 'eth_requestAccounts' });
     if (!accounts || accounts.length === 0) {
       throw new Error('No accounts found');
     }
 
-    this.account = accounts[0];
-    this.chainId = await this._readChainId(walletProvider);
+    const chainId = await this._readChainId(walletProvider);
+    const provider = new window.ethers.providers.Web3Provider(walletProvider, 'any');
+    const signer = provider.getSigner();
 
-    // Use the "any" network so the injected provider survives wallet chain changes.
-    this.provider = new window.ethers.providers.Web3Provider(walletProvider, 'any');
-    this.signer = this.provider.getSigner();
+    this.activeWalletId = wallet.id;
+    this.account = accounts[0];
+    this.chainId = chainId;
+    this.provider = provider;
+    this.signer = signer;
     this.isConnected = true;
 
     this.attachEventListeners();
@@ -112,11 +169,26 @@ export class MetaMaskConnector {
       chainId: this.chainId,
       provider: this.provider,
       signer: this.signer,
+      wallet,
     };
   }
 
+  bindConnectedWallet(walletId, { account = null, chainId = null, provider = null, signer = null } = {}) {
+    const wallet = this.getWalletById(walletId);
+    if (!wallet?.provider) return null;
+
+    this.activeWalletId = wallet.id;
+    this.account = account;
+    this.chainId = chainId;
+    this.provider = provider;
+    this.signer = signer;
+    this.isConnected = !!account;
+    this.attachEventListeners();
+    return wallet;
+  }
+
   /**
-   * Attach MetaMask event listeners without prompting the user.
+   * Attach provider event listeners without prompting the user.
    * Useful when restoring a previous connection via eth_accounts.
    */
   attachEventListeners() {
@@ -127,7 +199,6 @@ export class MetaMaskConnector {
     const walletProvider = this.peekEip1193Provider();
 
     if (revokePermissions && walletProvider?.request) {
-      // Best-effort: not all wallets/providers support this method.
       try {
         await walletProvider.request({
           method: 'wallet_revokePermissions',
@@ -138,19 +209,24 @@ export class MetaMaskConnector {
       }
     }
 
-    // MetaMask does not support programmatic disconnection.
-    // We just clear local app state and listeners.
+    this.clearSession({ clearActiveWallet: true });
+  }
+
+  clearSession({ clearActiveWallet = true } = {}) {
     this.isConnected = false;
     this.account = null;
     this.chainId = null;
     this.provider = null;
     this.signer = null;
+    if (clearActiveWallet) {
+      this.activeWalletId = null;
+    }
 
     this._removeEventListeners();
   }
 
-  async getAccounts() {
-    const walletProvider = await this.getEip1193Provider({ waitMs: 200 });
+  async getAccounts({ walletId = null, waitMs = 200 } = {}) {
+    const walletProvider = await this.getEip1193Provider({ walletId, waitMs });
     if (!walletProvider) return [];
     return await walletProvider.request({ method: 'eth_accounts' });
   }
@@ -164,13 +240,12 @@ export class MetaMaskConnector {
 
   _setupEventListeners() {
     const walletProvider = this.peekEip1193Provider();
-    if (!walletProvider || !walletProvider.on) return;
+    if (!walletProvider || typeof walletProvider.on !== 'function') return;
 
     this._removeEventListeners();
 
     this._boundAccountsChanged = (accounts) => {
       if (!accounts || accounts.length === 0) {
-        // user disconnected in MetaMask UI
         this.isConnected = false;
         this.account = null;
         if (typeof this.onAccountsChanged === 'function') this.onAccountsChanged([]);
@@ -205,7 +280,7 @@ export class MetaMaskConnector {
 
   _removeEventListeners() {
     const walletProvider = this._eventProvider;
-    if (!walletProvider || !walletProvider.removeListener) return;
+    if (!walletProvider || typeof walletProvider.removeListener !== 'function') return;
     if (this._boundAccountsChanged) walletProvider.removeListener('accountsChanged', this._boundAccountsChanged);
     if (this._boundConnect) walletProvider.removeListener('connect', this._boundConnect);
     if (this._boundChainChanged) walletProvider.removeListener('chainChanged', this._boundChainChanged);
@@ -228,32 +303,135 @@ export class MetaMaskConnector {
     }
   }
 
-  _refreshLegacyFallbackProvider() {
+  _registerLegacyWallets() {
     if (typeof window === 'undefined') return;
-    if (this.eip1193Provider) return;
+    const ethereum = window?.ethereum;
+    if (!ethereum) return;
 
-    const injected = this._findLegacyMetaMaskProvider();
-    if (injected) {
-      this.eip1193Provider = injected;
-      this.providerInfo = this.providerInfo || null;
+    const providers = Array.isArray(ethereum.providers) ? ethereum.providers.filter(Boolean) : [];
+    providers.forEach((provider, index) => {
+      this._registerWallet({
+        provider,
+        info: null,
+        source: 'legacy',
+        sortIndex: index,
+      });
+    });
+
+    if (providers.length === 0 || !providers.includes(ethereum)) {
+      this._registerWallet({
+        provider: ethereum,
+        info: null,
+        source: 'legacy',
+        sortIndex: providers.length,
+      });
     }
   }
 
-  _findLegacyMetaMaskProvider() {
-    const eth = window?.ethereum;
-    if (!eth) return null;
+  _registerWallet({ provider, info = null, source = 'legacy', sortIndex = 0 } = {}) {
+    if (!isRequestCapableProvider(provider)) return null;
 
-    if (Array.isArray(eth.providers)) {
-      const mm = eth.providers.find((p) => !!p?.isMetaMask);
-      if (mm) return mm;
+    const normalizedInfo = this._normalizeProviderInfo(info);
+    const existingWalletId = this._findWalletId({ provider, info: normalizedInfo });
+    const walletId = existingWalletId || this._createWalletId(normalizedInfo, provider, source);
+    const existingWallet = existingWalletId ? this.discoveredWallets.get(existingWalletId) : null;
+    const flags = this._deriveWalletFlags(provider, normalizedInfo);
+    const sourcePriority = source === 'eip6963' ? 0 : 1;
+
+    const wallet = {
+      id: walletId,
+      name: this._deriveWalletName(provider, normalizedInfo, existingWallet),
+      icon: normalizedInfo.icon || existingWallet?.icon || '',
+      rdns: normalizedInfo.rdns || existingWallet?.rdns || '',
+      provider,
+      source,
+      flags,
+      sourcePriority,
+      sortIndex: existingWallet ? Math.min(existingWallet.sortIndex, sortIndex) : sortIndex,
+    };
+
+    if (sourcePriority < (existingWallet?.sourcePriority ?? Number.POSITIVE_INFINITY)) {
+      wallet.source = source;
+      wallet.sourcePriority = sourcePriority;
+      wallet.sortIndex = sortIndex;
+    } else if (existingWallet) {
+      wallet.source = existingWallet.source;
+      wallet.sourcePriority = existingWallet.sourcePriority;
     }
 
-    return eth.isMetaMask ? eth : null;
+    this.discoveredWallets.set(walletId, wallet);
+    this._walletIdByProvider.set(provider, walletId);
+    if (normalizedInfo.uuid) this._walletIdByUuid.set(normalizedInfo.uuid, walletId);
+    if (wallet.rdns) this._walletIdByRdns.set(wallet.rdns, walletId);
+
+    return cloneWalletOption(wallet);
   }
 
-  _isMetaMaskProvider(provider, info) {
-    if (provider?.isMetaMask) return true;
-    const rdns = String(info?.rdns || '').toLowerCase();
-    return rdns.includes('metamask');
+  _findWalletId({ provider, info }) {
+    if (provider && this._walletIdByProvider.has(provider)) {
+      return this._walletIdByProvider.get(provider);
+    }
+
+    if (info?.uuid && this._walletIdByUuid.has(info.uuid)) {
+      return this._walletIdByUuid.get(info.uuid);
+    }
+
+    if (info?.rdns && this._walletIdByRdns.has(info.rdns)) {
+      return this._walletIdByRdns.get(info.rdns);
+    }
+
+    return null;
+  }
+
+  _createWalletId(info, provider, source) {
+    const preferredBase = toSafeIdFragment(info?.uuid)
+      || toSafeIdFragment(info?.rdns)
+      || toSafeIdFragment(info?.name)
+      || toSafeIdFragment(this._deriveWalletName(provider, info))
+      || source
+      || 'wallet';
+
+    let walletId = preferredBase;
+    let suffix = 2;
+    while (this.discoveredWallets.has(walletId)) {
+      walletId = `${preferredBase}-${suffix}`;
+      suffix += 1;
+    }
+
+    if (!walletId) {
+      this._generatedWalletCount += 1;
+      walletId = `wallet-${this._generatedWalletCount}`;
+    }
+
+    return walletId;
+  }
+
+  _normalizeProviderInfo(info) {
+    return {
+      uuid: normalizeString(info?.uuid),
+      name: normalizeString(info?.name),
+      icon: normalizeString(info?.icon),
+      rdns: normalizeRdns(info?.rdns),
+    };
+  }
+
+  _deriveWalletName(provider, info, existingWallet = null) {
+    if (info?.name) return info.name;
+    if (existingWallet?.name) return existingWallet.name;
+
+    const flags = this._deriveWalletFlags(provider, info);
+    if (flags.isBraveWallet) return 'Brave Wallet';
+    if (flags.isCoinbaseWallet) return 'Coinbase Wallet';
+    if (flags.isMetaMask) return 'MetaMask';
+    return 'Browser Wallet';
+  }
+
+  _deriveWalletFlags(provider, info) {
+    const rdns = normalizeRdns(info?.rdns);
+    return {
+      isMetaMask: !!provider?.isMetaMask || rdns.includes('metamask'),
+      isBraveWallet: !!provider?.isBraveWallet || rdns.includes('brave'),
+      isCoinbaseWallet: !!provider?.isCoinbaseWallet || rdns.includes('coinbase'),
+    };
   }
 }

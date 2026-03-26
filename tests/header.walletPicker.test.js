@@ -1,0 +1,81 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { Header } from '../js/components/header.js';
+
+function setupDom() {
+  document.body.innerHTML = `
+    <button id="connect-wallet-btn" type="button">Connect Wallet</button>
+    <div id="wallet-popup-container"></div>
+  `;
+}
+
+describe('Header wallet picker', () => {
+  beforeEach(() => {
+    setupDom();
+    window.walletManager = {
+      isConnecting: false,
+      isConnected: vi.fn(() => false),
+      getAddress: vi.fn(() => null),
+      getLastSelectedWalletId: vi.fn(() => 'metamask-wallet'),
+      getAvailableWallets: vi.fn(() => ([
+        {
+          id: 'brave-wallet',
+          name: 'Brave Wallet',
+          icon: '',
+        },
+        {
+          id: 'metamask-wallet',
+          name: 'MetaMask',
+          icon: '',
+        },
+      ])),
+      connect: vi.fn(async () => ({ success: true })),
+    };
+
+    window.walletPopup = {
+      show: vi.fn(),
+      toggle: vi.fn(),
+    };
+
+    vi.spyOn(window, 'alert').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    delete window.walletManager;
+    delete window.walletPopup;
+    vi.restoreAllMocks();
+  });
+
+  it('opens a picker, preselects the last wallet, and connects the clicked wallet', async () => {
+    const header = new Header();
+    header.load();
+
+    document.getElementById('connect-wallet-btn').click();
+
+    const optionButtons = Array.from(document.querySelectorAll('[data-wallet-picker-id]'));
+    expect(optionButtons).toHaveLength(2);
+    expect(document.querySelector('[data-wallet-picker-id="metamask-wallet"]').classList.contains('is-selected')).toBe(true);
+
+    document.querySelector('[data-wallet-picker-id="brave-wallet"]').click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(window.walletManager.connect).toHaveBeenCalledWith({ walletId: 'brave-wallet', userInitiated: true });
+    expect(window.walletPopup.show).toHaveBeenCalledWith(document.getElementById('connect-wallet-btn'));
+    expect(document.getElementById('wallet-picker-container').innerHTML).toBe('');
+  });
+
+  it('shows a generic empty-state message when no injected wallets are available', () => {
+    window.walletManager.getAvailableWallets = vi.fn(() => []);
+    window.walletManager.getLastSelectedWalletId = vi.fn(() => null);
+
+    const header = new Header();
+    header.load();
+
+    document.getElementById('connect-wallet-btn').click();
+
+    expect(document.body.textContent).toContain('No browser wallet found');
+    expect(document.body.textContent).toContain('Install or unlock a compatible injected wallet to continue.');
+  });
+});

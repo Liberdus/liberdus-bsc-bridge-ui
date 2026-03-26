@@ -1,22 +1,30 @@
 import { MetaMaskConnector } from './metamask-connector.js';
 
 /**
- * WalletManager (Phase 2)
- * - MetaMask-only connection
- * - Restores previous connection (best-effort)
+ * WalletManager
+ * - Explicit injected-wallet selection
+ * - Silent restore from the last selected wallet
  * - Dispatches DOM events:
  *   - walletConnected, walletDisconnected, walletAccountChanged, walletChainChanged
  */
 export class WalletManager {
-  constructor({ storageKey = 'liberdus_token_ui_wallet_connection' } = {}) {
+  constructor({
+    storageKey = 'liberdus_token_ui_wallet_connection',
+    lastSelectedWalletStorageKey = 'liberdus_token_ui_last_selected_wallet_id',
+    userDisconnectedStorageKey = 'liberdus_token_ui_wallet_user_disconnected',
+  } = {}) {
     this.storageKey = storageKey;
+    this.lastSelectedWalletStorageKey = lastSelectedWalletStorageKey;
+    this.userDisconnectedStorageKey = userDisconnectedStorageKey;
 
     this.connector = new MetaMaskConnector();
     this.provider = null; // ethers.providers.Web3Provider
     this.signer = null; // ethers.Signer
     this.address = null;
     this.chainId = null; // number
-    this.walletType = null; // 'metamask'
+    this.walletType = null;
+    this.walletId = null;
+    this.walletName = null;
 
     this.isConnecting = false;
     this._connectionPromise = null;
@@ -28,7 +36,6 @@ export class WalletManager {
   load() {
     this.connector.load();
 
-    // Wire connector callbacks → WalletManager events
     this.connector.onAccountsChanged = (accounts) => this._handleAccountsChanged(accounts);
     this.connector.onConnect = (connectInfo) => this._handleProviderConnect(connectInfo);
     this.connector.onChainChanged = (chainId) => this._handleChainChanged(chainId);
@@ -36,7 +43,6 @@ export class WalletManager {
   }
 
   async init() {
-    // Best-effort restore before user clicks.
     await this.checkPreviousConnection();
   }
 
@@ -60,8 +66,32 @@ export class WalletManager {
     return this.signer;
   }
 
+  getWalletId() {
+    return this.walletId;
+  }
+
+  getWalletName() {
+    return this.walletName;
+  }
+
+  getLastSelectedWalletId() {
+    return this._readStorageString(this.lastSelectedWalletStorageKey);
+  }
+
+  getAvailableWallets() {
+    return this.connector?.getAvailableWallets?.() || [];
+  }
+
+  hasAvailableWallets() {
+    return !!this.connector?.hasAvailableWallets?.();
+  }
+
   hasAvailableWallet() {
-    return !!this.connector?.isAvailable?.();
+    return this.hasAvailableWallets();
+  }
+
+  getWalletById(walletId) {
+    return this.connector?.getWalletById?.(walletId) || null;
   }
 
   async getEip1193Provider(options = {}) {
@@ -73,9 +103,9 @@ export class WalletManager {
     return () => this.listeners.delete(callback);
   }
 
-  async connectMetaMask() {
+  async connect({ walletId = null, userInitiated = false } = {}) {
     if (this._connectionPromise) return this._connectionPromise;
-    this._connectionPromise = this._performConnectMetaMask();
+    this._connectionPromise = this._performConnect({ walletId, userInitiated });
     try {
       return await this._connectionPromise;
     } finally {
@@ -83,119 +113,155 @@ export class WalletManager {
     }
   }
 
-  async _performConnectMetaMask() {
-    if (!this.connector.isAvailable()) {
-      throw new Error('MetaMask not installed');
+  async _performConnect({ walletId = null, userInitiated = false } = {}) {
+    if (!this.hasAvailableWallets()) {
+      throw new Error('No injected wallet detected');
+    }
+    if (!walletId) {
+      throw new Error('Choose a wallet to connect');
     }
     if (this.isConnected()) {
-      return { success: true, address: this.address, chainId: this.chainId, walletType: this.walletType };
+      return {
+        success: true,
+        address: this.address,
+        chainId: this.chainId,
+        walletType: this.walletType,
+        walletId: this.walletId,
+        walletName: this.walletName,
+      };
     }
 
     this.isConnecting = true;
     try {
-      const result = await this.connector.connect();
-
-      this.provider = result.provider;
-      this.signer = result.signer;
-      this.address = result.account;
-      this.chainId = result.chainId;
-      this.walletType = 'metamask';
-
-      this._storeConnectionInfo();
-
-      this._notify('connected', {
-        address: this.address,
-        chainId: this.chainId,
-        walletType: this.walletType,
+      const result = await this.connector.connect(walletId);
+      const wallet = result.wallet || this.getWalletById(walletId);
+      this._applyConnectedSession({
+        provider: result.provider,
+        signer: result.signer,
+        address: result.account,
+        chainId: result.chainId,
+        wallet,
       });
 
-      return { success: true, address: this.address, chainId: this.chainId, walletType: this.walletType };
+      this._setLastSelectedWalletId(wallet?.id || walletId);
+      this._setUserDisconnected(false);
+      this._storeConnectionInfo();
+
+      const data = this._currentWalletData({ userInitiated });
+      this._notify('connected', data);
+
+      return { success: true, ...data };
     } finally {
       this.isConnecting = false;
     }
   }
 
   async disconnect() {
+    const disconnectData = this._currentWalletData({ userInitiated: true });
     await this.connector.disconnect({ revokePermissions: true });
-    this._clearStateAndNotifyDisconnect();
+    this._setUserDisconnected(true);
+    this._clearStateAndNotifyDisconnect(disconnectData);
   }
 
   async checkPreviousConnection() {
-    if (!this.connector.isAvailable()) return false;
+    if (this.hasUserDisconnected()) return false;
+    if (!this.hasAvailableWallets()) return false;
 
-    // If we stored a previous connection, verify MetaMask still exposes the same account.
-    let stored = null;
-    try {
-      stored = JSON.parse(localStorage.getItem(this.storageKey) || 'null');
-    } catch {
-      stored = null;
-    }
-    if (!stored?.address) return false;
+    const stored = this._readConnectionInfo();
+    const restoreWallet = this._resolveRestoreWallet(stored);
+    if (!restoreWallet?.id) return false;
 
     try {
-      const eip1193Provider = await this.getEip1193Provider({ waitMs: 200 });
+      const eip1193Provider = await this.getEip1193Provider({ walletId: restoreWallet.id, waitMs: 200 });
       if (!eip1193Provider) return false;
 
-      const accounts = await this.connector.getAccounts(); // does not prompt
+      const accounts = await this.connector.getAccounts({ walletId: restoreWallet.id, waitMs: 200 });
       if (!accounts || accounts.length === 0) {
         this._clearConnectionInfo();
         return false;
       }
 
-      const addr = accounts[0];
-      if (addr.toLowerCase() !== String(stored.address).toLowerCase()) {
-        // Different account than last time; still restore with the current one.
-      }
+      if (!window.ethers) return false;
 
-      // Create provider/signer without prompting
-      if (!window.ethers) {
-        return false;
-      }
+      const provider = new window.ethers.providers.Web3Provider(eip1193Provider, 'any');
+      const signer = provider.getSigner();
+      const chainId = this._normalizeChainId(await eip1193Provider.request({ method: 'eth_chainId' }));
 
-      // Use the "any" network so restored wallet providers survive later chain changes.
-      this.provider = new window.ethers.providers.Web3Provider(eip1193Provider, 'any');
-      this.signer = this.provider.getSigner();
-      this.address = addr;
-
-      const network = await this.provider.getNetwork();
-      this.chainId = Number(network.chainId);
-      this.walletType = 'metamask';
-
-      // Keep connector state in sync and ensure events are wired.
-      this.connector.account = this.address;
-      this.connector.chainId = this.chainId;
-      this.connector.provider = this.provider;
-      this.connector.signer = this.signer;
-      this.connector.isConnected = true;
-      this.connector.attachEventListeners();
-
-      this._notify('connected', {
-        address: this.address,
-        chainId: this.chainId,
-        walletType: this.walletType,
-        restored: true,
+      this._applyConnectedSession({
+        provider,
+        signer,
+        address: accounts[0],
+        chainId,
+        wallet: restoreWallet,
       });
 
+      this._setLastSelectedWalletId(restoreWallet.id);
+      this._setUserDisconnected(false);
+      this._storeConnectionInfo();
+
+      this._notify('connected', this._currentWalletData({ restored: true }));
       return true;
-    } catch (e) {
-      // If anything goes wrong, clear stored state so we don't loop.
+    } catch {
       this._clearConnectionInfo();
       return false;
     }
+  }
+
+  hasUserDisconnected() {
+    return this._readStorageString(this.userDisconnectedStorageKey) === 'true';
+  }
+
+  _resolveRestoreWallet(stored) {
+    const lastSelectedWalletId = this.getLastSelectedWalletId();
+    if (lastSelectedWalletId) {
+      return this.getWalletById(lastSelectedWalletId);
+    }
+
+    const storedWalletId = normalizeStoredWalletId(stored?.walletId);
+    if (storedWalletId) {
+      return this.getWalletById(storedWalletId);
+    }
+
+    if (!stored?.address) return null;
+
+    const wallets = this.getAvailableWallets();
+    if (wallets.length === 1) {
+      return wallets[0];
+    }
+
+    return null;
+  }
+
+  _applyConnectedSession({ provider, signer, address, chainId, wallet }) {
+    this.provider = provider || null;
+    this.signer = signer || null;
+    this.address = address || null;
+    this.chainId = this._normalizeChainId(chainId);
+    this.walletId = wallet?.id || null;
+    this.walletName = wallet?.name || null;
+    this.walletType = wallet?.rdns || wallet?.name || 'injected';
+
+    this.connector.bindConnectedWallet(this.walletId, {
+      account: this.address,
+      chainId: this.chainId,
+      provider: this.provider,
+      signer: this.signer,
+    });
   }
 
   _handleAccountsChanged(accounts) {
     this._cancelDisconnectProbe();
 
     if (!accounts || accounts.length === 0) {
-      this._clearStateAndNotifyDisconnect();
+      this._clearStateAndNotifyDisconnect(this._currentWalletData());
       return;
     }
+
     this.address = accounts[0];
     this.connector.account = this.address;
     this.connector.isConnected = true;
     this._storeConnectionInfo();
-    this._notify('accountChanged', { address: this.address, chainId: this.chainId });
+    this._notify('accountChanged', this._currentWalletData());
   }
 
   _handleProviderConnect(_connectInfo) {
@@ -213,14 +279,12 @@ export class WalletManager {
     this.connector.chainId = this.chainId;
     if (this.address) this.connector.isConnected = true;
     this._storeConnectionInfo();
-    this._notify('chainChanged', { address: this.address, chainId: this.chainId });
+    this._notify('chainChanged', this._currentWalletData());
   }
 
   _handleDisconnected(_error) {
-    // MetaMask can emit a transient provider disconnect during add/switch flows.
-    // Only keep the session if both account access and basic RPC calls recover.
     if (!this.address && !this.provider && !this.signer) {
-      this._clearStateAndNotifyDisconnect();
+      this._clearStateAndNotifyDisconnect(this._currentWalletData());
       return;
     }
 
@@ -229,16 +293,14 @@ export class WalletManager {
   }
 
   _notify(event, data) {
-    // Listener callbacks
     this.listeners.forEach((cb) => {
       try {
         cb(event, data);
-      } catch (e) {
-        // ignore
+      } catch {
+        // ignore listener errors
       }
     });
 
-    // DOM events (for simple integration)
     const eventNameMap = {
       connected: 'walletConnected',
       disconnected: 'walletDisconnected',
@@ -249,10 +311,23 @@ export class WalletManager {
     document.dispatchEvent(new CustomEvent(domName, { detail: { event, data } }));
   }
 
+  _currentWalletData(extra = {}) {
+    return {
+      address: this.address,
+      chainId: this.chainId,
+      walletType: this.walletType || 'injected',
+      walletId: this.walletId || this.getLastSelectedWalletId() || null,
+      walletName: this.walletName || this.getWalletById(this.getLastSelectedWalletId())?.name || null,
+      ...extra,
+    };
+  }
+
   _storeConnectionInfo() {
     if (!this.address) return;
     const payload = {
-      walletType: this.walletType || 'metamask',
+      walletType: this.walletType || 'injected',
+      walletId: this.walletId || null,
+      walletName: this.walletName || null,
       address: this.address,
       chainId: this.chainId,
       timestamp: Date.now(),
@@ -264,6 +339,14 @@ export class WalletManager {
     }
   }
 
+  _readConnectionInfo() {
+    try {
+      return JSON.parse(localStorage.getItem(this.storageKey) || 'null');
+    } catch {
+      return null;
+    }
+  }
+
   _clearConnectionInfo() {
     try {
       localStorage.removeItem(this.storageKey);
@@ -272,8 +355,45 @@ export class WalletManager {
     }
   }
 
-  _clearStateAndNotifyDisconnect() {
-    const wasConnected = !!(this.provider || this.signer || this.address || this.walletType || this.chainId != null);
+  _setLastSelectedWalletId(walletId) {
+    try {
+      if (!walletId) {
+        localStorage.removeItem(this.lastSelectedWalletStorageKey);
+        return;
+      }
+      localStorage.setItem(this.lastSelectedWalletStorageKey, String(walletId));
+    } catch {
+      // ignore
+    }
+  }
+
+  _setUserDisconnected(value) {
+    try {
+      localStorage.setItem(this.userDisconnectedStorageKey, value ? 'true' : 'false');
+    } catch {
+      // ignore
+    }
+  }
+
+  _readStorageString(key) {
+    try {
+      const value = localStorage.getItem(key);
+      return value == null ? null : String(value);
+    } catch {
+      return null;
+    }
+  }
+
+  _clearStateAndNotifyDisconnect(disconnectData = {}) {
+    const wasConnected = !!(
+      this.provider
+      || this.signer
+      || this.address
+      || this.walletType
+      || this.walletId
+      || this.walletName
+      || this.chainId != null
+    );
 
     this._cancelDisconnectProbe();
     this.provider = null;
@@ -281,10 +401,13 @@ export class WalletManager {
     this.address = null;
     this.chainId = null;
     this.walletType = null;
+    this.walletId = null;
+    this.walletName = null;
+    this.connector?.clearSession?.({ clearActiveWallet: true });
 
     this._clearConnectionInfo();
     if (wasConnected) {
-      this._notify('disconnected', {});
+      this._notify('disconnected', disconnectData);
     }
   }
 
@@ -299,21 +422,23 @@ export class WalletManager {
 
   async _verifyDisconnectProbe(probeToken) {
     const deadlineAt = Date.now() + 10000;
+    const walletId = this.walletId;
+    const disconnectData = this._currentWalletData();
 
     while (probeToken === this._disconnectProbeToken) {
       try {
-        const walletProvider = await this.getEip1193Provider({ waitMs: 200 });
-        if (!walletProvider?.request) throw new Error('MetaMask not available');
+        const walletProvider = await this.getEip1193Provider({ walletId, waitMs: 200 });
+        if (!walletProvider?.request) throw new Error('Wallet not available');
 
         const [accounts, chainIdHex] = await Promise.all([
-          this.connector?.getAccounts?.(),
+          this.connector?.getAccounts?.({ walletId, waitMs: 0 }),
           walletProvider.request({ method: 'eth_chainId' }),
         ]);
         if (probeToken !== this._disconnectProbeToken) return;
 
         if (Array.isArray(accounts)) {
           if (accounts.length === 0) {
-            this._clearStateAndNotifyDisconnect();
+            this._clearStateAndNotifyDisconnect(disconnectData);
             return;
           }
 
@@ -331,19 +456,19 @@ export class WalletManager {
           this._storeConnectionInfo();
 
           if (addressChanged) {
-            this._notify('accountChanged', { address: this.address, chainId: this.chainId });
+            this._notify('accountChanged', this._currentWalletData());
           }
           if (chainChanged) {
-            this._notify('chainChanged', { address: this.address, chainId: this.chainId });
+            this._notify('chainChanged', this._currentWalletData());
           }
           return;
         }
       } catch {
-        // Ignore transient provider errors while MetaMask is recovering.
+        // Ignore transient provider errors while the wallet is recovering.
       }
 
       if (Date.now() >= deadlineAt) {
-        this._clearStateAndNotifyDisconnect();
+        this._clearStateAndNotifyDisconnect(disconnectData);
         return;
       }
 
@@ -362,4 +487,8 @@ export class WalletManager {
     }
     return Number(cid);
   }
+}
+
+function normalizeStoredWalletId(walletId) {
+  return walletId == null ? null : String(walletId);
 }
