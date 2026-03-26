@@ -74,12 +74,13 @@ export class MetaMaskConnector {
       const detail = event?.detail || {};
       const info = detail.info || null;
       const provider = detail.provider || null;
-      this._registerWallet({
+      const wallet = this._registerWallet({
         provider,
         info,
         source: 'eip6963',
         sortIndex: this._eip6963Order++,
       });
+      this._pruneLegacyShimWallets(wallet);
     };
 
     window.addEventListener('eip6963:announceProvider', this._boundAnnounceProvider);
@@ -318,13 +319,37 @@ export class MetaMaskConnector {
       });
     });
 
-    if (providers.length === 0 || !providers.includes(ethereum)) {
+    if (providers.length > 0) return;
+    if (this._hasDiscoveredEip6963Wallets()) return;
+
+    if (!this._walletIdByProvider.has(ethereum)) {
       this._registerWallet({
         provider: ethereum,
         info: null,
         source: 'legacy',
-        sortIndex: providers.length,
+        sortIndex: 0,
       });
+    }
+  }
+
+  _hasDiscoveredEip6963Wallets() {
+    return Array.from(this.discoveredWallets.values()).some((wallet) => wallet.source === 'eip6963');
+  }
+
+  _pruneLegacyShimWallets(latestWallet) {
+    if (!latestWallet || typeof window === 'undefined') return;
+
+    const ethereum = window?.ethereum;
+    if (!ethereum || Array.isArray(ethereum.providers)) return;
+
+    for (const [walletId, wallet] of this.discoveredWallets.entries()) {
+      if (walletId === latestWallet.id) continue;
+      if (wallet.source !== 'legacy') continue;
+      if (wallet.provider !== ethereum) continue;
+
+      this.discoveredWallets.delete(walletId);
+      this._walletIdByProvider.delete(wallet.provider);
+      if (wallet.rdns) this._walletIdByRdns.delete(wallet.rdns);
     }
   }
 
