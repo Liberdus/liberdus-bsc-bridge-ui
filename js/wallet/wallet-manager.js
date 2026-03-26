@@ -29,8 +29,6 @@ export class WalletManager {
     this.isConnecting = false;
     this._connectionPromise = null;
     this._disconnectProbeToken = 0;
-
-    this.listeners = new Set();
   }
 
   load() {
@@ -84,11 +82,6 @@ export class WalletManager {
 
   async getEip1193Provider(options = {}) {
     return await this.connector?.getEip1193Provider?.(options);
-  }
-
-  subscribe(callback) {
-    this.listeners.add(callback);
-    return () => this.listeners.delete(callback);
   }
 
   async connect({ walletId = null, userInitiated = false } = {}) {
@@ -202,12 +195,14 @@ export class WalletManager {
   _resolveRestoreWallet(stored) {
     const lastSelectedWalletId = this.getLastSelectedWalletId();
     if (lastSelectedWalletId) {
-      return this.getWalletById(lastSelectedWalletId);
+      const lastSelectedWallet = this.getWalletById(lastSelectedWalletId);
+      if (lastSelectedWallet) return lastSelectedWallet;
     }
 
     const storedWalletId = normalizeStoredWalletId(stored?.walletId);
     if (storedWalletId) {
-      return this.getWalletById(storedWalletId);
+      const storedWallet = this.getWalletById(storedWalletId);
+      if (storedWallet) return storedWallet;
     }
 
     if (!stored?.address) return null;
@@ -281,14 +276,6 @@ export class WalletManager {
   }
 
   _notify(event, data) {
-    this.listeners.forEach((cb) => {
-      try {
-        cb(event, data);
-      } catch {
-        // ignore listener errors
-      }
-    });
-
     const eventNameMap = {
       connected: 'walletConnected',
       disconnected: 'walletDisconnected',

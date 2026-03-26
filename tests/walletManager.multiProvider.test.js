@@ -90,6 +90,27 @@ describe('WalletManager multi-provider restore behavior', () => {
     expect(metamask.request).not.toHaveBeenCalled();
   });
 
+  it('falls back to the stored session when the last selected wallet id is stale', async () => {
+    const provider = makeProvider({ flags: { isMetaMask: true } });
+    window.ethereum = { providers: [provider] };
+
+    localStorage.setItem('liberdus_token_ui_wallet_connection', JSON.stringify({
+      walletId: 'metamask',
+      address: '0x1111111111111111111111111111111111111111',
+      chainId: 80002,
+      timestamp: Date.now(),
+    }));
+    localStorage.setItem('liberdus_token_ui_last_selected_wallet_id', 'stale-wallet-id');
+
+    const manager = new WalletManager();
+    manager.load();
+    await manager.init();
+
+    expect(manager.isConnected()).toBe(true);
+    expect(provider.request.mock.calls.map(([payload]) => payload.method)).toEqual(['eth_accounts', 'eth_chainId']);
+    expect(localStorage.getItem('liberdus_token_ui_last_selected_wallet_id')).toBe('metamask');
+  });
+
   it('skips silent restore after an explicit user disconnect preference is stored', async () => {
     const provider = makeProvider({ flags: { isMetaMask: true } });
     window.ethereum = { providers: [provider] };

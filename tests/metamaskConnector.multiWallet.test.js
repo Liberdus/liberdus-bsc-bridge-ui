@@ -109,6 +109,36 @@ describe('MetaMaskConnector multi-wallet discovery', () => {
     expect(wallets[1].flags.isMetaMask).toBe(true);
   });
 
+  it('deduplicates a legacy wallet when the EIP-6963 announcement uses a different provider object', () => {
+    const legacyMetaMask = makeInjectedProvider({ isMetaMask: true });
+    const announcedMetaMask = makeInjectedProvider({ isMetaMask: true });
+
+    window.ethereum = {
+      providers: [legacyMetaMask],
+    };
+
+    const connector = new MetaMaskConnector();
+    connector.load();
+
+    window.dispatchEvent(new CustomEvent('eip6963:announceProvider', {
+      detail: {
+        info: {
+          uuid: 'metamask-wallet',
+          name: 'MetaMask',
+          icon: 'data:image/svg+xml;base64,metamask',
+          rdns: 'io.metamask',
+        },
+        provider: announcedMetaMask,
+      },
+    }));
+
+    const wallets = connector.getAvailableWallets();
+
+    expect(wallets).toHaveLength(1);
+    expect(wallets[0].id).toBe('metamask');
+    expect(wallets[0].rdns).toBe('io.metamask');
+  });
+
   it('does not add a fake MetaMask legacy fallback when Phantom is the only discovered wallet', () => {
     const phantom = makeInjectedProvider({ isPhantom: true, isMetaMask: true });
     const phantomEthereumShim = makeInjectedProvider({ isMetaMask: true });

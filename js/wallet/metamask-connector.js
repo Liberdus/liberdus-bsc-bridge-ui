@@ -401,6 +401,11 @@ export class MetaMaskConnector {
       return this._walletIdByRdns.get(info.rdns);
     }
 
+    if (info?.rdns) {
+      const legacyWalletId = this._findLegacyWalletIdByRdns(info.rdns);
+      if (legacyWalletId) return legacyWalletId;
+    }
+
     return null;
   }
 
@@ -454,5 +459,28 @@ export class MetaMaskConnector {
       isBraveWallet: !!provider?.isBraveWallet || rdns.includes('brave'),
       isCoinbaseWallet: !!provider?.isCoinbaseWallet || rdns.includes('coinbase'),
     };
+  }
+
+  _findLegacyWalletIdByRdns(rdns) {
+    const normalizedRdns = normalizeRdns(rdns);
+    if (!normalizedRdns) return null;
+
+    for (const [walletId, wallet] of this.discoveredWallets.entries()) {
+      if (wallet.source !== 'legacy') continue;
+
+      const walletRdns = normalizeRdns(wallet.rdns) || this._legacyRdnsFromFlags(wallet.flags);
+      if (walletRdns === normalizedRdns) {
+        return walletId;
+      }
+    }
+
+    return null;
+  }
+
+  _legacyRdnsFromFlags(flags = {}) {
+    if (flags.isBraveWallet) return 'com.brave.wallet';
+    if (flags.isCoinbaseWallet) return 'com.coinbase.wallet';
+    if (flags.isMetaMask) return 'io.metamask';
+    return '';
   }
 }
