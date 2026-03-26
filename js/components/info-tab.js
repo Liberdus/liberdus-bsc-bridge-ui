@@ -1,4 +1,5 @@
 import { RefreshButton } from './refresh-button.js';
+import { escapeHtml } from '../utils/helpers.js';
 
 export class InfoTab {
   constructor() {
@@ -323,12 +324,7 @@ export class InfoTab {
   }
 
   _escapeHtml(value) {
-    return String(value ?? '')
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#39;');
+    return escapeHtml(value);
   }
 
   _notifyReadError(snapshot) {

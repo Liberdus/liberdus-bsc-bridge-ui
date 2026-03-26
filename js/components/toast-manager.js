@@ -1,4 +1,4 @@
-import { assert } from '../utils/assert.js';
+import { assert } from '../utils/helpers.js';
 
 const TYPE_ICONS = {
   success: '\u2713',
