@@ -141,8 +141,16 @@ export class Header {
       ? wallets.map((wallet) => {
           const isSelected = wallet.id === selectedId;
           const iconHtml = wallet.icon
-            ? `<img class="wallet-picker-option-icon-image" src="${escapeHtml(wallet.icon)}" alt="" />`
-            : `<span class="wallet-picker-option-icon-fallback" aria-hidden="true">${escapeHtml(wallet.name?.slice?.(0, 1) || 'W')}</span>`;
+            ? `
+              <span class="wallet-picker-option-icon wallet-picker-option-icon--image">
+                <img class="wallet-picker-option-icon-image" src="${escapeHtml(wallet.icon)}" alt="" />
+              </span>
+            `
+            : `
+              <span class="wallet-picker-option-icon">
+                <span class="wallet-picker-option-icon-fallback" aria-hidden="true">${escapeHtml(wallet.name?.slice?.(0, 1) || 'W')}</span>
+              </span>
+            `;
 
           return `
             <button
@@ -151,7 +159,7 @@ export class Header {
               data-wallet-picker-id="${escapeHtml(wallet.id)}"
               ${isConnecting ? 'disabled' : ''}
             >
-              <span class="wallet-picker-option-icon">${iconHtml}</span>
+              ${iconHtml}
               <span class="wallet-picker-option-name">${escapeHtml(wallet.name || 'Browser Wallet')}</span>
             </button>
           `;

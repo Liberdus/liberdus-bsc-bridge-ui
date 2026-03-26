@@ -181,10 +181,19 @@
   flex-shrink: 0;
 }
 
+.wallet-picker-option-icon--image {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
 .wallet-picker-option-icon-image {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .wallet-picker-option-icon-fallback {
