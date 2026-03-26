@@ -25,6 +25,10 @@ export class Header {
     document.addEventListener('walletDisconnected', () => this.updateConnectButtonStatus());
     document.addEventListener('walletAccountChanged', () => this.updateConnectButtonStatus());
     document.addEventListener('walletChainChanged', () => this.updateConnectButtonStatus());
+    document.addEventListener('walletProvidersChanged', () => {
+      if (!this._isPickerOpen) return;
+      this._renderWalletPicker();
+    });
 
     document.addEventListener('keydown', (event) => {
       if (!this._isPickerOpen || event.key !== 'Escape') return;

@@ -5,7 +5,7 @@ import { MetaMaskConnector } from './metamask-connector.js';
  * - Explicit injected-wallet selection
  * - Silent restore from the last selected wallet
  * - Dispatches DOM events:
- *   - walletConnected, walletDisconnected, walletAccountChanged, walletChainChanged
+ *   - walletConnected, walletDisconnected, walletAccountChanged, walletChainChanged, walletProvidersChanged
  */
 export class WalletManager {
   constructor({
@@ -33,7 +33,8 @@ export class WalletManager {
   }
 
   load() {
-    this.connector.onWalletsChanged = () => {
+    this.connector.onWalletsChanged = (wallets) => {
+      this._notify('providersChanged', { wallets });
       void this._maybeRestorePreviousConnection();
     };
     this.connector.onAccountsChanged = (accounts) => this._handleAccountsChanged(accounts);
@@ -303,6 +304,7 @@ export class WalletManager {
       disconnected: 'walletDisconnected',
       accountChanged: 'walletAccountChanged',
       chainChanged: 'walletChainChanged',
+      providersChanged: 'walletProvidersChanged',
     };
     const domName = eventNameMap[event] || `wallet${event.charAt(0).toUpperCase()}${event.slice(1)}`;
     document.dispatchEvent(new CustomEvent(domName, { detail: { event, data } }));
