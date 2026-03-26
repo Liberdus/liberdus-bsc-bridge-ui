@@ -84,6 +84,39 @@ describe('Header wallet picker', () => {
     expect(document.body.textContent).toContain('Install or unlock a compatible injected wallet to continue.');
   });
 
+  it('refreshes an open picker when wallets are discovered after it renders', () => {
+    window.walletManager.getAvailableWallets = vi.fn(() => []);
+    window.walletManager.getLastSelectedWalletId = vi.fn(() => null);
+
+    const header = new Header();
+    header.load();
+
+    document.getElementById('connect-wallet-btn').click();
+
+    expect(document.body.textContent).toContain('No browser wallet found');
+
+    window.walletManager.getAvailableWallets = vi.fn(() => ([
+      {
+        id: 'metamask-wallet',
+        name: 'MetaMask',
+        icon: '',
+      },
+    ]));
+
+    document.dispatchEvent(new CustomEvent('walletProvidersChanged', {
+      detail: {
+        data: {
+          wallets: window.walletManager.getAvailableWallets(),
+        },
+      },
+    }));
+
+    const optionButtons = Array.from(document.querySelectorAll('[data-wallet-picker-id]'));
+    expect(optionButtons).toHaveLength(1);
+    expect(document.body.textContent).not.toContain('No browser wallet found');
+    expect(document.body.textContent).toContain('MetaMask');
+  });
+
   it('uses the toast manager instead of browser alerts for wallet connection errors', async () => {
     window.walletManager.connect = vi.fn(async () => {
       const error = new Error('Connection request was rejected.');
