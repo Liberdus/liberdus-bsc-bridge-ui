@@ -139,6 +139,70 @@ describe('MetaMaskConnector multi-wallet discovery', () => {
     expect(wallets[0].rdns).toBe('io.metamask');
   });
 
+  it('prefers the announced provider object after deduplicating a legacy wallet', async () => {
+    const legacyMetaMask = makeInjectedProvider({ isMetaMask: true });
+    const announcedMetaMask = makeInjectedProvider({ isMetaMask: true });
+
+    window.ethereum = {
+      providers: [legacyMetaMask],
+    };
+
+    const connector = new MetaMaskConnector();
+    connector.load();
+
+    window.dispatchEvent(new CustomEvent('eip6963:announceProvider', {
+      detail: {
+        info: {
+          uuid: 'metamask-wallet',
+          name: 'MetaMask',
+          icon: 'data:image/svg+xml;base64,metamask',
+          rdns: 'io.metamask',
+        },
+        provider: announcedMetaMask,
+      },
+    }));
+
+    const wallet = connector.getWalletById('metamask');
+
+    expect(wallet.provider).toBe(announcedMetaMask);
+
+    await connector.connect(wallet.id);
+
+    expect(announcedMetaMask.request).toHaveBeenCalledWith({ method: 'eth_requestAccounts' });
+    expect(legacyMetaMask.request).not.toHaveBeenCalledWith({ method: 'eth_requestAccounts' });
+  });
+
+  it('deduplicates providers-array shims when a wallet exposes a wallet-specific flag', () => {
+    const phantomLegacyShim = makeInjectedProvider({ isMetaMask: true, isPhantom: true });
+    const phantom = makeInjectedProvider({ isMetaMask: true, isPhantom: true });
+
+    window.ethereum = {
+      providers: [phantomLegacyShim],
+    };
+
+    const connector = new MetaMaskConnector();
+    connector.load();
+
+    window.dispatchEvent(new CustomEvent('eip6963:announceProvider', {
+      detail: {
+        info: {
+          uuid: 'phantom-wallet',
+          name: 'Phantom',
+          icon: 'data:image/png;base64,phantom',
+          rdns: 'app.phantom',
+        },
+        provider: phantom,
+      },
+    }));
+
+    const wallets = connector.getAvailableWallets();
+
+    expect(wallets).toHaveLength(1);
+    expect(wallets[0].name).toBe('Phantom');
+    expect(wallets[0].rdns).toBe('app.phantom');
+    expect(connector.getWalletById(wallets[0].id).provider).toBe(phantom);
+  });
+
   it('does not add a fake MetaMask legacy fallback when Phantom is the only discovered wallet', () => {
     const phantom = makeInjectedProvider({ isPhantom: true, isMetaMask: true });
     const phantomEthereumShim = makeInjectedProvider({ isMetaMask: true });

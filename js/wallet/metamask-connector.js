@@ -34,6 +34,60 @@ function cloneWalletOption(wallet) {
   };
 }
 
+const GENERIC_IDENTITY_TOKENS = new Set([
+  'app',
+  'browser',
+  'coinbase',
+  'com',
+  'eip1193',
+  'eip6963',
+  'ethereum',
+  'injected',
+  'io',
+  'metamask',
+  'provider',
+  'wallet',
+]);
+
+function normalizeIdentityToken(value) {
+  return normalizeString(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function addIdentityToken(tokens, value) {
+  const token = normalizeIdentityToken(value);
+  if (!token || GENERIC_IDENTITY_TOKENS.has(token)) return;
+  tokens.add(token);
+}
+
+function collectIdentityTokens({ provider = null, info = null, wallet = null } = {}) {
+  const tokens = new Set();
+
+  const sources = [
+    { provider, name: info?.name, rdns: info?.rdns },
+    wallet ? { provider: wallet.provider, name: wallet.name, rdns: wallet.rdns } : null,
+  ].filter(Boolean);
+
+  sources.forEach((source) => {
+    normalizeString(source.name)
+      .split(/[^a-z0-9]+/i)
+      .forEach((part) => addIdentityToken(tokens, part));
+
+    normalizeRdns(source.rdns)
+      .split('.')
+      .forEach((part) => addIdentityToken(tokens, part));
+
+    Object.entries(source.provider || {}).forEach(([key, value]) => {
+      if (typeof value !== 'boolean' || !value) return;
+      if (!/^is[A-Z]/.test(key)) return;
+
+      const flagName = key.slice(2).replace(/Wallet$/i, '');
+      addIdentityToken(tokens, flagName);
+    });
+  });
+
+  return tokens;
+}
+
 export class MetaMaskConnector {
   constructor() {
     this.account = null;
@@ -358,15 +412,19 @@ export class MetaMaskConnector {
     const existingWallet = existingWalletId ? this.discoveredWallets.get(existingWalletId) : null;
     const flags = this._deriveWalletFlags(provider, normalizedInfo);
     const sourcePriority = source === 'eip6963' ? 0 : 1;
+    const shouldPreferExistingProvider = !!existingWallet && existingWallet.sourcePriority < sourcePriority;
 
     const wallet = {
       id: walletId,
       name: this._deriveWalletName(provider, normalizedInfo, existingWallet),
       icon: normalizedInfo.icon || existingWallet?.icon || '',
       rdns: normalizedInfo.rdns || existingWallet?.rdns || '',
-      provider,
+      provider: shouldPreferExistingProvider ? existingWallet.provider : provider,
       source,
-      flags,
+      flags: {
+        ...(existingWallet?.flags || {}),
+        ...flags,
+      },
       sourcePriority,
       sortIndex: existingWallet ? Math.min(existingWallet.sortIndex, sortIndex) : sortIndex,
     };
@@ -405,6 +463,9 @@ export class MetaMaskConnector {
       const legacyWalletId = this._findLegacyWalletIdByRdns(info.rdns);
       if (legacyWalletId) return legacyWalletId;
     }
+
+    const legacyWalletId = this._findLegacyWalletIdByIdentity({ provider, info });
+    if (legacyWalletId) return legacyWalletId;
 
     return null;
   }
@@ -482,5 +543,25 @@ export class MetaMaskConnector {
     if (flags.isCoinbaseWallet) return 'com.coinbase.wallet';
     if (flags.isMetaMask) return 'io.metamask';
     return '';
+  }
+
+  _findLegacyWalletIdByIdentity({ provider, info }) {
+    const identityTokens = collectIdentityTokens({ provider, info });
+    if (identityTokens.size === 0) return null;
+
+    for (const [walletId, wallet] of this.discoveredWallets.entries()) {
+      if (wallet.source !== 'legacy') continue;
+
+      const legacyTokens = collectIdentityTokens({ wallet });
+      if (legacyTokens.size === 0) continue;
+
+      for (const token of identityTokens) {
+        if (legacyTokens.has(token)) {
+          return walletId;
+        }
+      }
+    }
+
+    return null;
   }
 }
