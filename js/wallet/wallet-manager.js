@@ -66,14 +66,6 @@ export class WalletManager {
     return this.signer;
   }
 
-  getWalletId() {
-    return this.walletId;
-  }
-
-  getWalletName() {
-    return this.walletName;
-  }
-
   getLastSelectedWalletId() {
     return this._readStorageString(this.lastSelectedWalletStorageKey);
   }
@@ -84,10 +76,6 @@ export class WalletManager {
 
   hasAvailableWallets() {
     return !!this.connector?.hasAvailableWallets?.();
-  }
-
-  hasAvailableWallet() {
-    return this.hasAvailableWallets();
   }
 
   getWalletById(walletId) {

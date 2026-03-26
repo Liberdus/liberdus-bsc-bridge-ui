@@ -63,7 +63,6 @@ describe('WalletManager multi-provider restore behavior', () => {
 
     expect(restored).toBeUndefined();
     expect(manager.isConnected()).toBe(true);
-    expect(manager.getWalletId()).toBe('metamask');
     expect(provider.request.mock.calls.map(([payload]) => payload.method)).toEqual(['eth_accounts', 'eth_chainId']);
     expect(connectedEvents).toHaveLength(1);
     expect(connectedEvents[0].restored).toBe(true);
