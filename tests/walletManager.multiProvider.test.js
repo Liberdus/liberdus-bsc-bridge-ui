@@ -131,4 +131,47 @@ describe('WalletManager multi-provider restore behavior', () => {
     expect(manager.isConnected()).toBe(false);
     expect(provider.request).not.toHaveBeenCalled();
   });
+
+  it('retries silent restore when a wallet is announced after app startup', async () => {
+    const provider = makeProvider({ flags: { isMetaMask: true } });
+
+    localStorage.setItem('liberdus_token_ui_wallet_connection', JSON.stringify({
+      walletId: 'metamask-wallet',
+      address: '0x1111111111111111111111111111111111111111',
+      chainId: 80002,
+      timestamp: Date.now(),
+    }));
+    localStorage.setItem('liberdus_token_ui_last_selected_wallet_id', 'metamask-wallet');
+
+    const manager = new WalletManager();
+    const connectedEvents = [];
+    document.addEventListener('walletConnected', (event) => connectedEvents.push(event.detail.data));
+
+    manager.load();
+    await manager.init();
+
+    expect(manager.isConnected()).toBe(false);
+    expect(provider.request).not.toHaveBeenCalled();
+
+    manager.connector._boundAnnounceProvider({
+      detail: {
+        info: {
+          uuid: 'metamask-wallet',
+          name: 'MetaMask',
+          icon: 'data:image/svg+xml;base64,metamask',
+          rdns: 'io.metamask',
+        },
+        provider,
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(manager.isConnected()).toBe(true);
+    });
+
+    expect(provider.request.mock.calls.map(([payload]) => payload.method)).toEqual(['eth_accounts', 'eth_chainId']);
+    expect(connectedEvents).toHaveLength(1);
+    expect(connectedEvents[0].restored).toBe(true);
+    expect(connectedEvents[0].walletId).toBe('metamask-wallet');
+  });
 });

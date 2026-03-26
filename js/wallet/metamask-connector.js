@@ -114,6 +114,7 @@ export class MetaMaskConnector {
     this._boundDisconnect = null;
 
     // Optional callbacks (set by WalletManager)
+    this.onWalletsChanged = null;
     this.onAccountsChanged = null;
     this.onConnect = null;
     this.onChainChanged = null;
@@ -134,12 +135,17 @@ export class MetaMaskConnector {
         source: 'eip6963',
         sortIndex: this._eip6963Order++,
       });
-      this._pruneLegacyShimWallets(wallet);
+      const prunedLegacyShim = this._pruneLegacyShimWallets(wallet);
+      if (wallet || prunedLegacyShim) {
+        this._notifyWalletsChanged();
+      }
     };
 
     window.addEventListener('eip6963:announceProvider', this._boundAnnounceProvider);
     window.dispatchEvent(new Event('eip6963:requestProvider'));
-    this._registerLegacyWallets();
+    if (this._registerLegacyWallets()) {
+      this._notifyWalletsChanged();
+    }
   }
 
   hasAvailableWallets() {
@@ -359,27 +365,32 @@ export class MetaMaskConnector {
     const ethereum = window?.ethereum;
     if (!ethereum) return;
 
+    let changed = false;
     const providers = Array.isArray(ethereum.providers) ? ethereum.providers.filter(Boolean) : [];
     providers.forEach((provider, index) => {
-      this._registerWallet({
+      const wallet = this._registerWallet({
         provider,
         info: null,
         source: 'legacy',
         sortIndex: index,
       });
+      changed = changed || !!wallet;
     });
 
-    if (providers.length > 0) return;
-    if (this._hasDiscoveredEip6963Wallets()) return;
+    if (providers.length > 0) return changed;
+    if (this._hasDiscoveredEip6963Wallets()) return changed;
 
     if (!this._walletIdByProvider.has(ethereum)) {
-      this._registerWallet({
+      const wallet = this._registerWallet({
         provider: ethereum,
         info: null,
         source: 'legacy',
         sortIndex: 0,
       });
+      changed = changed || !!wallet;
     }
+
+    return changed;
   }
 
   _hasDiscoveredEip6963Wallets() {
@@ -390,8 +401,9 @@ export class MetaMaskConnector {
     if (!latestWallet || typeof window === 'undefined') return;
 
     const ethereum = window?.ethereum;
-    if (!ethereum || Array.isArray(ethereum.providers)) return;
+    if (!ethereum || Array.isArray(ethereum.providers)) return false;
 
+    let changed = false;
     for (const [walletId, wallet] of this.discoveredWallets.entries()) {
       if (walletId === latestWallet.id) continue;
       if (wallet.source !== 'legacy') continue;
@@ -400,7 +412,10 @@ export class MetaMaskConnector {
       this.discoveredWallets.delete(walletId);
       this._walletIdByProvider.delete(wallet.provider);
       if (wallet.rdns) this._walletIdByRdns.delete(wallet.rdns);
+      changed = true;
     }
+
+    return changed;
   }
 
   _registerWallet({ provider, info = null, source = 'legacy', sortIndex = 0 } = {}) {
@@ -436,6 +451,13 @@ export class MetaMaskConnector {
     } else if (existingWallet) {
       wallet.source = existingWallet.source;
       wallet.sourcePriority = existingWallet.sourcePriority;
+    }
+
+    if (existingWallet && this._walletsMatch(existingWallet, wallet)) {
+      this._walletIdByProvider.set(provider, walletId);
+      if (normalizedInfo.uuid) this._walletIdByUuid.set(normalizedInfo.uuid, walletId);
+      if (wallet.rdns) this._walletIdByRdns.set(wallet.rdns, walletId);
+      return null;
     }
 
     this.discoveredWallets.set(walletId, wallet);
@@ -563,5 +585,34 @@ export class MetaMaskConnector {
     }
 
     return null;
+  }
+
+  _notifyWalletsChanged() {
+    if (typeof this.onWalletsChanged !== 'function') return;
+    try {
+      this.onWalletsChanged(this.getAvailableWallets());
+    } catch {
+      // ignore
+    }
+  }
+
+  _walletsMatch(previousWallet, nextWallet) {
+    if (!previousWallet || !nextWallet) return false;
+    if (previousWallet.id !== nextWallet.id) return false;
+    if (previousWallet.name !== nextWallet.name) return false;
+    if (previousWallet.icon !== nextWallet.icon) return false;
+    if (previousWallet.rdns !== nextWallet.rdns) return false;
+    if (previousWallet.provider !== nextWallet.provider) return false;
+    if (previousWallet.source !== nextWallet.source) return false;
+    if (previousWallet.sourcePriority !== nextWallet.sourcePriority) return false;
+    if (previousWallet.sortIndex !== nextWallet.sortIndex) return false;
+
+    const previousFlags = previousWallet.flags || {};
+    const nextFlags = nextWallet.flags || {};
+    const previousKeys = Object.keys(previousFlags);
+    const nextKeys = Object.keys(nextFlags);
+    if (previousKeys.length !== nextKeys.length) return false;
+
+    return previousKeys.every((key) => previousFlags[key] === nextFlags[key]);
   }
 }

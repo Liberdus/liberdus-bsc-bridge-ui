@@ -28,20 +28,24 @@ export class WalletManager {
 
     this.isConnecting = false;
     this._connectionPromise = null;
+    this._restoreConnectionPromise = null;
     this._disconnectProbeToken = 0;
   }
 
   load() {
-    this.connector.load();
-
+    this.connector.onWalletsChanged = () => {
+      void this._maybeRestorePreviousConnection();
+    };
     this.connector.onAccountsChanged = (accounts) => this._handleAccountsChanged(accounts);
     this.connector.onConnect = (connectInfo) => this._handleProviderConnect(connectInfo);
     this.connector.onChainChanged = (chainId) => this._handleChainChanged(chainId);
     this.connector.onDisconnected = (error) => this._handleDisconnected(error);
+
+    this.connector.load();
   }
 
   async init() {
-    await this.checkPreviousConnection();
+    await this._maybeRestorePreviousConnection();
   }
 
   isConnected() {
@@ -188,6 +192,24 @@ export class WalletManager {
     }
   }
 
+  async _maybeRestorePreviousConnection() {
+    if (this.isConnected()) return true;
+    if (this.isConnecting || this._connectionPromise) return false;
+    if (this.hasUserDisconnected()) return false;
+    if (!this._hasStoredConnectionCandidate()) return false;
+
+    if (this._restoreConnectionPromise) {
+      return await this._restoreConnectionPromise;
+    }
+
+    this._restoreConnectionPromise = this.checkPreviousConnection();
+    try {
+      return await this._restoreConnectionPromise;
+    } finally {
+      this._restoreConnectionPromise = null;
+    }
+  }
+
   hasUserDisconnected() {
     return this._readStorageString(this.userDisconnectedStorageKey) === 'true';
   }
@@ -320,6 +342,15 @@ export class WalletManager {
     } catch {
       return null;
     }
+  }
+
+  _hasStoredConnectionCandidate() {
+    const stored = this._readConnectionInfo();
+    return !!(
+      this.getLastSelectedWalletId()
+      || normalizeStoredWalletId(stored?.walletId)
+      || stored?.address
+    );
   }
 
   _clearConnectionInfo() {
