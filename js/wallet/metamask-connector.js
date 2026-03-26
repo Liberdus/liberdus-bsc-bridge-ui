@@ -88,10 +88,6 @@ export class MetaMaskConnector {
     this._registerLegacyWallets();
   }
 
-  isAvailable() {
-    return this.hasAvailableWallets();
-  }
-
   hasAvailableWallets() {
     return this.getAvailableWallets().length > 0;
   }
