@@ -86,8 +86,8 @@ describe('WalletManager multi-provider restore behavior', () => {
     await manager.init();
 
     expect(manager.isConnected()).toBe(false);
-    expect(brave.request).not.toHaveBeenCalled();
-    expect(metamask.request).not.toHaveBeenCalled();
+    expect(brave.request.mock.calls.map(([payload]) => payload.method)).toEqual(['eth_accounts']);
+    expect(metamask.request.mock.calls.map(([payload]) => payload.method)).toEqual(['eth_accounts']);
   });
 
   it('falls back to the stored session when the last selected wallet id is stale', async () => {
@@ -173,5 +173,100 @@ describe('WalletManager multi-provider restore behavior', () => {
     expect(connectedEvents).toHaveLength(1);
     expect(connectedEvents[0].restored).toBe(true);
     expect(connectedEvents[0].walletId).toBe('metamask-wallet');
+  });
+
+  it('waits for a wallet whose accounts match stored legacy session data', async () => {
+    const wrongWallet = makeProvider({
+      accounts: ['0x2222222222222222222222222222222222222222'],
+      flags: { isMetaMask: true, isBraveWallet: true },
+    });
+    const rightWallet = makeProvider({ flags: { isMetaMask: true } });
+
+    localStorage.setItem('liberdus_token_ui_wallet_connection', JSON.stringify({
+      address: '0x1111111111111111111111111111111111111111',
+      chainId: 80002,
+      timestamp: Date.now(),
+    }));
+
+    const manager = new WalletManager();
+    manager.load();
+    await manager.init();
+
+    manager.connector._boundAnnounceProvider({
+      detail: {
+        info: {
+          uuid: 'brave-wallet',
+          name: 'Brave Wallet',
+          icon: 'data:image/svg+xml;base64,brave',
+          rdns: 'com.brave.wallet',
+        },
+        provider: wrongWallet,
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(wrongWallet.request).toHaveBeenCalledWith({ method: 'eth_accounts' });
+    });
+    expect(manager.isConnected()).toBe(false);
+
+    manager.connector._boundAnnounceProvider({
+      detail: {
+        info: {
+          uuid: 'metamask-wallet',
+          name: 'MetaMask',
+          icon: 'data:image/svg+xml;base64,metamask',
+          rdns: 'io.metamask',
+        },
+        provider: rightWallet,
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(manager.isConnected()).toBe(true);
+    });
+
+    expect(manager.getAddress()).toBe('0x1111111111111111111111111111111111111111');
+    expect(manager.getProvider().provider).toBe(rightWallet);
+    expect(wrongWallet.request).not.toHaveBeenCalledWith({ method: 'eth_chainId' });
+  });
+
+  it('rebinds a restored session when the active wallet provider changes', async () => {
+    const legacyWallet = makeProvider({ flags: { isMetaMask: true } });
+    const announcedWallet = makeProvider({ flags: { isMetaMask: true } });
+
+    window.ethereum = { providers: [legacyWallet] };
+
+    localStorage.setItem('liberdus_token_ui_wallet_connection', JSON.stringify({
+      walletId: 'metamask',
+      address: '0x1111111111111111111111111111111111111111',
+      chainId: 80002,
+      timestamp: Date.now(),
+    }));
+    localStorage.setItem('liberdus_token_ui_last_selected_wallet_id', 'metamask');
+
+    const manager = new WalletManager();
+    manager.load();
+    await manager.init();
+
+    expect(manager.getProvider().provider).toBe(legacyWallet);
+
+    manager.connector._boundAnnounceProvider({
+      detail: {
+        info: {
+          uuid: 'metamask-wallet',
+          name: 'MetaMask',
+          icon: 'data:image/svg+xml;base64,metamask',
+          rdns: 'io.metamask',
+        },
+        provider: announcedWallet,
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(manager.getProvider().provider).toBe(announcedWallet);
+    });
+
+    expect(legacyWallet.removeListener).toHaveBeenCalledWith('accountsChanged', expect.any(Function));
+    expect(announcedWallet.on).toHaveBeenCalledWith('accountsChanged', expect.any(Function));
   });
 });

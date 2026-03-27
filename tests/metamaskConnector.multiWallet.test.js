@@ -231,4 +231,38 @@ describe('MetaMaskConnector multi-wallet discovery', () => {
     expect(wallets[0].flags.isMetaMask).toBe(true);
     expect(wallets.find((wallet) => wallet.name === 'MetaMask')).toBeUndefined();
   });
+
+  it('rebinds event listeners when the active wallet provider object is replaced', () => {
+    const legacyMetaMask = makeInjectedProvider({ isMetaMask: true });
+    const announcedMetaMask = makeInjectedProvider({ isMetaMask: true });
+
+    window.ethereum = {
+      providers: [legacyMetaMask],
+    };
+
+    const connector = new MetaMaskConnector();
+    connector.load();
+    connector.bindConnectedWallet('metamask', {
+      account: '0x1111111111111111111111111111111111111111',
+      chainId: 80002,
+      provider: new window.ethers.providers.Web3Provider(legacyMetaMask, 'any'),
+      signer: { kind: 'signer' },
+    });
+
+    window.dispatchEvent(new CustomEvent('eip6963:announceProvider', {
+      detail: {
+        info: {
+          uuid: 'metamask-wallet',
+          name: 'MetaMask',
+          icon: 'data:image/svg+xml;base64,metamask',
+          rdns: 'io.metamask',
+        },
+        provider: announcedMetaMask,
+      },
+    }));
+
+    expect(connector.peekEip1193Provider()).toBe(announcedMetaMask);
+    expect(legacyMetaMask.removeListener).toHaveBeenCalledWith('accountsChanged', expect.any(Function));
+    expect(announcedMetaMask.on).toHaveBeenCalledWith('accountsChanged', expect.any(Function));
+  });
 });

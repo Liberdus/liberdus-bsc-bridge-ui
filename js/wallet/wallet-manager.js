@@ -34,6 +34,7 @@ export class WalletManager {
 
   load() {
     this.connector.onWalletsChanged = (wallets) => {
+      this._refreshActiveWalletBinding();
       this._notify('providersChanged', { wallets });
       void this._maybeRestorePreviousConnection();
     };
@@ -154,14 +155,15 @@ export class WalletManager {
     if (!this.hasAvailableWallets()) return false;
 
     const stored = this._readConnectionInfo();
-    const restoreWallet = this._resolveRestoreWallet(stored);
+    const restoreTarget = await this._resolveRestoreWallet(stored);
+    const restoreWallet = restoreTarget?.wallet || null;
     if (!restoreWallet?.id) return false;
 
     try {
       const eip1193Provider = await this.getEip1193Provider({ walletId: restoreWallet.id, waitMs: 200 });
       if (!eip1193Provider) return false;
 
-      const accounts = await this.connector.getAccounts({ walletId: restoreWallet.id, waitMs: 200 });
+      const accounts = restoreTarget?.accounts || await this.connector.getAccounts({ walletId: restoreWallet.id, waitMs: 200 });
       if (!accounts || accounts.length === 0) {
         this._clearConnectionInfo();
         return false;
@@ -215,27 +217,24 @@ export class WalletManager {
     return this._readStorageString(this.userDisconnectedStorageKey) === 'true';
   }
 
-  _resolveRestoreWallet(stored) {
+  async _resolveRestoreWallet(stored) {
     const lastSelectedWalletId = this.getLastSelectedWalletId();
     if (lastSelectedWalletId) {
       const lastSelectedWallet = this.getWalletById(lastSelectedWalletId);
-      if (lastSelectedWallet) return lastSelectedWallet;
+      if (lastSelectedWallet) {
+        return { wallet: lastSelectedWallet, accounts: null };
+      }
     }
 
     const storedWalletId = normalizeStoredWalletId(stored?.walletId);
     if (storedWalletId) {
       const storedWallet = this.getWalletById(storedWalletId);
-      if (storedWallet) return storedWallet;
+      if (storedWallet) {
+        return { wallet: storedWallet, accounts: null };
+      }
     }
 
-    if (!stored?.address) return null;
-
-    const wallets = this.getAvailableWallets();
-    if (wallets.length === 1) {
-      return wallets[0];
-    }
-
-    return null;
+    return await this._findWalletByStoredAddress(stored?.address);
   }
 
   _applyConnectedSession({ provider, signer, address, chainId, wallet }) {
@@ -253,6 +252,51 @@ export class WalletManager {
       provider: this.provider,
       signer: this.signer,
     });
+  }
+
+  async _findWalletByStoredAddress(address) {
+    const storedAddress = String(address || '').toLowerCase();
+    if (!storedAddress) return null;
+
+    const wallets = this.getAvailableWallets();
+    let matchedWallet = null;
+    let matchedAccounts = null;
+
+    for (const wallet of wallets) {
+      const accounts = await this.connector.getAccounts({ walletId: wallet.id, waitMs: 200 });
+      const hasStoredAddress = Array.isArray(accounts)
+        && accounts.some((account) => String(account || '').toLowerCase() === storedAddress);
+      if (!hasStoredAddress) continue;
+      if (matchedWallet) return null;
+      matchedWallet = wallet;
+      matchedAccounts = accounts;
+    }
+
+    return matchedWallet ? { wallet: matchedWallet, accounts: matchedAccounts } : null;
+  }
+
+  _refreshActiveWalletBinding() {
+    if (!this.isConnected()) return false;
+    if (!this.walletId || !window.ethers) return false;
+
+    const activeWallet = this.getWalletById(this.walletId);
+    const nextWalletProvider = activeWallet?.provider || null;
+    const currentWalletProvider = this.provider?.provider || null;
+    if (!nextWalletProvider?.request || currentWalletProvider === nextWalletProvider) return false;
+
+    const provider = new window.ethers.providers.Web3Provider(nextWalletProvider, 'any');
+    const signer = provider.getSigner();
+
+    this.provider = provider;
+    this.signer = signer;
+    this.connector.bindConnectedWallet(this.walletId, {
+      account: this.address,
+      chainId: this.chainId,
+      provider,
+      signer,
+    });
+
+    return true;
   }
 
   _handleAccountsChanged(accounts) {

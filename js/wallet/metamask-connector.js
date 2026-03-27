@@ -464,6 +464,9 @@ export class MetaMaskConnector {
     this._walletIdByProvider.set(provider, walletId);
     if (normalizedInfo.uuid) this._walletIdByUuid.set(normalizedInfo.uuid, walletId);
     if (wallet.rdns) this._walletIdByRdns.set(wallet.rdns, walletId);
+    if (walletId === this.activeWalletId && this._eventProvider && this._eventProvider !== wallet.provider) {
+      this.attachEventListeners();
+    }
 
     return cloneWalletOption(wallet);
   }
