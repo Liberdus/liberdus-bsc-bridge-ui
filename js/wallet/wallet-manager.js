@@ -1,5 +1,9 @@
 import { MetaMaskConnector } from './metamask-connector.js';
 
+const CONNECTION_STORAGE_KEY = 'liberdus_token_ui_wallet_connection';
+const LAST_SELECTED_WALLET_STORAGE_KEY = 'liberdus_token_ui_last_selected_wallet_id';
+const USER_DISCONNECTED_STORAGE_KEY = 'liberdus_token_ui_wallet_user_disconnected';
+
 /**
  * WalletManager
  * - Explicit injected-wallet selection
@@ -8,15 +12,7 @@ import { MetaMaskConnector } from './metamask-connector.js';
  *   - walletConnected, walletDisconnected, walletAccountChanged, walletChainChanged, walletProvidersChanged
  */
 export class WalletManager {
-  constructor({
-    storageKey = 'liberdus_token_ui_wallet_connection',
-    lastSelectedWalletStorageKey = 'liberdus_token_ui_last_selected_wallet_id',
-    userDisconnectedStorageKey = 'liberdus_token_ui_wallet_user_disconnected',
-  } = {}) {
-    this.storageKey = storageKey;
-    this.lastSelectedWalletStorageKey = lastSelectedWalletStorageKey;
-    this.userDisconnectedStorageKey = userDisconnectedStorageKey;
-
+  constructor() {
     this.connector = new MetaMaskConnector();
     this.provider = null; // ethers.providers.Web3Provider
     this.signer = null; // ethers.Signer
@@ -71,23 +67,23 @@ export class WalletManager {
   }
 
   getLastSelectedWalletId() {
-    return this._readStorageString(this.lastSelectedWalletStorageKey);
+    return localStorage.getItem(LAST_SELECTED_WALLET_STORAGE_KEY);
   }
 
   getAvailableWallets() {
-    return this.connector?.getAvailableWallets?.() || [];
+    return this.connector.getAvailableWallets();
   }
 
   hasAvailableWallets() {
-    return !!this.connector?.hasAvailableWallets?.();
+    return this.connector.hasAvailableWallets();
   }
 
   getWalletById(walletId) {
-    return this.connector?.getWalletById?.(walletId) || null;
+    return this.connector.getWalletById(walletId);
   }
 
   async getEip1193Provider(options = {}) {
-    return await this.connector?.getEip1193Provider?.(options);
+    return await this.connector.getEip1193Provider(options);
   }
 
   async connect({ walletId = null, userInitiated = false } = {}) {
@@ -219,7 +215,7 @@ export class WalletManager {
   }
 
   hasUserDisconnected() {
-    return this._readStorageString(this.userDisconnectedStorageKey) === 'true';
+    return localStorage.getItem(USER_DISCONNECTED_STORAGE_KEY) === 'true';
   }
 
   async _resolveRestoreWallet(stored) {
@@ -270,13 +266,19 @@ export class WalletManager {
     const storedAddress = normalizeStoredAddress(address);
     if (!storedAddress) return null;
 
-    const wallets = this.getAvailableWallets();
     let matchedWallet = null;
     let matchedAccounts = null;
 
-    for (const wallet of wallets) {
-      const accounts = await this._getAccountsMatchingStoredAddress(wallet, storedAddress);
-      if (!accounts) continue;
+    for (const wallet of this.getAvailableWallets()) {
+      let accounts;
+      try {
+        accounts = await this._getWalletAccounts(wallet);
+      } catch {
+        continue;
+      }
+
+      const hasStoredAddress = accounts.some((account) => String(account || '').toLowerCase() === storedAddress);
+      if (!hasStoredAddress) continue;
       if (matchedWallet) return null;
       matchedWallet = wallet;
       matchedAccounts = accounts;
@@ -304,19 +306,6 @@ export class WalletManager {
     }
 
     return null;
-  }
-
-  async _getAccountsMatchingStoredAddress(wallet, storedAddress) {
-    if (!wallet?.id || !storedAddress) return null;
-
-    try {
-      const accounts = await this._getWalletAccounts(wallet);
-      const hasStoredAddress = Array.isArray(accounts)
-        && accounts.some((account) => String(account || '').toLowerCase() === storedAddress);
-      return hasStoredAddress ? accounts : null;
-    } catch {
-      return null;
-    }
   }
 
   async _getWalletAccounts(wallet) {
@@ -437,12 +426,14 @@ export class WalletManager {
   }
 
   _currentWalletData(extra = {}) {
+    const walletId = this.walletId || this.getLastSelectedWalletId();
+    const walletName = this.walletName || (walletId ? this.getWalletById(walletId)?.name : null);
     return {
       address: this.address,
       chainId: this.chainId,
       walletType: this.walletType || 'injected',
-      walletId: this.walletId || this.getLastSelectedWalletId() || null,
-      walletName: this.walletName || this.getWalletById(this.getLastSelectedWalletId())?.name || null,
+      walletId,
+      walletName,
       ...extra,
     };
   }
@@ -457,16 +448,12 @@ export class WalletManager {
       chainId: this.chainId,
       timestamp: Date.now(),
     };
-    try {
-      localStorage.setItem(this.storageKey, JSON.stringify(payload));
-    } catch {
-      // ignore
-    }
+    localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(payload));
   }
 
   _readConnectionInfo() {
     try {
-      return JSON.parse(localStorage.getItem(this.storageKey) || 'null');
+      return JSON.parse(localStorage.getItem(CONNECTION_STORAGE_KEY) || 'null');
     } catch {
       return null;
     }
@@ -481,40 +468,19 @@ export class WalletManager {
   }
 
   _clearConnectionInfo() {
-    try {
-      localStorage.removeItem(this.storageKey);
-    } catch {
-      // ignore
-    }
+    localStorage.removeItem(CONNECTION_STORAGE_KEY);
   }
 
   _setLastSelectedWalletId(walletId) {
-    try {
-      if (!walletId) {
-        localStorage.removeItem(this.lastSelectedWalletStorageKey);
-        return;
-      }
-      localStorage.setItem(this.lastSelectedWalletStorageKey, String(walletId));
-    } catch {
-      // ignore
+    if (!walletId) {
+      localStorage.removeItem(LAST_SELECTED_WALLET_STORAGE_KEY);
+      return;
     }
+    localStorage.setItem(LAST_SELECTED_WALLET_STORAGE_KEY, String(walletId));
   }
 
   _setUserDisconnected(value) {
-    try {
-      localStorage.setItem(this.userDisconnectedStorageKey, value ? 'true' : 'false');
-    } catch {
-      // ignore
-    }
-  }
-
-  _readStorageString(key) {
-    try {
-      const value = localStorage.getItem(key);
-      return value == null ? null : String(value);
-    } catch {
-      return null;
-    }
+    localStorage.setItem(USER_DISCONNECTED_STORAGE_KEY, value ? 'true' : 'false');
   }
 
   _clearStateAndNotifyDisconnect(disconnectData = {}) {
@@ -536,7 +502,7 @@ export class WalletManager {
     this.walletType = null;
     this.walletId = null;
     this.walletName = null;
-    this.connector?.clearSession?.({ clearActiveWallet: true });
+    this.connector.clearSession({ clearActiveWallet: true });
 
     this._clearConnectionInfo();
     if (wasConnected) {
@@ -564,7 +530,7 @@ export class WalletManager {
         if (!walletProvider?.request) throw new Error('Wallet not available');
 
         const [accounts, chainIdHex] = await Promise.all([
-          this.connector?.getAccounts?.({ walletId, waitMs: 0 }),
+          this.connector.getAccounts({ walletId, waitMs: 0 }),
           walletProvider.request({ method: 'eth_chainId' }),
         ]);
         if (probeToken !== this._disconnectProbeToken) return;

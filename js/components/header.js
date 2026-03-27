@@ -72,12 +72,9 @@ export class Header {
     const btn = this.connectWalletBtn;
     if (!btn) return;
 
-    const walletManager = window.walletManager;
-    const walletPopup = window.walletPopup;
+    const { walletManager, walletPopup } = window;
 
-    if (walletManager?.isConnecting) {
-      return;
-    }
+    if (walletManager?.isConnecting) return;
 
     if (walletManager?.isConnected?.()) {
       walletPopup?.toggle?.(btn);
@@ -103,8 +100,7 @@ export class Header {
 
   async _connectSelectedWallet(walletId) {
     const btn = this.connectWalletBtn;
-    const walletManager = window.walletManager;
-    const walletPopup = window.walletPopup;
+    const { walletManager, walletPopup } = window;
 
     if (!btn || !walletManager) return;
 
@@ -120,13 +116,12 @@ export class Header {
       walletPopup?.show?.(btn);
     } catch (error) {
       this._dismissWalletApprovalToast();
-      if (error?.code === 4001) {
-        this._showWalletError('Connection request was rejected.');
-      } else if (error?.code === -32002) {
-        this._showWalletError('Connection request already pending in your wallet.');
-      } else {
-        this._showWalletError(error?.message || 'Failed to connect wallet');
-      }
+      const message = error?.code === 4001
+        ? 'Connection request was rejected.'
+        : error?.code === -32002
+          ? 'Connection request already pending in your wallet.'
+          : error?.message || 'Failed to connect wallet';
+      this._showWalletError(message);
       this._renderWalletPicker();
     } finally {
       this.updateConnectButtonStatus();
@@ -134,10 +129,8 @@ export class Header {
   }
 
   _showWalletApprovalToast() {
-    const toastManager = window.toastManager;
-    if (!toastManager?.show) return;
-
-    this._walletApprovalToastId = toastManager.show({
+    if (!window.toastManager?.show) return;
+    this._walletApprovalToastId = window.toastManager.show({
       id: this._walletApprovalToastId || undefined,
       title: 'Wallet Connection',
       message: 'Waiting for wallet approval. Finish connecting in your wallet.',
@@ -165,7 +158,7 @@ export class Header {
   _renderWalletPicker() {
     if (!this._pickerContainer || !this._isPickerOpen) return;
 
-    const walletManager = window.walletManager;
+    const { walletManager } = window;
     const wallets = walletManager?.getAvailableWallets?.() || [];
     const isConnecting = !!walletManager?.isConnecting;
     const selectedId = this._pickerSelectionId || walletManager?.getLastSelectedWalletId?.() || wallets[0]?.id || null;
@@ -241,7 +234,7 @@ export class Header {
   }
 
   updateConnectButtonStatus() {
-    const walletManager = window.walletManager;
+    const { walletManager } = window;
 
     if (!this.connectWalletBtn) return;
 
