@@ -38,6 +38,8 @@ describe('Header wallet picker', () => {
     };
 
     window.toastManager = {
+      show: vi.fn(() => 'wallet-approval-toast'),
+      dismiss: vi.fn(),
       error: vi.fn(),
     };
 
@@ -67,6 +69,16 @@ describe('Header wallet picker', () => {
     await Promise.resolve();
 
     expect(window.walletManager.connect).toHaveBeenCalledWith({ walletId: 'brave-wallet', userInitiated: true });
+    expect(window.toastManager.show).toHaveBeenCalledWith({
+      id: undefined,
+      title: 'Wallet Connection',
+      message: 'Waiting for wallet approval. Finish connecting in your wallet.',
+      type: 'loading',
+      timeoutMs: 0,
+      dismissible: true,
+      delayMs: 0,
+    });
+    expect(window.toastManager.dismiss).toHaveBeenCalledWith('wallet-approval-toast');
     expect(window.walletPopup.show).toHaveBeenCalledWith(document.getElementById('connect-wallet-btn'));
     expect(document.getElementById('wallet-picker-container').innerHTML).toBe('');
   });

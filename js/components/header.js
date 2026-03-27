@@ -7,6 +7,7 @@ export class Header {
     this._pickerContainer = null;
     this._isPickerOpen = false;
     this._pickerSelectionId = null;
+    this._walletApprovalToastId = null;
   }
 
   load() {
@@ -19,10 +20,14 @@ export class Header {
     this.connectWalletBtn.addEventListener('click', () => this.onConnectWalletClick());
 
     document.addEventListener('walletConnected', () => {
+      this._dismissWalletApprovalToast();
       this.hideWalletPicker();
       this.updateConnectButtonStatus();
     });
-    document.addEventListener('walletDisconnected', () => this.updateConnectButtonStatus());
+    document.addEventListener('walletDisconnected', () => {
+      this._dismissWalletApprovalToast();
+      this.updateConnectButtonStatus();
+    });
     document.addEventListener('walletAccountChanged', () => this.updateConnectButtonStatus());
     document.addEventListener('walletChainChanged', () => this.updateConnectButtonStatus());
     document.addEventListener('walletProvidersChanged', () => {
@@ -106,12 +111,15 @@ export class Header {
     this._pickerSelectionId = walletId;
     this.renderConnectButton({ text: 'Connecting...', disabled: true });
     this._renderWalletPicker();
+    this._showWalletApprovalToast();
 
     try {
       await walletManager.connect({ walletId, userInitiated: true });
+      this._dismissWalletApprovalToast();
       this.hideWalletPicker();
       walletPopup?.show?.(btn);
     } catch (error) {
+      this._dismissWalletApprovalToast();
       if (error?.code === 4001) {
         this._showWalletError('Connection request was rejected.');
       } else if (error?.code === -32002) {
@@ -123,6 +131,27 @@ export class Header {
     } finally {
       this.updateConnectButtonStatus();
     }
+  }
+
+  _showWalletApprovalToast() {
+    const toastManager = window.toastManager;
+    if (!toastManager?.show) return;
+
+    this._walletApprovalToastId = toastManager.show({
+      id: this._walletApprovalToastId || undefined,
+      title: 'Wallet Connection',
+      message: 'Waiting for wallet approval. Finish connecting in your wallet.',
+      type: 'loading',
+      timeoutMs: 0,
+      dismissible: true,
+      delayMs: 0,
+    });
+  }
+
+  _dismissWalletApprovalToast() {
+    if (!this._walletApprovalToastId) return;
+    window.toastManager?.dismiss?.(this._walletApprovalToastId);
+    this._walletApprovalToastId = null;
   }
 
   _showWalletError(message) {
