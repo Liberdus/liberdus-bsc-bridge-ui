@@ -93,6 +93,46 @@ describe('MetaMaskConnector multi-wallet discovery', () => {
     expect(connector.getActiveWallet().id).toBe(metamaskWallet.id);
   });
 
+  it('derives a stable EIP-6963 wallet id from rdns instead of uuid', () => {
+    const firstMetaMask = makeInjectedProvider({ isMetaMask: true });
+    const secondMetaMask = makeInjectedProvider({ isMetaMask: true });
+
+    const connector = new MetaMaskConnector();
+    connector.load();
+
+    window.dispatchEvent(new CustomEvent('eip6963:announceProvider', {
+      detail: {
+        info: {
+          uuid: '7b0f34a9-0cc9-4d6d-8d93-1b5ce4f9d111',
+          name: 'MetaMask',
+          icon: 'data:image/svg+xml;base64,metamask',
+          rdns: 'io.metamask',
+        },
+        provider: firstMetaMask,
+      },
+    }));
+
+    let wallets = connector.getAvailableWallets();
+    expect(wallets).toHaveLength(1);
+    expect(wallets[0].id).toBe('io-metamask');
+
+    window.dispatchEvent(new CustomEvent('eip6963:announceProvider', {
+      detail: {
+        info: {
+          uuid: '3ce7c0da-7f2a-45a0-b6b1-84cdb7f0a222',
+          name: 'MetaMask',
+          icon: 'data:image/svg+xml;base64,metamask',
+          rdns: 'io.metamask',
+        },
+        provider: secondMetaMask,
+      },
+    }));
+
+    wallets = connector.getAvailableWallets();
+    expect(wallets).toHaveLength(1);
+    expect(wallets[0].id).toBe('io-metamask');
+  });
+
   it('falls back to legacy injected providers when EIP-6963 is unavailable', () => {
     const brave = makeInjectedProvider({ isMetaMask: true, isBraveWallet: true });
     const metamask = makeInjectedProvider({ isMetaMask: true });

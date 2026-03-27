@@ -498,8 +498,7 @@ export class MetaMaskConnector {
   }
 
   _createWalletId(info, provider, source) {
-    const preferredBase = toSafeIdFragment(info?.uuid)
-      || toSafeIdFragment(info?.rdns)
+    const preferredBase = toSafeIdFragment(info?.rdns)
       || toSafeIdFragment(info?.name)
       || toSafeIdFragment(this._deriveWalletName(provider, info))
       || source

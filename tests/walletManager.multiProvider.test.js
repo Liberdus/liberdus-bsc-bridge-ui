@@ -136,12 +136,12 @@ describe('WalletManager multi-provider restore behavior', () => {
     const provider = makeProvider({ flags: { isMetaMask: true } });
 
     localStorage.setItem('liberdus_token_ui_wallet_connection', JSON.stringify({
-      walletId: 'metamask-wallet',
+      walletId: 'io-metamask',
       address: '0x1111111111111111111111111111111111111111',
       chainId: 80002,
       timestamp: Date.now(),
     }));
-    localStorage.setItem('liberdus_token_ui_last_selected_wallet_id', 'metamask-wallet');
+    localStorage.setItem('liberdus_token_ui_last_selected_wallet_id', 'io-metamask');
 
     const manager = new WalletManager();
     const connectedEvents = [];
@@ -172,7 +172,7 @@ describe('WalletManager multi-provider restore behavior', () => {
     expect(provider.request.mock.calls.map(([payload]) => payload.method)).toEqual(['eth_accounts', 'eth_chainId']);
     expect(connectedEvents).toHaveLength(1);
     expect(connectedEvents[0].restored).toBe(true);
-    expect(connectedEvents[0].walletId).toBe('metamask-wallet');
+    expect(connectedEvents[0].walletId).toBe('io-metamask');
   });
 
   it('waits for a wallet whose accounts match stored legacy session data', async () => {
