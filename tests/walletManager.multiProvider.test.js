@@ -41,6 +41,7 @@ describe('WalletManager multi-provider restore behavior', () => {
     delete window.ethereum;
     delete window.ethers;
     localStorage.clear();
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -272,6 +273,44 @@ describe('WalletManager multi-provider restore behavior', () => {
     expect(manager.getProvider().provider).toBe(rightWallet);
     expect(localStorage.getItem('liberdus_token_ui_wallet_connection')).toContain('"walletId":"metamask-2"');
     expect(failingWallet.request).toHaveBeenCalledWith({ method: 'eth_accounts' });
+  });
+
+  it('times out a stuck wallet while scanning legacy providers for a stored address', async () => {
+    vi.useFakeTimers();
+
+    const stuckWallet = {
+      isMetaMask: true,
+      request: vi.fn(({ method }) => {
+        if (method === 'eth_accounts') return new Promise(() => {});
+        if (method === 'eth_requestAccounts') return Promise.resolve(['0x2222222222222222222222222222222222222222']);
+        if (method === 'eth_chainId') return Promise.resolve('0x13882');
+        if (method === 'wallet_revokePermissions') return Promise.resolve(null);
+        return Promise.resolve(null);
+      }),
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    };
+    const rightWallet = makeProvider({ flags: { isMetaMask: true } });
+
+    window.ethereum = { providers: [stuckWallet, rightWallet] };
+
+    localStorage.setItem('liberdus_token_ui_wallet_connection', JSON.stringify({
+      address: '0x1111111111111111111111111111111111111111',
+      chainId: 80002,
+      timestamp: Date.now(),
+    }));
+
+    const manager = new WalletManager();
+    manager.load();
+
+    const initPromise = manager.init();
+    await vi.advanceTimersByTimeAsync(1600);
+    await initPromise;
+
+    expect(manager.isConnected()).toBe(true);
+    expect(manager.getProvider().provider).toBe(rightWallet);
+    expect(stuckWallet.request).toHaveBeenCalledWith({ method: 'eth_accounts' });
+    expect(rightWallet.request.mock.calls.map(([payload]) => payload.method)).toEqual(['eth_accounts', 'eth_chainId']);
   });
 
   it('waits for a wallet whose accounts match stored legacy session data', async () => {

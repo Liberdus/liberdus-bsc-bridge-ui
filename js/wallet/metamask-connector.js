@@ -535,6 +535,8 @@ export class MetaMaskConnector {
     const flags = this._deriveWalletFlags(provider, info);
     if (flags.isBraveWallet) return 'Brave Wallet';
     if (flags.isCoinbaseWallet) return 'Coinbase Wallet';
+    if (flags.isPhantom) return 'Phantom';
+    if (flags.isRabby) return 'Rabby';
     if (flags.isMetaMask) return 'MetaMask';
     return 'Browser Wallet';
   }
@@ -545,6 +547,8 @@ export class MetaMaskConnector {
       isMetaMask: !!provider?.isMetaMask || rdns.includes('metamask'),
       isBraveWallet: !!provider?.isBraveWallet || rdns.includes('brave'),
       isCoinbaseWallet: !!provider?.isCoinbaseWallet || rdns.includes('coinbase'),
+      isPhantom: !!provider?.isPhantom || rdns.includes('phantom'),
+      isRabby: !!provider?.isRabby || rdns.includes('rabby'),
     };
   }
 

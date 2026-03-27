@@ -163,7 +163,7 @@ export class WalletManager {
       const eip1193Provider = await this.getEip1193Provider({ walletId: restoreWallet.id, waitMs: 200 });
       if (!eip1193Provider) return false;
 
-      const accounts = restoreTarget?.accounts || await this.connector.getAccounts({ walletId: restoreWallet.id, waitMs: 200 });
+      const accounts = restoreTarget?.accounts || await this._getWalletAccounts(restoreWallet);
       if (!accounts || accounts.length === 0) {
         this._clearConnectionInfo();
         return false;
@@ -173,7 +173,12 @@ export class WalletManager {
 
       const provider = new window.ethers.providers.Web3Provider(eip1193Provider, 'any');
       const signer = provider.getSigner();
-      const chainId = this._normalizeChainId(await eip1193Provider.request({ method: 'eth_chainId' }));
+      const chainId = this._normalizeChainId(
+        await this._withWalletRequestTimeout(
+          eip1193Provider.request({ method: 'eth_chainId' }),
+          { walletId: restoreWallet.id }
+        )
+      );
 
       this._applyConnectedSession({
         provider,
@@ -306,7 +311,34 @@ export class WalletManager {
 
   async _getWalletAccounts(wallet) {
     if (!wallet?.id) return [];
-    return await this.connector.getAccounts({ walletId: wallet.id, waitMs: 200 });
+    return await this._withWalletRequestTimeout(
+      this.connector.getAccounts({ walletId: wallet.id, waitMs: 200 }),
+      { walletId: wallet.id }
+    );
+  }
+
+  async _withWalletRequestTimeout(promise, { walletId = null, timeoutMs = 1500 } = {}) {
+    if (!promise || !timeoutMs || timeoutMs <= 0) {
+      return await promise;
+    }
+
+    let timeoutId = null;
+
+    try {
+      return await Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          timeoutId = globalThis.setTimeout(() => {
+            const walletSuffix = walletId ? ` (${walletId})` : '';
+            reject(new Error(`Timed out waiting for wallet response${walletSuffix}`));
+          }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeoutId != null) {
+        globalThis.clearTimeout(timeoutId);
+      }
+    }
   }
 
   _canRestoreWalletSelection(wallet) {

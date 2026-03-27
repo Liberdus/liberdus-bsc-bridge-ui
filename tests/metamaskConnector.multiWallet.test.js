@@ -149,6 +149,21 @@ describe('MetaMaskConnector multi-wallet discovery', () => {
     expect(wallets[1].flags.isMetaMask).toBe(true);
   });
 
+  it('uses wallet-specific legacy flags to keep MetaMask-compatible shims distinguishable', () => {
+    const rabby = makeInjectedProvider({ isMetaMask: true, isRabby: true });
+    const metamask = makeInjectedProvider({ isMetaMask: true });
+
+    window.ethereum = {
+      providers: [rabby, metamask],
+    };
+
+    const connector = new MetaMaskConnector();
+    const wallets = connector.getAvailableWallets();
+
+    expect(wallets).toHaveLength(2);
+    expect(wallets.map((wallet) => wallet.name)).toEqual(['Rabby', 'MetaMask']);
+  });
+
   it('disambiguates duplicate legacy wallet names in the picker data', () => {
     const firstMetaMaskCompatible = makeInjectedProvider({ isMetaMask: true });
     const secondMetaMaskCompatible = makeInjectedProvider({ isMetaMask: true });
