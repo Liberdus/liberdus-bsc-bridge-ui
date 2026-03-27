@@ -218,12 +218,15 @@ export class WalletManager {
   }
 
   async _resolveRestoreWallet(stored) {
+    const storedWalletId = normalizeStoredWalletId(stored?.walletId);
     const storedAddress = normalizeStoredAddress(stored?.address);
+    if (!storedWalletId && !storedAddress) return null;
+
     const lastSelectedWallet = await this._resolveStoredWalletCandidate(this.getLastSelectedWalletId(), storedAddress);
     if (lastSelectedWallet) return lastSelectedWallet;
 
     const storedWallet = await this._resolveStoredWalletCandidate(
-      normalizeStoredWalletId(stored?.walletId),
+      storedWalletId,
       storedAddress
     );
     if (storedWallet) return storedWallet;
@@ -269,10 +272,10 @@ export class WalletManager {
 
   async _resolveStoredWalletCandidate(walletId, storedAddress) {
     if (!walletId) return null;
+    if (!storedAddress) return null;
 
     const wallet = this.getWalletById(walletId);
     if (!wallet) return null;
-    if (!storedAddress) return { wallet, accounts: null };
 
     const accounts = await this._getAccountsMatchingStoredAddress(wallet, storedAddress);
     return accounts ? { wallet, accounts } : null;
@@ -409,8 +412,7 @@ export class WalletManager {
   _hasStoredConnectionCandidate() {
     const stored = this._readConnectionInfo();
     return !!(
-      this.getLastSelectedWalletId()
-      || normalizeStoredWalletId(stored?.walletId)
+      normalizeStoredWalletId(stored?.walletId)
       || stored?.address
     );
   }

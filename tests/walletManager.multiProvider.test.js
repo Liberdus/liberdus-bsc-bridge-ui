@@ -159,6 +159,20 @@ describe('WalletManager multi-provider restore behavior', () => {
     expect(provider.request).not.toHaveBeenCalled();
   });
 
+  it('does not silently restore when only the last selected wallet id remains', async () => {
+    const provider = makeProvider({ flags: { isMetaMask: true } });
+    window.ethereum = { providers: [provider] };
+
+    localStorage.setItem('liberdus_token_ui_last_selected_wallet_id', 'metamask');
+
+    const manager = new WalletManager();
+    manager.load();
+    await manager.init();
+
+    expect(manager.isConnected()).toBe(false);
+    expect(provider.request).not.toHaveBeenCalled();
+  });
+
   it('retries silent restore when a wallet is announced after app startup', async () => {
     const provider = makeProvider({ flags: { isMetaMask: true } });
 
