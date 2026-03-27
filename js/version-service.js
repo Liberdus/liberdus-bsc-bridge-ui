@@ -1,43 +1,8 @@
 const VERSION_STORAGE_KEY = 'app_version';
 const REQUEST_TIMEOUT_MS = 3000;
 const VERSION_URL = 'version.html';
+const CRITICAL_FILES_MANIFEST_URL = 'critical-files.json';
 const RELOAD_BATCH_SIZE = 4;
-const CRITICAL_FILES = [
-  'index.html',
-  'version.html',
-  'assets/chain-bnb.png',
-  'assets/chain-polygon.png',
-  'assets/lib-token.png',
-  'assets/logo.png',
-  'abi/vault.json',
-  'css/base.css',
-  'css/bridge-module.css',
-  'css/header.css',
-  'css/notifications.css',
-  'css/tabs.css',
-  'css/wallet-popup.css',
-  'libs/ethers.umd.min.js',
-  'js/bootstrap.js',
-  'js/app.js',
-  'js/config.js',
-  'js/version-service.js',
-  'js/components/bridge-out-tab.js',
-  'js/components/header.js',
-  'js/components/info-tab.js',
-  'js/components/operations-tab.js',
-  'js/components/tab-bar.js',
-  'js/components/toast-manager.js',
-  'js/components/transactions-tab.js',
-  'js/contracts/contract-manager.js',
-  'js/modules/polygon-bsc-bridge-module.js',
-  'js/utils/assert.js',
-  'js/utils/read-only-provider.js',
-  'js/utils/transaction-progress-session.js',
-  'js/wallet/metamask-connector.js',
-  'js/wallet/network-manager.js',
-  'js/wallet/wallet-manager.js',
-  'js/wallet/wallet-popup.js',
-];
 
 function assert(condition, message) {
   if (!condition) {
@@ -67,15 +32,49 @@ async function fetchNoCache(url) {
   }
 }
 
-async function reloadCriticalFiles() {
-  const urls = [getReloadUrl(), ...CRITICAL_FILES];
+function normalizeManifestPayload(payload) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (payload && Array.isArray(payload.files)) {
+    return payload.files;
+  }
+
+  throw new Error(`${CRITICAL_FILES_MANIFEST_URL} is invalid`);
+}
+
+async function loadCriticalFiles() {
+  const response = await fetchNoCache(CRITICAL_FILES_MANIFEST_URL);
+
+  if (!response.ok) {
+    throw new Error(`Failed to load ${CRITICAL_FILES_MANIFEST_URL}: ${response.status} ${response.statusText}`);
+  }
+
+  const payload = await response.json();
+  const files = normalizeManifestPayload(payload)
+    .filter((file) => typeof file === 'string')
+    .map((file) => file.trim())
+    .filter(Boolean);
+
+  assert(files.length > 0, `${CRITICAL_FILES_MANIFEST_URL} is empty`);
+  return files;
+}
+
+async function reloadCriticalFiles(files) {
+  const urls = [getReloadUrl(), ...files];
 
   for (let i = 0; i < urls.length; i += RELOAD_BATCH_SIZE) {
     await Promise.all(
       urls.slice(i, i + RELOAD_BATCH_SIZE).map(async (url) => {
-        const response = await fetchNoCache(url);
-        assert(response.ok, `Failed to reload ${url}: ${response.status} ${response.statusText}`);
-        await response.arrayBuffer();
+        try {
+          const response = await fetchNoCache(url);
+          assert(response.ok, `Failed to reload ${url}: ${response.status} ${response.statusText}`);
+          await response.arrayBuffer();
+        } catch (error) {
+          console.error('Critical asset preload failed', { url, error });
+          throw error;
+        }
       })
     );
   }
@@ -93,7 +92,8 @@ export async function initializeVersionService() {
       return false;
     }
 
-    await reloadCriticalFiles();
+    const criticalFiles = await loadCriticalFiles();
+    await reloadCriticalFiles(criticalFiles);
 
     localStorage.setItem(VERSION_STORAGE_KEY, nextVersion);
     window.location.reload();
