@@ -272,26 +272,47 @@ export class WalletManager {
 
   async _resolveStoredWalletCandidate(walletId, storedAddress) {
     if (!walletId) return null;
-    if (!storedAddress) return null;
 
     const wallet = this.getWalletById(walletId);
     if (!wallet) return null;
 
-    const accounts = await this._getAccountsMatchingStoredAddress(wallet, storedAddress);
-    return accounts ? { wallet, accounts } : null;
+    const accounts = await this._getWalletAccounts(wallet);
+    if (!Array.isArray(accounts) || accounts.length === 0) return null;
+
+    if (!storedAddress) {
+      return { wallet, accounts };
+    }
+
+    const hasStoredAddress = accounts.some((account) => String(account || '').toLowerCase() === storedAddress);
+    if (hasStoredAddress || this._canRestoreWalletSelection(wallet)) {
+      return { wallet, accounts };
+    }
+
+    return null;
   }
 
   async _getAccountsMatchingStoredAddress(wallet, storedAddress) {
     if (!wallet?.id || !storedAddress) return null;
 
     try {
-      const accounts = await this.connector.getAccounts({ walletId: wallet.id, waitMs: 200 });
+      const accounts = await this._getWalletAccounts(wallet);
       const hasStoredAddress = Array.isArray(accounts)
         && accounts.some((account) => String(account || '').toLowerCase() === storedAddress);
       return hasStoredAddress ? accounts : null;
     } catch {
       return null;
     }
+  }
+
+  async _getWalletAccounts(wallet) {
+    if (!wallet?.id) return [];
+    return await this.connector.getAccounts({ walletId: wallet.id, waitMs: 200 });
+  }
+
+  _canRestoreWalletSelection(wallet) {
+    if (!wallet?.id) return false;
+    if (wallet.source !== 'legacy') return true;
+    return this.getAvailableWallets().length === 1;
   }
 
   _refreshActiveWalletBinding() {

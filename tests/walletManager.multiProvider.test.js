@@ -138,6 +138,31 @@ describe('WalletManager multi-provider restore behavior', () => {
     expect(localStorage.getItem('liberdus_token_ui_last_selected_wallet_id')).toBe('metamask');
   });
 
+  it('restores the selected single wallet after its active account changes', async () => {
+    const provider = makeProvider({
+      accounts: ['0x2222222222222222222222222222222222222222'],
+      flags: { isMetaMask: true },
+    });
+    window.ethereum = { providers: [provider] };
+
+    localStorage.setItem('liberdus_token_ui_wallet_connection', JSON.stringify({
+      walletId: 'metamask',
+      address: '0x1111111111111111111111111111111111111111',
+      chainId: 80002,
+      timestamp: Date.now(),
+    }));
+    localStorage.setItem('liberdus_token_ui_last_selected_wallet_id', 'metamask');
+
+    const manager = new WalletManager();
+    manager.load();
+    await manager.init();
+
+    expect(manager.isConnected()).toBe(true);
+    expect(manager.getAddress()).toBe('0x2222222222222222222222222222222222222222');
+    expect(provider.request.mock.calls.map(([payload]) => payload.method)).toEqual(['eth_accounts', 'eth_chainId']);
+    expect(localStorage.getItem('liberdus_token_ui_wallet_connection')).toContain('"address":"0x2222222222222222222222222222222222222222"');
+  });
+
   it('skips silent restore after an explicit user disconnect preference is stored', async () => {
     const provider = makeProvider({ flags: { isMetaMask: true } });
     window.ethereum = { providers: [provider] };
