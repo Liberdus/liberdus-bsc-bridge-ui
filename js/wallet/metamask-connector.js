@@ -571,7 +571,8 @@ export class MetaMaskConnector {
   _legacyRdnsFromFlags(flags = {}) {
     if (flags.isBraveWallet) return 'com.brave.wallet';
     if (flags.isCoinbaseWallet) return 'com.coinbase.wallet';
-    if (flags.isMetaMask) return 'io.metamask';
+    if (flags.isPhantom) return 'app.phantom';
+    if (flags.isMetaMask && !flags.isRabby) return 'io.metamask';
     return '';
   }
 

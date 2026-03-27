@@ -227,14 +227,24 @@ export class WalletManager {
     const storedAddress = normalizeStoredAddress(stored?.address);
     if (!storedWalletId && !storedAddress) return null;
 
-    const lastSelectedWallet = await this._resolveStoredWalletCandidate(this.getLastSelectedWalletId(), storedAddress);
+    const lastSelectedWalletId = this.getLastSelectedWalletId();
+    const sharedWalletId = lastSelectedWalletId && lastSelectedWalletId === storedWalletId;
+
+    const lastSelectedWallet = await this._resolveStoredWalletCandidate(
+      lastSelectedWalletId,
+      storedAddress,
+      { allowSelectionFallback: !!sharedWalletId }
+    );
     if (lastSelectedWallet) return lastSelectedWallet;
 
-    const storedWallet = await this._resolveStoredWalletCandidate(
-      storedWalletId,
-      storedAddress
-    );
-    if (storedWallet) return storedWallet;
+    if (!sharedWalletId) {
+      const storedWallet = await this._resolveStoredWalletCandidate(
+        storedWalletId,
+        storedAddress,
+        { allowSelectionFallback: true }
+      );
+      if (storedWallet) return storedWallet;
+    }
 
     return await this._findWalletByStoredAddress(storedAddress);
   }
@@ -275,7 +285,7 @@ export class WalletManager {
     return matchedWallet ? { wallet: matchedWallet, accounts: matchedAccounts } : null;
   }
 
-  async _resolveStoredWalletCandidate(walletId, storedAddress) {
+  async _resolveStoredWalletCandidate(walletId, storedAddress, { allowSelectionFallback = false } = {}) {
     if (!walletId) return null;
 
     const wallet = this.getWalletById(walletId);
@@ -289,7 +299,7 @@ export class WalletManager {
     }
 
     const hasStoredAddress = accounts.some((account) => String(account || '').toLowerCase() === storedAddress);
-    if (hasStoredAddress || this._canRestoreWalletSelection(wallet)) {
+    if (hasStoredAddress || (allowSelectionFallback && this._canRestoreWalletSelection(wallet))) {
       return { wallet, accounts };
     }
 

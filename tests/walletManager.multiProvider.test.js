@@ -242,6 +242,65 @@ describe('WalletManager multi-provider restore behavior', () => {
     expect(connectedEvents[0].walletId).toBe('io-metamask');
   });
 
+  it('does not restore a stale last-selected EIP-6963 wallet over the stored session wallet', async () => {
+    const brave = makeProvider({
+      accounts: ['0x2222222222222222222222222222222222222222'],
+      flags: { isMetaMask: true, isBraveWallet: true },
+    });
+    const metamask = makeProvider({ flags: { isMetaMask: true } });
+
+    localStorage.setItem('liberdus_token_ui_wallet_connection', JSON.stringify({
+      walletId: 'io-metamask',
+      address: '0x1111111111111111111111111111111111111111',
+      chainId: 80002,
+      timestamp: Date.now(),
+    }));
+    localStorage.setItem('liberdus_token_ui_last_selected_wallet_id', 'com-brave-wallet');
+
+    const manager = new WalletManager();
+    manager.load();
+    await manager.init();
+
+    expect(manager.isConnected()).toBe(false);
+
+    manager.connector._boundAnnounceProvider({
+      detail: {
+        info: {
+          uuid: 'brave-wallet',
+          name: 'Brave Wallet',
+          icon: 'data:image/svg+xml;base64,brave',
+          rdns: 'com.brave.wallet',
+        },
+        provider: brave,
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(brave.request).toHaveBeenCalledWith({ method: 'eth_accounts' });
+    });
+    expect(manager.isConnected()).toBe(false);
+
+    manager.connector._boundAnnounceProvider({
+      detail: {
+        info: {
+          uuid: 'metamask-wallet',
+          name: 'MetaMask',
+          icon: 'data:image/svg+xml;base64,metamask',
+          rdns: 'io.metamask',
+        },
+        provider: metamask,
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(manager.isConnected()).toBe(true);
+    });
+
+    expect(manager.getAddress()).toBe('0x1111111111111111111111111111111111111111');
+    expect(manager.getProvider().provider).toBe(metamask);
+    expect(localStorage.getItem('liberdus_token_ui_last_selected_wallet_id')).toBe('io-metamask');
+  });
+
   it('keeps scanning wallets when one provider throws during legacy address matching', async () => {
     const failingWallet = {
       isMetaMask: true,

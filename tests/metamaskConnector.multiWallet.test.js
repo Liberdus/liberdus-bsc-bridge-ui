@@ -242,6 +242,37 @@ describe('MetaMaskConnector multi-wallet discovery', () => {
     expect(legacyMetaMask.request).not.toHaveBeenCalledWith({ method: 'eth_requestAccounts' });
   });
 
+  it('does not let a MetaMask announcement overwrite a legacy Rabby wallet slot', () => {
+    const rabby = makeInjectedProvider({ isMetaMask: true, isRabby: true });
+    const legacyMetaMask = makeInjectedProvider({ isMetaMask: true });
+    const announcedMetaMask = makeInjectedProvider({ isMetaMask: true });
+
+    window.ethereum = {
+      providers: [rabby, legacyMetaMask],
+    };
+
+    const connector = new MetaMaskConnector();
+    connector.load();
+
+    window.dispatchEvent(new CustomEvent('eip6963:announceProvider', {
+      detail: {
+        info: {
+          uuid: 'metamask-wallet',
+          name: 'MetaMask',
+          icon: 'data:image/svg+xml;base64,metamask',
+          rdns: 'io.metamask',
+        },
+        provider: announcedMetaMask,
+      },
+    }));
+
+    const wallets = connector.getAvailableWallets();
+
+    expect(wallets.map((wallet) => wallet.name).sort()).toEqual(['MetaMask', 'Rabby']);
+    expect(connector.getWalletById('rabby').provider).toBe(rabby);
+    expect(connector.getWalletById('metamask').provider).toBe(announcedMetaMask);
+  });
+
   it('deduplicates providers-array shims when a wallet exposes a wallet-specific flag', () => {
     const phantomLegacyShim = makeInjectedProvider({ isMetaMask: true, isPhantom: true });
     const phantom = makeInjectedProvider({ isMetaMask: true, isPhantom: true });
