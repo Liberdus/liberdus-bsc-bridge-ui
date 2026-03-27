@@ -1,11 +1,15 @@
-import { REFRESH_ICON, setRefreshButtonLoading, waitForMinimumRefreshSpin } from './refresh-button.js';
+import { RefreshButton } from './refresh-button.js';
 
 export class InfoTab {
   constructor() {
     this.panel = null;
     this.refreshBtn = null;
-    this._isLoading = false;
     this._lastErrorToastMessage = null;
+    this.refreshControl = new RefreshButton({
+      ariaLabel: 'Refresh contract info',
+      attributes: { 'data-info-refresh': '' },
+      onRefresh: () => this._runRefresh(),
+    });
   }
 
   load() {
@@ -17,9 +21,7 @@ export class InfoTab {
         <div class="panel-header info-hero">
           <div class="card-title-row info-hero-row">
             <h2>Contract Info</h2>
-            <button type="button" class="btn btn--icon refresh-button" data-info-refresh aria-label="Refresh contract info">
-              ${REFRESH_ICON}
-            </button>
+            ${this.refreshControl.render()}
           </div>
         </div>
 
@@ -98,7 +100,7 @@ export class InfoTab {
 
     this.refreshBtn = this.panel.querySelector('[data-info-refresh]');
 
-    this.refreshBtn?.addEventListener('click', () => this.refresh());
+    this.refreshControl.mount(this.refreshBtn);
     this.panel.addEventListener('click', (event) => this._handlePanelClick(event));
 
     document.addEventListener('contractManagerUpdated', () => {
@@ -116,11 +118,10 @@ export class InfoTab {
   }
 
   async refresh() {
-    if (this._isLoading) return;
-    const startedAt = Date.now();
-    this._isLoading = true;
-    this._setLoading(true);
+    return this.refreshControl.run();
+  }
 
+  async _runRefresh() {
     try {
       const contractManager = window.contractManager;
       if (!contractManager) {
@@ -135,10 +136,6 @@ export class InfoTab {
       const fallback = contractManager.getStatusSnapshot?.();
       if (fallback) this.render(fallback);
       window.toastManager?.error?.(error?.message || 'Failed to refresh contract status.', { timeoutMs: 4000 });
-    } finally {
-      await waitForMinimumRefreshSpin(startedAt);
-      this._isLoading = false;
-      this._setLoading(false);
     }
   }
 
@@ -263,10 +260,6 @@ export class InfoTab {
         return false;
       }
     }
-  }
-
-  _setLoading(isLoading) {
-    setRefreshButtonLoading(this.refreshBtn, isLoading);
   }
 
   _setText(selector, text) {

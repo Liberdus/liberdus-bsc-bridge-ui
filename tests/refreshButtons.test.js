@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InfoTab } from '../js/components/info-tab.js';
 import { OperationsTab } from '../js/components/operations-tab.js';
-import { MIN_REFRESH_SPIN_MS } from '../js/components/refresh-button.js';
+import { MIN_REFRESH_SPIN_MS, RefreshButton } from '../js/components/refresh-button.js';
 import { TransactionsTab } from '../js/components/transactions-tab.js';
 import { installCommonWindowStubs } from './helpers/test-utils.js';
 
@@ -41,6 +41,38 @@ describe('shared refresh button treatment', () => {
     vi.unstubAllGlobals();
     document.body.innerHTML = '';
     window.location.hash = '';
+  });
+
+  it('runs refresh as a single component-owned lifecycle', async () => {
+    const deferred = createDeferred();
+    const onRefresh = vi.fn(() => deferred.promise);
+    const control = new RefreshButton({
+      ariaLabel: 'Refresh transactions',
+      attributes: { 'data-test-refresh': '' },
+      onRefresh,
+    });
+
+    document.body.innerHTML = control.render();
+    const button = document.querySelector('[data-test-refresh]');
+    control.mount(button);
+
+    const firstRun = control.run();
+    const secondRun = control.run();
+
+    expect(firstRun).toBe(secondRun);
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(button?.disabled).toBe(true);
+    expect(button?.classList.contains('is-loading')).toBe(true);
+    expect(button?.getAttribute('aria-busy')).toBe('true');
+
+    deferred.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(MIN_REFRESH_SPIN_MS);
+    await firstRun;
+
+    expect(button?.disabled).toBe(false);
+    expect(button?.classList.contains('is-loading')).toBe(false);
+    expect(button?.hasAttribute('aria-busy')).toBe(false);
   });
 
   it('uses the shared icon-only refresh button on info and spins it while loading', async () => {
@@ -152,7 +184,7 @@ describe('shared refresh button treatment', () => {
 
     expect(infoIcon?.outerHTML).toBe(opsIcon?.outerHTML);
 
-    const refreshPromise = opsTab._onClick({ target: opsTab.refreshBtn });
+    const refreshPromise = opsTab.refresh();
 
     expect(opsTab.refreshBtn?.disabled).toBe(true);
     expect(opsTab.refreshBtn?.classList.contains('is-loading')).toBe(true);

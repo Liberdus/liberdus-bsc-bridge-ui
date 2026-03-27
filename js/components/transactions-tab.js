@@ -1,6 +1,6 @@
 import { CONFIG } from '../config.js';
 import { getReadOnlyProviderForNetwork } from '../utils/read-only-provider.js';
-import { REFRESH_ICON, setRefreshButtonLoading, waitForMinimumRefreshSpin } from './refresh-button.js';
+import { RefreshButton } from './refresh-button.js';
 
 function shortenHex(value, { head = 4, tail = 4 } = {}) {
   const s = String(value || '');
@@ -298,7 +298,6 @@ export class TransactionsTab {
     this.searchInput = null;
     this.totalEl = null;
     this.tableBody = null;
-    this._isLoading = false;
     this._rows = [];
     this._refreshTimer = null;
     this.page = 1;
@@ -319,6 +318,11 @@ export class TransactionsTab {
     this.onlyMineCheckbox = null;
     this._pendingPollerTimer = null;
     this._pendingOnlyMineDefault = false;
+    this.refreshControl = new RefreshButton({
+      ariaLabel: 'Refresh transactions',
+      attributes: { 'data-tx-refresh': '' },
+      onRefresh: () => this._runRefresh(),
+    });
   }
 
   load() {
@@ -337,14 +341,7 @@ export class TransactionsTab {
           </div>
           <div class="tx-header-actions">
             <div class="tx-total"><span class="tx-total-label">Total Transactions:</span> <strong data-tx-total>0</strong></div>
-            <button
-              type="button"
-              class="btn btn--icon refresh-button"
-              data-tx-refresh
-              aria-label="Refresh transactions"
-            >
-              ${REFRESH_ICON}
-            </button>
+            ${this.refreshControl.render()}
           </div>
         </div>
 
@@ -410,7 +407,7 @@ export class TransactionsTab {
     this.onlyMineLabel = this.panel.querySelector('[data-tx-onlymine-label]');
     this._pendingOnlyMineDefault = !!window.walletManager?.isConnected?.();
 
-    this.refreshBtn?.addEventListener('click', () => this.refresh());
+    this.refreshControl.mount(this.refreshBtn);
     this.panel.addEventListener('click', (event) => this._handleClick(event));
     this.searchInput?.addEventListener('input', () => {
       this.page = 1;
@@ -487,10 +484,10 @@ export class TransactionsTab {
   }
 
   async refresh() {
-    if (this._isLoading) return;
-    const startedAt = Date.now();
-    this._isLoading = true;
-    this._setLoading(true);
+    return this.refreshControl.run();
+  }
+
+  async _runRefresh() {
     try {
       console.debug?.('[Transactions] Prefetch: starting');
     } catch {}
@@ -508,10 +505,6 @@ export class TransactionsTab {
       try {
         console.debug?.('[Transactions] Prefetch: failed', error);
       } catch {}
-    } finally {
-      await waitForMinimumRefreshSpin(startedAt);
-      this._isLoading = false;
-      this._setLoading(false);
     }
   }
 
@@ -727,10 +720,6 @@ export class TransactionsTab {
       this._bridgeOutWatchRetryTimer = null;
       this._ensureBridgeOutWatch();
     }, 15000);
-  }
-
-  _setLoading(isLoading) {
-    setRefreshButtonLoading(this.refreshBtn, isLoading);
   }
 
   _applyPendingOnlyMineDefault() {
