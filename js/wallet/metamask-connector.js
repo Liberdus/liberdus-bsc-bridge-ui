@@ -156,13 +156,15 @@ export class MetaMaskConnector {
     this.load();
     this._registerLegacyWallets();
 
-    return Array.from(this.discoveredWallets.values())
+    const wallets = Array.from(this.discoveredWallets.values())
       .sort((a, b) => {
         if (a.sourcePriority !== b.sourcePriority) return a.sourcePriority - b.sourcePriority;
         if (a.sortIndex !== b.sortIndex) return a.sortIndex - b.sortIndex;
         return String(a.name || '').localeCompare(String(b.name || ''));
       })
       .map((wallet) => cloneWalletOption(wallet));
+
+    return this._disambiguateWalletNames(wallets);
   }
 
   getWalletById(walletId) {
@@ -597,6 +599,34 @@ export class MetaMaskConnector {
     } catch {
       // ignore
     }
+  }
+
+  _disambiguateWalletNames(wallets) {
+    const counts = new Map();
+    wallets.forEach((wallet) => {
+      const name = String(wallet?.name || 'Browser Wallet');
+      counts.set(name, (counts.get(name) || 0) + 1);
+    });
+
+    const seen = new Map();
+    return wallets.map((wallet) => {
+      const name = String(wallet?.name || 'Browser Wallet');
+      const nextSeen = (seen.get(name) || 0) + 1;
+      seen.set(name, nextSeen);
+
+      if ((counts.get(name) || 0) <= 1 || nextSeen === 1) {
+        return wallet;
+      }
+
+      const qualifier = wallet.source === 'legacy'
+        ? `legacy ${nextSeen}`
+        : `${nextSeen}`;
+
+      return {
+        ...wallet,
+        name: `${name} (${qualifier})`,
+      };
+    });
   }
 
   _walletsMatch(previousWallet, nextWallet) {

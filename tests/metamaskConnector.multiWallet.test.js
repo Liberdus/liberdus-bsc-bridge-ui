@@ -109,6 +109,21 @@ describe('MetaMaskConnector multi-wallet discovery', () => {
     expect(wallets[1].flags.isMetaMask).toBe(true);
   });
 
+  it('disambiguates duplicate legacy wallet names in the picker data', () => {
+    const firstMetaMaskCompatible = makeInjectedProvider({ isMetaMask: true });
+    const secondMetaMaskCompatible = makeInjectedProvider({ isMetaMask: true });
+
+    window.ethereum = {
+      providers: [firstMetaMaskCompatible, secondMetaMaskCompatible],
+    };
+
+    const connector = new MetaMaskConnector();
+    const wallets = connector.getAvailableWallets();
+
+    expect(wallets).toHaveLength(2);
+    expect(wallets.map((wallet) => wallet.name)).toEqual(['MetaMask', 'MetaMask (legacy 2)']);
+  });
+
   it('deduplicates a legacy wallet when the EIP-6963 announcement uses a different provider object', () => {
     const legacyMetaMask = makeInjectedProvider({ isMetaMask: true });
     const announcedMetaMask = makeInjectedProvider({ isMetaMask: true });
