@@ -218,23 +218,17 @@ export class WalletManager {
   }
 
   async _resolveRestoreWallet(stored) {
-    const lastSelectedWalletId = this.getLastSelectedWalletId();
-    if (lastSelectedWalletId) {
-      const lastSelectedWallet = this.getWalletById(lastSelectedWalletId);
-      if (lastSelectedWallet) {
-        return { wallet: lastSelectedWallet, accounts: null };
-      }
-    }
+    const storedAddress = normalizeStoredAddress(stored?.address);
+    const lastSelectedWallet = await this._resolveStoredWalletCandidate(this.getLastSelectedWalletId(), storedAddress);
+    if (lastSelectedWallet) return lastSelectedWallet;
 
-    const storedWalletId = normalizeStoredWalletId(stored?.walletId);
-    if (storedWalletId) {
-      const storedWallet = this.getWalletById(storedWalletId);
-      if (storedWallet) {
-        return { wallet: storedWallet, accounts: null };
-      }
-    }
+    const storedWallet = await this._resolveStoredWalletCandidate(
+      normalizeStoredWalletId(stored?.walletId),
+      storedAddress
+    );
+    if (storedWallet) return storedWallet;
 
-    return await this._findWalletByStoredAddress(stored?.address);
+    return await this._findWalletByStoredAddress(storedAddress);
   }
 
   _applyConnectedSession({ provider, signer, address, chainId, wallet }) {
@@ -255,7 +249,7 @@ export class WalletManager {
   }
 
   async _findWalletByStoredAddress(address) {
-    const storedAddress = String(address || '').toLowerCase();
+    const storedAddress = normalizeStoredAddress(address);
     if (!storedAddress) return null;
 
     const wallets = this.getAvailableWallets();
@@ -263,16 +257,38 @@ export class WalletManager {
     let matchedAccounts = null;
 
     for (const wallet of wallets) {
-      const accounts = await this.connector.getAccounts({ walletId: wallet.id, waitMs: 200 });
-      const hasStoredAddress = Array.isArray(accounts)
-        && accounts.some((account) => String(account || '').toLowerCase() === storedAddress);
-      if (!hasStoredAddress) continue;
+      const accounts = await this._getAccountsMatchingStoredAddress(wallet, storedAddress);
+      if (!accounts) continue;
       if (matchedWallet) return null;
       matchedWallet = wallet;
       matchedAccounts = accounts;
     }
 
     return matchedWallet ? { wallet: matchedWallet, accounts: matchedAccounts } : null;
+  }
+
+  async _resolveStoredWalletCandidate(walletId, storedAddress) {
+    if (!walletId) return null;
+
+    const wallet = this.getWalletById(walletId);
+    if (!wallet) return null;
+    if (!storedAddress) return { wallet, accounts: null };
+
+    const accounts = await this._getAccountsMatchingStoredAddress(wallet, storedAddress);
+    return accounts ? { wallet, accounts } : null;
+  }
+
+  async _getAccountsMatchingStoredAddress(wallet, storedAddress) {
+    if (!wallet?.id || !storedAddress) return null;
+
+    try {
+      const accounts = await this.connector.getAccounts({ walletId: wallet.id, waitMs: 200 });
+      const hasStoredAddress = Array.isArray(accounts)
+        && accounts.some((account) => String(account || '').toLowerCase() === storedAddress);
+      return hasStoredAddress ? accounts : null;
+    } catch {
+      return null;
+    }
   }
 
   _refreshActiveWalletBinding() {
@@ -543,4 +559,8 @@ export class WalletManager {
 
 function normalizeStoredWalletId(walletId) {
   return walletId == null ? null : String(walletId);
+}
+
+function normalizeStoredAddress(address) {
+  return String(address || '').toLowerCase();
 }

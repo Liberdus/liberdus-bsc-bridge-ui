@@ -90,6 +90,33 @@ describe('WalletManager multi-provider restore behavior', () => {
     expect(metamask.request.mock.calls.map(([payload]) => payload.method)).toEqual(['eth_accounts']);
   });
 
+  it('verifies a stored legacy wallet id against the saved address before restoring', async () => {
+    const rightWallet = makeProvider({ flags: { isMetaMask: true } });
+    const wrongWallet = makeProvider({
+      accounts: ['0x2222222222222222222222222222222222222222'],
+      flags: { isMetaMask: true },
+    });
+
+    window.ethereum = { providers: [rightWallet, wrongWallet] };
+
+    localStorage.setItem('liberdus_token_ui_wallet_connection', JSON.stringify({
+      walletId: 'metamask-2',
+      address: '0x1111111111111111111111111111111111111111',
+      chainId: 80002,
+      timestamp: Date.now(),
+    }));
+    localStorage.setItem('liberdus_token_ui_last_selected_wallet_id', 'metamask-2');
+
+    const manager = new WalletManager();
+    manager.load();
+    await manager.init();
+
+    expect(manager.isConnected()).toBe(true);
+    expect(manager.getAddress()).toBe('0x1111111111111111111111111111111111111111');
+    expect(manager.getProvider().provider).toBe(rightWallet);
+    expect(wrongWallet.request).not.toHaveBeenCalledWith({ method: 'eth_chainId' });
+  });
+
   it('falls back to the stored session when the last selected wallet id is stale', async () => {
     const provider = makeProvider({ flags: { isMetaMask: true } });
     window.ethereum = { providers: [provider] };
@@ -173,6 +200,39 @@ describe('WalletManager multi-provider restore behavior', () => {
     expect(connectedEvents).toHaveLength(1);
     expect(connectedEvents[0].restored).toBe(true);
     expect(connectedEvents[0].walletId).toBe('io-metamask');
+  });
+
+  it('keeps scanning wallets when one provider throws during legacy address matching', async () => {
+    const failingWallet = {
+      isMetaMask: true,
+      request: vi.fn(async ({ method }) => {
+        if (method === 'eth_accounts') throw new Error('wallet unavailable');
+        if (method === 'eth_requestAccounts') return ['0x2222222222222222222222222222222222222222'];
+        if (method === 'eth_chainId') return '0x13882';
+        if (method === 'wallet_revokePermissions') return null;
+        return null;
+      }),
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    };
+    const rightWallet = makeProvider({ flags: { isMetaMask: true } });
+
+    window.ethereum = { providers: [failingWallet, rightWallet] };
+
+    localStorage.setItem('liberdus_token_ui_wallet_connection', JSON.stringify({
+      address: '0x1111111111111111111111111111111111111111',
+      chainId: 80002,
+      timestamp: Date.now(),
+    }));
+
+    const manager = new WalletManager();
+    manager.load();
+    await manager.init();
+
+    expect(manager.isConnected()).toBe(true);
+    expect(manager.getProvider().provider).toBe(rightWallet);
+    expect(localStorage.getItem('liberdus_token_ui_wallet_connection')).toContain('"walletId":"metamask-2"');
+    expect(failingWallet.request).toHaveBeenCalledWith({ method: 'eth_accounts' });
   });
 
   it('waits for a wallet whose accounts match stored legacy session data', async () => {
