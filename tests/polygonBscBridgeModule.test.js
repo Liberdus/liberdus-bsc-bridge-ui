@@ -323,10 +323,6 @@ describe('PolygonBscBridgeModule bridge-out observer notify', () => {
     });
     vi.stubGlobal('fetch', fetchSpy);
 
-    const acceptedEvents = [];
-    const onAccepted = (event) => acceptedEvents.push(event.detail);
-    document.addEventListener('bridgeOutNotifyAccepted', onAccepted);
-
     await module._onBridgeClicked();
     await Promise.resolve();
     await Promise.resolve();
@@ -341,8 +337,6 @@ describe('PolygonBscBridgeModule bridge-out observer notify', () => {
       }),
     );
     expect(refreshBalance).toHaveBeenCalledTimes(1);
-    expect(acceptedEvents).toEqual([{ chainId: 56, status: 'triggered' }]);
-    document.removeEventListener('bridgeOutNotifyAccepted', onAccepted);
   });
 
   it('does not block bridge success when the observer notify request fails', async () => {

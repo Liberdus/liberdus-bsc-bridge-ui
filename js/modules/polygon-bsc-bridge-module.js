@@ -786,12 +786,6 @@ export class PolygonBscBridgeModule {
         throw new Error(message);
       }
 
-      document.dispatchEvent(new CustomEvent('bridgeOutNotifyAccepted', {
-        detail: {
-          chainId: normalizedChainId,
-          status: payload?.Ok || 'accepted',
-        },
-      }));
     } catch (error) {
       try {
         console.warn?.('[BridgeOut] Observer notify failed', error);
