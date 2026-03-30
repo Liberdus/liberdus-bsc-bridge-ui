@@ -40,7 +40,6 @@ export class OperationsTab {
     this._lastOperationId = null;
     this._selectedOperation = null;
     this._isLoadingOperation = false;
-    this._isRefreshingPanel = false;
     this._actionToastSequence = 0;
     this._accessRequestId = 0;
     this.refreshControl = new RefreshButton({
@@ -275,6 +274,9 @@ export class OperationsTab {
   async _runRefresh() {
     await window.contractManager?.refreshStatus?.({ reason: 'operationsTabRefresh' }).catch(() => {});
     await this._syncAccess().catch(() => {});
+    if (this._hasAdminAccess()) {
+      await this._refreshRequestedOperations().catch(() => {});
+    }
   }
 
   _tokenSymbol() {
@@ -511,22 +513,6 @@ export class OperationsTab {
     await this._refreshRequestedOperations();
   }
 
-  async _refreshPanel() {
-    if (this._isRefreshingPanel) return;
-    this._isRefreshingPanel = true;
-    this._setRefreshButtonLoading(true);
-    try {
-      await window.contractManager?.refreshStatus?.({ reason: 'operationsTabRefresh' }).catch(() => {});
-      await this._syncAccess();
-      if (this._hasAdminAccess()) {
-        await this._refreshRequestedOperations();
-      }
-    } finally {
-      this._isRefreshingPanel = false;
-      this._setRefreshButtonLoading(false);
-    }
-  }
-
   async _refreshRequestedOperations() {
     if (this._historyLoading) return;
     if (!this._hasAdminAccess()) return;
@@ -711,10 +697,6 @@ export class OperationsTab {
       return;
     }
 
-    if (target.closest('[data-ops-refresh]')) {
-      await this._refreshPanel();
-      return;
-    }
     const copyBtn = target.closest('[data-ops-copy]');
     if (copyBtn) {
       const value = copyBtn.getAttribute('data-copy-value') || '';
@@ -1342,13 +1324,6 @@ export class OperationsTab {
     if (!text) return 'Internal JSON-RPC error.';
 
     return text;
-  }
-
-  _setRefreshButtonLoading(isLoading) {
-    const refreshBtn = this.panel?.querySelector('[data-ops-refresh]');
-    if (!(refreshBtn instanceof HTMLButtonElement)) return;
-    refreshBtn.disabled = !!isLoading;
-    refreshBtn.textContent = isLoading ? 'Refreshing...' : 'Refresh';
   }
 
   _isOperationExpiredState(item) {

@@ -184,22 +184,27 @@ describe('shared refresh button treatment', () => {
     const opsIcon = opsTab.refreshBtn?.querySelector('[data-refresh-icon]');
 
     expect(infoIcon?.outerHTML).toBe(opsIcon?.outerHTML);
+    expect(opsTab.refreshBtn?.textContent?.trim()).toBe('');
 
-    const refreshPromise = opsTab.refresh();
+    opsTab.refreshBtn?.click();
+    const refreshPromise = opsTab.refreshControl._runPromise;
 
     expect(opsTab.refreshBtn?.disabled).toBe(true);
     expect(opsTab.refreshBtn?.classList.contains('is-loading')).toBe(true);
     expect(opsTab.refreshBtn?.getAttribute('aria-busy')).toBe('true');
+    expect(opsTab.refreshBtn?.textContent).not.toContain('Refreshing...');
 
     deferred.resolve();
     await Promise.resolve();
 
     expect(opsTab.refreshBtn?.disabled).toBe(true);
     expect(opsTab.refreshBtn?.classList.contains('is-loading')).toBe(true);
+    expect(opsTab.refreshBtn?.textContent).not.toContain('Refreshing...');
 
     await vi.advanceTimersByTimeAsync(MIN_REFRESH_SPIN_MS);
     await refreshPromise;
 
+    expect(opsTab.refreshBtn?.textContent?.trim()).toBe('');
     expect(opsTab.refreshBtn?.disabled).toBe(false);
     expect(opsTab.refreshBtn?.classList.contains('is-loading')).toBe(false);
     expect(opsTab.refreshBtn?.hasAttribute('aria-busy')).toBe(false);
