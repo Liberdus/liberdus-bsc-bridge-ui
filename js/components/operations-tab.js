@@ -1,10 +1,22 @@
 import { RefreshButton } from './refresh-button.js';
+import { AdminOperationsService } from '../services/admin-operations-service.js';
+import {
+  buildVaultOperationDetailRows,
+  buildVaultOperationSummary,
+  getVaultOperationTypeLabel,
+  isOwnerSignableVaultOperationType,
+  normalizeVaultOperation,
+  renderVaultOperationOptions,
+  REQUEST_VAULT_OPERATION_TYPE_ORDER,
+} from '../utils/vault-operations.js';
 
 export class OperationsTab {
-  constructor() {
+  constructor({ operationsService = null } = {}) {
     this.panel = null;
     this.tabButton = null;
     this.refreshBtn = null;
+    this._operationsService = operationsService;
+    this.historyPageSize = 10;
     this._access = {
       connected: false,
       address: null,
@@ -16,8 +28,19 @@ export class OperationsTab {
       signerError: null,
       error: null,
     };
+    this._historyEvents = [];
+    this._historyActiveCount = 0;
+    this._historyLoaded = false;
+    this._historyLoading = false;
+    this._historyError = null;
+    this._historyVisibleCount = this.historyPageSize;
+    this._historyFilterOpType = null;
+    this._historyFilterStatus = null;
+    this._isActive = false;
     this._lastOperationId = null;
+    this._selectedOperation = null;
     this._isLoadingOperation = false;
+    this._isRefreshingPanel = false;
     this._actionToastSequence = 0;
     this._accessRequestId = 0;
     this.refreshControl = new RefreshButton({
@@ -84,16 +107,54 @@ export class OperationsTab {
           </div>
         </div>
 
+        <div class="card" data-ops-history-section hidden>
+          <div class="ops-history-lookup">
+            <div class="ops-history-section-title">Operation Lookup</div>
+            <p class="muted">Paste an operation ID or select one below to review it. Signing remains limited to multisig wallets.</p>
+            <label class="field field--full">
+              <span class="field-label">Operation ID</span>
+                <div class="ops-history-lookup-row">
+                  <input class="field-input" type="text" placeholder="0x..." data-requires-tx="true" data-ops-operation-id />
+                  <button type="button" class="btn" data-requires-tx="true" data-ops-load-operation>View Operation</button>
+                </div>
+            </label>
+          </div>
+          <div class="ops-history-divider" role="presentation"></div>
+          <div class="ops-history-intro">
+            <div class="card-title">Requested Operations</div>
+            <p class="muted">Loaded from the Vault&apos;s current on-chain operation storage.</p>
+          </div>
+          <div class="proposals-filters">
+            <label class="filter-field">
+              <span class="filter-label">Operation</span>
+              <select class="field-input" data-ops-history-filter-type>
+                ${renderVaultOperationOptions({ includeAll: true })}
+              </select>
+            </label>
+            <label class="filter-field">
+              <span class="filter-label">Status</span>
+              <select class="field-input" data-ops-history-filter-status>
+                <option value="">All Statuses</option>
+                <option value="Pending">Pending</option>
+                <option value="Executed">Executed</option>
+                <option value="Expired">Expired</option>
+              </select>
+            </label>
+          </div>
+          <div class="proposal-list" data-ops-history-list></div>
+          <div class="proposal-footer">
+            <button type="button" class="btn" data-ops-history-load-more>Load more</button>
+            <div class="muted" data-ops-history-count>Showing 0</div>
+          </div>
+        </div>
+
         <div class="card" data-ops-admin-section hidden>
           <div class="card-title">Admin Actions</div>
           <div class="form-grid">
             <label class="field">
               <span class="field-label">Request Operation</span>
               <select class="field-input" data-op-type>
-                <option value="0">SetBridgeOutAmount</option>
-                <option value="2">SetBridgeOutEnabled</option>
-                <option value="1">UpdateSigner</option>
-                <option value="3">RelinquishTokens</option>
+                ${renderVaultOperationOptions({ order: REQUEST_VAULT_OPERATION_TYPE_ORDER })}
               </select>
             </label>
             <label class="field" data-op-field="amount">
@@ -121,11 +182,11 @@ export class OperationsTab {
               Request Operation
             </button>
           </div>
-          <div class="mint-readiness" data-ops-request-result hidden>
-            <div class="mint-readiness-content">
-              <div class="mint-readiness-row">
-                <div class="mint-readiness-label">Operation ID</div>
-                <div class="mint-readiness-value">
+          <div class="ops-panel" data-ops-request-result hidden>
+            <div class="ops-panel-content">
+              <div class="ops-panel-row">
+                <div class="ops-panel-label">Operation ID</div>
+                <div class="ops-panel-value">
                   <div class="param-address">
                     <code data-ops-last-operation>--</code>
                     <button type="button" class="copy-inline" data-ops-copy data-copy-value="">Copy</button>
@@ -133,9 +194,9 @@ export class OperationsTab {
                   </div>
                 </div>
               </div>
-              <div class="mint-readiness-row">
-                <div class="mint-readiness-label">Tx</div>
-                <div class="mint-readiness-value" data-ops-last-tx>--</div>
+              <div class="ops-panel-row">
+                <div class="ops-panel-label">Tx</div>
+                <div class="ops-panel-value" data-ops-last-tx>--</div>
               </div>
             </div>
           </div>
@@ -156,56 +217,30 @@ export class OperationsTab {
           </div>
         </div>
 
-        <div class="card" data-ops-multisig-section hidden>
-          <div class="card-title">Multisig Actions</div>
-          <div class="form-grid">
-            <label class="field field--full">
-              <span class="field-label">Operation ID</span>
-              <input class="field-input" type="text" placeholder="0x..." data-requires-tx="true" data-ops-operation-id />
-            </label>
+      </div>
+
+      <div class="modal-backdrop" data-ops-operation-modal hidden>
+        <div class="modal">
+          <div class="modal-header">
+            <div class="modal-title" data-ops-operation-modal-title>Operation Details</div>
+            <button
+              type="button"
+              class="notification-close"
+              aria-label="Close"
+              title="Close"
+              data-ops-close-operation
+            >×</button>
           </div>
-          <div class="actions">
-            <button type="button" class="btn" data-requires-tx="true" data-ops-load-operation>Load Operation</button>
-            <button type="button" class="btn btn--success" data-requires-tx="true" data-ops-sign-submit>
-              Sign & Submit
-            </button>
-          </div>
-          <div class="mint-readiness" data-ops-operation-details hidden>
-            <div class="mint-readiness-content">
-              <div class="mint-readiness-row">
-                <div class="mint-readiness-label">Type</div>
-                <div class="mint-readiness-value" data-ops-optype>--</div>
-              </div>
-              <div class="mint-readiness-row">
-                <div class="mint-readiness-label">Target</div>
-                <div class="mint-readiness-value" data-ops-optarget>--</div>
-              </div>
-              <div class="mint-readiness-row">
-                <div class="mint-readiness-label">Value</div>
-                <div class="mint-readiness-value" data-ops-opvalue>--</div>
-              </div>
-              <div class="mint-readiness-row">
-                <div class="mint-readiness-label">Data</div>
-                <div class="mint-readiness-value" data-ops-opdata>--</div>
-              </div>
-              <div class="mint-readiness-row">
-                <div class="mint-readiness-label">Signatures</div>
-                <div class="mint-readiness-value" data-ops-opsigs>--</div>
-              </div>
-              <div class="mint-readiness-row">
-                <div class="mint-readiness-label">Deadline</div>
-                <div class="mint-readiness-value" data-ops-opdeadline>--</div>
-              </div>
-              <div class="mint-readiness-row">
-                <div class="mint-readiness-label">Executed</div>
-                <div class="mint-readiness-value" data-ops-opexecuted>--</div>
-              </div>
-              <div class="mint-readiness-row">
-                <div class="mint-readiness-label">Expired</div>
-                <div class="mint-readiness-value" data-ops-opexpired>--</div>
-              </div>
+          <div class="modal-body">
+            <div class="ops-panel" data-ops-operation-details hidden>
+              <div class="ops-panel-content" data-ops-operation-detail-rows></div>
             </div>
           </div>
+            <div class="modal-actions">
+              <button type="button" class="btn btn--success" data-requires-tx="true" data-ops-sign-submit hidden>
+                Sign & Submit
+              </button>
+            </div>
         </div>
       </div>
     `;
@@ -214,11 +249,21 @@ export class OperationsTab {
     this.refreshControl.mount(this.refreshBtn);
     this.panel.addEventListener('click', (e) => this._onClick(e));
     this.panel.addEventListener('change', (e) => this._onChange(e));
+    this.panel.addEventListener('input', (e) => this._onInput(e));
     document.addEventListener('walletConnected', () => void this._syncAccess());
     document.addEventListener('walletDisconnected', () => void this._syncAccess());
     document.addEventListener('walletAccountChanged', () => void this._syncAccess());
     document.addEventListener('walletChainChanged', () => void this._syncAccess());
     document.addEventListener('contractManagerUpdated', () => void this._syncAccess());
+    document.addEventListener('tabActivated', (e) => {
+      if (e?.detail?.tabName !== 'operations') return;
+      this._isActive = true;
+      void this._ensureHistoryLoaded();
+    });
+    document.addEventListener('tabDeactivated', (e) => {
+      if (e?.detail?.tabName !== 'operations') return;
+      this._isActive = false;
+    });
 
     void this._syncAccess();
   }
@@ -239,6 +284,18 @@ export class OperationsTab {
   _tokenDecimals() {
     const d = Number(window.CONFIG?.TOKEN?.DECIMALS ?? 18);
     return Number.isFinite(d) ? d : 18;
+  }
+
+  _hasAdminAccess() {
+    return !!(this._access.connected && (this._access.isAdmin || this._access.isMultisig));
+  }
+
+  _getOperationsService() {
+    if (!this._operationsService) {
+      this._operationsService = new AdminOperationsService(window.contractManager);
+    }
+
+    return this._operationsService;
   }
 
   _normalizeAddress(address) {
@@ -316,11 +373,12 @@ export class OperationsTab {
 
     this._updateTabVisibility();
     this._renderAccessSummary();
+    void this._ensureHistoryLoaded();
   }
 
   _updateTabVisibility() {
     if (!this.tabButton) return;
-    const allowed = this._access.connected && (this._access.isAdmin || this._access.isMultisig);
+    const allowed = this._hasAdminAccess();
 
     this.tabButton.hidden = !allowed;
     this.tabButton.setAttribute('aria-hidden', allowed ? 'false' : 'true');
@@ -384,10 +442,12 @@ export class OperationsTab {
                 : 'None';
     if (roleEl) roleEl.textContent = role;
 
+    const hasAccess = this._hasAdminAccess();
     const adminSection = this.panel?.querySelector('[data-ops-admin-section]');
-    const multisigSection = this.panel?.querySelector('[data-ops-multisig-section]');
-    if (adminSection) adminSection.hidden = !(this._access.connected && (this._access.isAdmin || this._access.isMultisig));
-    if (multisigSection) multisigSection.hidden = !(this._access.connected && this._access.isMultisig);
+    const historySection = this.panel?.querySelector('[data-ops-history-section]');
+    if (adminSection) adminSection.hidden = !hasAccess;
+    if (historySection) historySection.hidden = !hasAccess;
+    this._syncSignButtonVisibility();
     const ownershipSection = this.panel?.querySelector('[data-ops-ownership-section]');
     if (ownershipSection) ownershipSection.hidden = !(this._access.connected && this._access.isAdmin);
 
@@ -433,6 +493,170 @@ export class OperationsTab {
     return null;
   }
 
+  _syncHistoryFilters() {
+    const typeSelect = this.panel?.querySelector('[data-ops-history-filter-type]');
+    const statusSelect = this.panel?.querySelector('[data-ops-history-filter-status]');
+    this._historyFilterOpType =
+      typeSelect instanceof HTMLSelectElement && typeSelect.value !== '' ? Number(typeSelect.value) : null;
+    this._historyFilterStatus =
+      statusSelect instanceof HTMLSelectElement && statusSelect.value !== '' ? String(statusSelect.value) : null;
+    this._historyVisibleCount = this.historyPageSize;
+    this._renderRequestedOperations();
+  }
+
+  async _ensureHistoryLoaded() {
+    if (!this._isActive) return;
+    if (!this._hasAdminAccess()) return;
+    if (this._historyLoaded || this._historyLoading) return;
+    await this._refreshRequestedOperations();
+  }
+
+  async _refreshPanel() {
+    if (this._isRefreshingPanel) return;
+    this._isRefreshingPanel = true;
+    this._setRefreshButtonLoading(true);
+    try {
+      await window.contractManager?.refreshStatus?.({ reason: 'operationsTabRefresh' }).catch(() => {});
+      await this._syncAccess();
+      if (this._hasAdminAccess()) {
+        await this._refreshRequestedOperations();
+      }
+    } finally {
+      this._isRefreshingPanel = false;
+      this._setRefreshButtonLoading(false);
+    }
+  }
+
+  async _refreshRequestedOperations() {
+    if (this._historyLoading) return;
+    if (!this._hasAdminAccess()) return;
+
+    this._historyLoading = true;
+    this._historyError = null;
+    this._setHistoryLoading(true);
+    this._renderRequestedOperations();
+
+    try {
+      const result = await this._getOperationsService().load();
+      this._historyEvents = Array.isArray(result?.items) ? result.items : [];
+      this._historyActiveCount = Number.isFinite(result?.activeCount) ? result.activeCount : this._historyEvents.length;
+      this._historyError = null;
+      this._historyLoaded = true;
+      this._historyVisibleCount = Math.max(this._historyVisibleCount, this.historyPageSize);
+      this._renderRequestedOperations();
+    } catch (error) {
+      const errorState = this._describeHistoryLoadError(error);
+      this._historyError = errorState;
+      console.error('[OperationsTab] Failed to load requested operations', {
+        error,
+        title: errorState.title,
+        detail: errorState.detail,
+      });
+      window.toastManager?.error?.('Failed to load requested operations', {
+        message: errorState.detail,
+        timeoutMs: 0,
+        dismissible: true,
+      });
+    } finally {
+      this._historyLoading = false;
+      this._setHistoryLoading(false);
+      if (this._historyError) {
+        this._renderRequestedOperations();
+      }
+    }
+  }
+
+  _getFilteredHistoryEvents() {
+    return this._historyEvents.filter((event) => {
+      if (this._historyFilterOpType != null && event.opType !== this._historyFilterOpType) return false;
+      if (this._historyFilterStatus != null && this._historyFilterStatus !== this._historyStatusLabel(event)) return false;
+      return true;
+    });
+  }
+
+  _renderRequestedOperations() {
+    const listEl = this.panel?.querySelector('[data-ops-history-list]');
+    const countEl = this.panel?.querySelector('[data-ops-history-count]');
+    const loadMoreBtn = this.panel?.querySelector('[data-ops-history-load-more]');
+    if (!listEl || !countEl || !loadMoreBtn) return;
+
+    const filtered = this._getFilteredHistoryEvents();
+    const visible = filtered.slice(0, this._historyVisibleCount);
+    const loadedTotal = this._historyEvents.length;
+    const onChainTotal = this._historyTotalCount();
+
+    if (this._historyError && loadedTotal === 0 && !this._historyLoading) {
+      listEl.innerHTML = this._renderHistoryError(this._historyError);
+      countEl.textContent = 'Error loading history';
+      loadMoreBtn.classList.add('hidden');
+      loadMoreBtn.disabled = false;
+      return;
+    }
+
+    if (visible.length === 0) {
+      const emptyText =
+        loadedTotal === 0
+          ? (this._historyLoading ? 'Loading requested operations...' : 'No requested operations found.')
+          : 'No requested operations match the current filters.';
+      listEl.innerHTML = `<div class="param-row muted">${this._escapeHtml(emptyText)}</div>`;
+    } else {
+      listEl.innerHTML = visible.map((event) => this._renderHistoryRow(event)).join('');
+    }
+
+    if (filtered.length !== loadedTotal) {
+      countEl.textContent = `Showing ${visible.length} of ${filtered.length} filtered (${onChainTotal} total)`;
+    } else {
+      countEl.textContent = `Showing ${visible.length} of ${onChainTotal} total`;
+    }
+    loadMoreBtn.classList.toggle('hidden', visible.length >= filtered.length || filtered.length === 0);
+    loadMoreBtn.disabled = this._historyLoading;
+  }
+
+  _historyTotalCount() {
+    if (Number.isFinite(this._historyActiveCount) && this._historyActiveCount >= 0) {
+      return this._historyActiveCount;
+    }
+    return this._historyEvents.length;
+  }
+
+  _renderHistoryError(errorState) {
+    return `
+      <div class="ops-history-error" role="alert">
+        <div class="ops-history-error-title">${this._escapeHtml(errorState?.title || 'Unable to load requested operations')}</div>
+        <div class="ops-history-error-detail">${this._escapeHtml(errorState?.detail || 'Unknown error.')}</div>
+      </div>
+    `;
+  }
+
+  _renderHistoryRow(event) {
+    const status = this._historyStatusLabel(event);
+    const statusClass = status === 'Executed' ? 'is-executed' : status === 'Expired' ? 'is-expired' : '';
+    const selectedClass = this._selectedOperation?.operationId === event.operationId ? ' is-selected' : '';
+    const helpers = this._vaultOperationDisplayHelpers();
+    return `
+      <button type="button" class="proposal-row ${statusClass}${selectedClass}" data-ops-history-row="${this._escapeHtml(event.operationId)}">
+        <div class="proposal-row-main">
+          <div class="proposal-row-top">
+            <div class="proposal-opid"><code>${this._escapeHtml(this._shortenHex(event.operationId, 8, 6))}</code></div>
+            <div class="proposal-status">${this._escapeHtml(status)}</div>
+          </div>
+          <div class="proposal-row-bottom">
+            <div class="proposal-meta">${this._escapeHtml(getVaultOperationTypeLabel(event.opType))}${this._renderHistoryDeadlineMeta(event)}</div>
+            <div class="proposal-sigs">${this._escapeHtml(this._historySignatureLabel(event))}</div>
+          </div>
+          <div class="ops-history-summary">${this._escapeHtml(buildVaultOperationSummary(event, helpers))}</div>
+        </div>
+      </button>
+    `;
+  }
+
+  _setHistoryLoading(isLoading) {
+    const loadMoreBtn = this.panel?.querySelector('[data-ops-history-load-more]');
+    if (loadMoreBtn instanceof HTMLButtonElement) {
+      loadMoreBtn.disabled = !!isLoading;
+    }
+  }
+
   _syncOperationTypeFields() {
     const typeSelect = this.panel?.querySelector('[data-op-type]');
     if (!(typeSelect instanceof HTMLSelectElement)) return;
@@ -454,13 +678,43 @@ export class OperationsTab {
     if (!(target instanceof Element)) return;
     if (target.matches('[data-op-type]')) {
       this._syncOperationTypeFields();
+      return;
     }
+
+    if (target.matches('[data-ops-history-filter-type], [data-ops-history-filter-status]')) {
+      this._syncHistoryFilters();
+    }
+  }
+
+  _onInput(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (!target.matches('[data-ops-operation-id]')) return;
+    if (target.value.trim() === this._selectedOperation?.operationId) return;
+
+    this._selectedOperation = null;
+    this._syncSignButtonVisibility();
+    this._renderRequestedOperations();
   }
 
   async _onClick(event) {
     const target = event.target;
     if (!(target instanceof Element)) return;
 
+    if (target.matches('[data-ops-operation-modal]')) {
+      this._closeOperationModal();
+      return;
+    }
+
+    if (target.closest('[data-ops-close-operation]')) {
+      this._closeOperationModal();
+      return;
+    }
+
+    if (target.closest('[data-ops-refresh]')) {
+      await this._refreshPanel();
+      return;
+    }
     const copyBtn = target.closest('[data-ops-copy]');
     if (copyBtn) {
       const value = copyBtn.getAttribute('data-copy-value') || '';
@@ -473,11 +727,29 @@ export class OperationsTab {
       return;
     }
 
+    const historyRow = target.closest('[data-ops-history-row]');
+    if (historyRow) {
+      const operationId = historyRow.getAttribute('data-ops-history-row') || '';
+      const input = this.panel?.querySelector('[data-ops-operation-id]');
+      if (input instanceof HTMLInputElement) {
+        input.value = operationId;
+      }
+      await this._loadOperationDetails({ operationId });
+      return;
+    }
+
+    if (target.closest('[data-ops-history-load-more]')) {
+      this._historyVisibleCount += this.historyPageSize;
+      this._renderRequestedOperations();
+      return;
+    }
+
     if (target.closest('[data-ops-use-operation]')) {
       const input = this.panel?.querySelector('[data-ops-operation-id]');
       if (input instanceof HTMLInputElement && this._lastOperationId) {
         input.value = this._lastOperationId;
         window.toastManager?.success?.('Operation ID filled', { timeoutMs: 1600 });
+        await this._loadOperationDetails({ operationId: this._lastOperationId });
       }
       return;
     }
@@ -568,7 +840,7 @@ export class OperationsTab {
 
       toastId = this._showActionLoadingToast({
         toastId: toastId || actionToastId,
-        message: 'Submitting request…',
+        message: 'Submitting request...',
       });
       const tx = await contract.requestOperation(opType, target, value, data);
       const receipt = await tx.wait?.();
@@ -591,6 +863,14 @@ export class OperationsTab {
       this._showActionToast({ toastId, type: 'success', title: 'Done', message, timeoutMs: 3500, dismissible: true, allowHtml: true });
 
       await window.contractManager?.refreshStatus?.({ reason: 'operationRequested' }).catch(() => {});
+      await this._refreshRequestedOperations();
+      if (operationId) {
+        const input = this.panel?.querySelector('[data-ops-operation-id]');
+        if (input instanceof HTMLInputElement) {
+          input.value = operationId;
+        }
+        await this._loadOperationDetails().catch(() => {});
+      }
     } catch (error) {
       toastId = toastId || error?._actionToastId || actionToastId;
       const msg = this._actionErrorMessage(error, 'Request failed.');
@@ -620,7 +900,7 @@ export class OperationsTab {
 
       toastId = this._showActionLoadingToast({
         toastId: toastId || actionToastId,
-        message: 'Submitting transfer…',
+        message: 'Submitting transfer...',
       });
       const tx = await contract.transferOwnership(normalized);
       await tx.wait?.();
@@ -652,16 +932,22 @@ export class OperationsTab {
     if (wrapper) wrapper.hidden = !(operationId || txHash);
   }
 
-  async _loadOperationDetails() {
+  async _loadOperationDetails({ operationId: requestedOperationId = null } = {}) {
     if (this._isLoadingOperation) return;
     this._isLoadingOperation = true;
 
     const idInput = this.panel?.querySelector('[data-ops-operation-id]');
-    const operationId = idInput instanceof HTMLInputElement ? idInput.value.trim() : '';
+    const operationId = String(
+      requestedOperationId || (idInput instanceof HTMLInputElement ? idInput.value.trim() : '')
+    ).trim();
     if (!operationId) {
       window.toastManager?.error?.('Enter an operation ID.');
       this._isLoadingOperation = false;
       return;
+    }
+
+    if (idInput instanceof HTMLInputElement) {
+      idInput.value = operationId;
     }
 
     const contract = window.contractManager?.getReadContract?.();
@@ -671,11 +957,16 @@ export class OperationsTab {
       return;
     }
 
-    const toastId = window.toastManager?.loading?.('Loading operation…', { id: 'loadOperation' });
+    const toastId = window.toastManager?.loading?.('Loading operation...', { id: 'loadOperation' });
     try {
-      const [op, expired] = await Promise.all([contract.operations(operationId), contract.isOperationExpired(operationId)]);
-      this._renderOperationDetails({ operationId, op, expired: !!expired });
-      window.toastManager?.update?.(toastId, { type: 'success', title: 'Done', message: 'Operation loaded.', timeoutMs: 2000 });
+      const [operation, expired] = await Promise.all([
+        contract.operations(operationId),
+        contract.isOperationExpired(operationId),
+      ]);
+      this._renderOperationDetails(normalizeVaultOperation(operationId, operation, expired));
+      if (toastId) {
+        window.toastManager?.dismiss?.(toastId);
+      }
     } catch (error) {
       const msg = error?.reason || error?.message || 'Failed to load operation.';
       window.toastManager?.update?.(toastId, { type: 'error', title: 'Error', message: msg, timeoutMs: 0 });
@@ -684,42 +975,170 @@ export class OperationsTab {
     }
   }
 
-  _renderOperationDetails({ operationId, op, expired }) {
+  _renderOperationDetails(item) {
     const details = this.panel?.querySelector('[data-ops-operation-details]');
-    if (!details) return;
+    const rowsEl = this.panel?.querySelector('[data-ops-operation-detail-rows]');
+    const titleEl = this.panel?.querySelector('[data-ops-operation-modal-title]');
+    if (!details || !(rowsEl instanceof HTMLElement)) return;
 
-    const opType = Number(op?.opType?.toString?.() ?? op?.opType);
-    const target = op?.target ? String(op.target) : '--';
-    const value = op?.value?.toString?.() ? String(op.value.toString()) : String(op?.value ?? '--');
-    const data = op?.data ? String(op.data) : '--';
-    const numSignatures = op?.numSignatures?.toString?.() ? Number(op.numSignatures.toString()) : Number(op?.numSignatures ?? 0);
-    const executed = !!op?.executed;
-    const deadlineRaw = op?.deadline?.toString?.() ? Number(op.deadline.toString()) : Number(op?.deadline ?? 0);
+    const status = this._historyStatusLabel(item);
+    const typeLabel = getVaultOperationTypeLabel(item.opType);
+    const rows = [
+      {
+        key: 'operationId',
+        label: 'Operation ID',
+        value: item.operationId || '--',
+        copyValue: item.operationId || '',
+        code: true,
+      },
+      {
+        key: 'operation',
+        label: 'Operation',
+        value: typeLabel,
+      },
+      {
+        key: 'status',
+        label: 'Status',
+        value: status,
+      },
+      ...buildVaultOperationDetailRows(item, this._vaultOperationDisplayHelpers()),
+      {
+        key: 'signatures',
+        label: 'Signatures',
+        value: this._historySignatureLabel(item),
+      },
+      {
+        key: 'deadline',
+        label: 'Deadline',
+        value: item.deadline ? this._formatUnix(item.deadline) : '--',
+      },
+      {
+        key: 'executed',
+        label: 'Executed',
+        value: item.executed ? 'Yes' : 'No',
+      },
+      {
+        key: 'expired',
+        label: 'Expired',
+        value: item.expired ? 'Yes' : 'No',
+      },
+    ];
 
-    const setText = (sel, txt) => {
-      const el = this.panel?.querySelector(sel);
-      if (el) el.textContent = txt;
-    };
+    rowsEl.innerHTML = rows.map((row) => this._renderOperationDetailRow(row)).join('');
+    if (titleEl) {
+      titleEl.textContent = typeLabel ? `${typeLabel} Details` : 'Operation Details';
+    }
 
-    setText('[data-ops-optype]', this._opTypeLabel(opType));
-    setText('[data-ops-optarget]', target);
-    setText('[data-ops-opvalue]', value);
-    setText('[data-ops-opdata]', data);
-    setText('[data-ops-opsigs]', Number.isFinite(numSignatures) ? String(numSignatures) : '--');
-    setText('[data-ops-opdeadline]', deadlineRaw ? this._formatUnix(deadlineRaw) : '--');
-    setText('[data-ops-opexecuted]', executed ? 'Yes' : 'No');
-    setText('[data-ops-opexpired]', expired ? 'Yes' : 'No');
-
+    this._selectedOperation = item;
     details.hidden = false;
-    this._lastOperationId = operationId;
+    this._lastOperationId = item.operationId;
+    this._openOperationModal();
+    this._syncSignButtonVisibility();
+    this._renderRequestedOperations();
   }
 
-  _opTypeLabel(opType) {
-    if (opType === 0) return 'SetBridgeOutAmount';
-    if (opType === 1) return 'UpdateSigner';
-    if (opType === 2) return 'SetBridgeOutEnabled';
-    if (opType === 3) return 'RelinquishTokens';
-    return String(opType);
+  _vaultOperationDisplayHelpers() {
+    return {
+      decodeBoolData: (data) => this._decodeBoolData(data),
+      formatOperationDataDisplay: (data) => this._formatOperationDataDisplay(data),
+      formatTokenAmount: (value) => this._formatTokenAmount(value),
+      isZeroAddress: (value) => this._isZeroAddress(value),
+      normalizeAddress: (value) => this._normalizeAddress(value),
+      shortenAddress: (value) => this._shortenAddress(value),
+      uint256ToAddress: (value) => this._uint256ToAddress(value),
+    };
+  }
+
+  _renderOperationDetailRow(row) {
+    const key = this._escapeHtml(row?.key || 'detail');
+    const label = this._escapeHtml(row?.label || '--');
+    const value = this._renderOperationDetailValue(row);
+
+    return `
+      <div class="ops-panel-row" data-ops-detail-row="${key}">
+        <div class="ops-panel-label">${label}</div>
+        <div class="ops-panel-value">${value}</div>
+      </div>
+    `;
+  }
+
+  _renderOperationDetailValue(row) {
+    const text = String(row?.value ?? '--');
+    const escapedText = this._escapeHtml(text);
+    const copyValue = String(row?.copyValue || '').trim();
+
+    if (copyValue) {
+      return `
+        <div class="param-address">
+          <code>${escapedText}</code>
+          <button type="button" class="copy-inline" data-ops-copy data-copy-value="${this._escapeHtml(copyValue)}">Copy</button>
+        </div>
+      `;
+    }
+
+    if (row?.code) {
+      return `<code>${escapedText}</code>`;
+    }
+
+    return escapedText;
+  }
+
+  _openOperationModal() {
+    const modal = this.panel?.querySelector('[data-ops-operation-modal]');
+    if (!(modal instanceof HTMLElement)) return;
+    modal.hidden = false;
+  }
+
+  _closeOperationModal() {
+    const modal = this.panel?.querySelector('[data-ops-operation-modal]');
+    if (!(modal instanceof HTMLElement)) return;
+    modal.hidden = true;
+  }
+
+  _historyStatusLabel(item) {
+    return item?.executed === true ? 'Executed' : this._isOperationExpiredState(item) ? 'Expired' : 'Pending';
+  }
+
+  _canOwnerSignSelectedOperation() {
+    if (!this._access.connected || !this._access.isAdmin || this._access.isMultisig) return false;
+    if (!this._selectedOperation) return false;
+    return isOwnerSignableVaultOperationType(this._selectedOperation.opType);
+  }
+
+  _canCurrentUserSignOperation() {
+    return !!(this._access.isMultisig || this._canOwnerSignSelectedOperation());
+  }
+
+  _getSignDisabledReason() {
+    const item = this._selectedOperation;
+    if (!item) return 'Load an operation first.';
+    if (item.executed) return 'Operation already executed.';
+    if (this._isOperationExpiredState(item)) return 'Operation expired.';
+    return null;
+  }
+
+  _syncSignButtonVisibility() {
+    const signBtn = this.panel?.querySelector('[data-ops-sign-submit]');
+    if (!(signBtn instanceof HTMLButtonElement)) return;
+
+    const canSign = this._canCurrentUserSignOperation();
+    const disabledReason = canSign ? this._getSignDisabledReason() : null;
+
+    signBtn.hidden = !canSign;
+    signBtn.disabled = !!disabledReason;
+    signBtn.title = disabledReason || '';
+  }
+
+  _historySignatureLabel(item) {
+    const count = Number.isFinite(item?.numSignatures) ? Number(item.numSignatures) : null;
+    const required = Number(window.contractManager?.getStatusSnapshot?.()?.requiredSignatures || 3) || 3;
+    return count == null ? `--/${required}` : `${count}/${required}`;
+  }
+
+  _renderHistoryDeadlineMeta(item) {
+    const deadline = Number(item?.deadline || 0);
+    if (!Number.isFinite(deadline) || deadline <= 0) return '';
+    return ` | ${this._formatDeadlineRelative(deadline)}`;
   }
 
   _formatUnix(seconds) {
@@ -732,13 +1151,46 @@ export class OperationsTab {
     }
   }
 
-  async _signAndSubmit() {
-    if (!this._access.connected || !this._access.isMultisig) return;
+  _formatDeadlineRelative(unixSeconds) {
+    const seconds = Number(unixSeconds);
+    if (!Number.isFinite(seconds) || seconds <= 0) return 'No deadline';
+    const diff = seconds - Math.floor(Date.now() / 1000);
+    const abs = Math.abs(diff);
+    const prefix = diff >= 0 ? 'Expires in ' : 'Expired ';
 
-    const idInput = this.panel?.querySelector('[data-ops-operation-id]');
-    const operationId = idInput instanceof HTMLInputElement ? idInput.value.trim() : '';
+    if (abs < 60) return diff >= 0 ? 'Expires soon' : 'Expired just now';
+
+    const minutes = Math.floor(abs / 60);
+    if (minutes < 60) return `${prefix}${minutes}m${diff >= 0 ? '' : ' ago'}`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${prefix}${hours}h${diff >= 0 ? '' : ' ago'}`;
+    const days = Math.floor(hours / 24);
+    return `${prefix}${days}d${diff >= 0 ? '' : ' ago'}`;
+  }
+
+  _describeHistoryLoadError(error) {
+    return {
+      title: 'Unable to load requested operations',
+      detail: error?.message || 'Failed to load requested operations.',
+    };
+  }
+
+  async _signAndSubmit() {
+    if (!this._access.connected) return;
+    if (!this._canCurrentUserSignOperation()) {
+      window.toastManager?.error?.('Load an Update Signer operation to sign as owner.');
+      return;
+    }
+
+    const disabledReason = this._getSignDisabledReason();
+    if (disabledReason) {
+      window.toastManager?.error?.(disabledReason);
+      return;
+    }
+
+    const operationId = this._selectedOperation?.operationId || '';
     if (!operationId) {
-      window.toastManager?.error?.('Enter an operation ID.');
+      window.toastManager?.error?.('Load an operation first.');
       return;
     }
 
@@ -763,7 +1215,7 @@ export class OperationsTab {
 
       toastId = this._showActionLoadingToast({
         toastId: toastId || actionToastId,
-        message: 'Signing & submitting…',
+        message: 'Signing & submitting...',
       });
       const messageHash = await contractRead.getOperationHash(operationId);
       const signature = await signer.signMessage(utils.arrayify(messageHash));
@@ -777,8 +1229,9 @@ export class OperationsTab {
         : 'Signature submitted.';
       this._showActionToast({ toastId, type: 'success', title: 'Done', message, timeoutMs: 3500, dismissible: true, allowHtml: true });
 
-      await this._loadOperationDetails().catch(() => {});
       await window.contractManager?.refreshStatus?.({ reason: 'signatureSubmitted' }).catch(() => {});
+      await this._refreshRequestedOperations();
+      await this._loadOperationDetails().catch(() => {});
     } catch (error) {
       toastId = toastId || error?._actionToastId || actionToastId;
       const msg = this._actionErrorMessage(error, 'Submission failed.');
@@ -889,6 +1342,86 @@ export class OperationsTab {
     if (!text) return 'Internal JSON-RPC error.';
 
     return text;
+  }
+
+  _setRefreshButtonLoading(isLoading) {
+    const refreshBtn = this.panel?.querySelector('[data-ops-refresh]');
+    if (!(refreshBtn instanceof HTMLButtonElement)) return;
+    refreshBtn.disabled = !!isLoading;
+    refreshBtn.textContent = isLoading ? 'Refreshing...' : 'Refresh';
+  }
+
+  _isOperationExpiredState(item) {
+    if (item?.expired === true) return true;
+    const deadline = Number(item?.deadline || 0);
+    return Number.isFinite(deadline) && deadline > 0 && Math.floor(Date.now() / 1000) > deadline;
+  }
+
+  _formatTokenAmount(value) {
+    if (value == null) return '--';
+    try {
+      if (window.ethers?.utils?.formatUnits) {
+        const formatted = window.ethers.utils.formatUnits(value, this._tokenDecimals());
+        const numeric = Number(formatted);
+        const pretty = Number.isFinite(numeric)
+          ? numeric.toLocaleString(undefined, { maximumFractionDigits: 6 })
+          : formatted;
+        return `${pretty} ${this._tokenSymbol()}`;
+      }
+    } catch {
+      // Fall back to the raw value below.
+    }
+
+    return `${String(value?.toString?.() ?? value)} ${this._tokenSymbol()}`;
+  }
+
+  _decodeBoolData(data) {
+    const normalized = String(data || '').trim().toLowerCase();
+    if (!/^0x[0-9a-f]+$/.test(normalized)) return null;
+    const body = normalized.slice(2).padStart(64, '0');
+    if (body.length !== 64) return null;
+    if (/^0{63}1$/.test(body)) return true;
+    if (/^0{64}$/.test(body)) return false;
+    return null;
+  }
+
+  _formatOperationDataDisplay(data) {
+    const text = String(data ?? '--').trim();
+    if (!text || text === '--') return '--';
+    return text.toLowerCase() === '0x' ? 'None' : text;
+  }
+
+  _isZeroAddress(value) {
+    return this._normalizeAddress(value) === '0x0000000000000000000000000000000000000000';
+  }
+
+  _uint256ToAddress(value) {
+    try {
+      const bigIntValue = BigInt(String(value?.toString?.() ?? value ?? '0'));
+      const hex = bigIntValue.toString(16).padStart(40, '0').slice(-40);
+      return this._normalizeAddress(`0x${hex}`) || `0x${hex}`;
+    } catch {
+      return null;
+    }
+  }
+
+  _shortenHex(value, head = 4, tail = 4) {
+    const text = String(value || '');
+    if (!text.startsWith('0x') || text.length <= head + tail + 2) return text || '--';
+    return `${text.slice(0, 2 + head)}...${text.slice(-tail)}`;
+  }
+
+  _shortenAddress(value) {
+    return this._shortenHex(value, 4, 4);
+  }
+
+  _escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
   }
 
   async _copy(text) {

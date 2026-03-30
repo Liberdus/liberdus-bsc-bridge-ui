@@ -4,6 +4,7 @@ import { InfoTab } from '../js/components/info-tab.js';
 import { OperationsTab } from '../js/components/operations-tab.js';
 import { MIN_REFRESH_SPIN_MS, RefreshButton } from '../js/components/refresh-button.js';
 import { TransactionsTab } from '../js/components/transactions-tab.js';
+import { CONFIG } from '../js/config.js';
 import { installCommonWindowStubs } from './helpers/test-utils.js';
 
 function createDeferred() {
@@ -132,7 +133,7 @@ describe('shared refresh button treatment', () => {
 
     const refreshPromise = txTab.refresh();
 
-    expect(globalThis.fetch).toHaveBeenCalledWith('https://tss1-test.liberdus.com/transaction?page=1');
+    expect(globalThis.fetch).toHaveBeenCalledWith(`${CONFIG.BRIDGE.COORDINATOR_URL}/transaction?page=1`);
     expect(txTab.refreshBtn?.disabled).toBe(true);
     expect(txTab.refreshBtn?.classList.contains('is-loading')).toBe(true);
     expect(txTab.refreshBtn?.getAttribute('aria-busy')).toBe('true');

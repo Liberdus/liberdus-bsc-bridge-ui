@@ -38,8 +38,10 @@ describe('OperationsTab access behavior', () => {
     expect(document.querySelector('[data-ops-role]').textContent).toBe('Owner');
     expect(document.querySelector('[data-ops-status]').textContent).toBe('Ready.');
     expect(document.querySelector('[data-ops-admin-section]').hidden).toBe(false);
+    expect(document.querySelector('[data-ops-history-section]').hidden).toBe(false);
     expect(document.querySelector('[data-ops-ownership-section]').hidden).toBe(false);
-    expect(document.querySelector('[data-ops-multisig-section]').hidden).toBe(true);
+    expect(document.querySelector('[data-ops-history-section]').textContent).toContain('Operation Lookup');
+    expect(document.querySelector('[data-ops-sign-submit]').hidden).toBe(true);
     expect(document.querySelector('[data-ops-owner]').textContent).toBe(normalizeAddress(OWNER));
     expect(document.querySelector('[data-ops-is-signer]').textContent).toBe('No');
   });
@@ -63,8 +65,9 @@ describe('OperationsTab access behavior', () => {
     expect(tab.tabButton.hidden).toBe(false);
     expect(document.querySelector('[data-ops-role]').textContent).toBe('Multisig');
     expect(document.querySelector('[data-ops-admin-section]').hidden).toBe(false);
+    expect(document.querySelector('[data-ops-history-section]').hidden).toBe(false);
     expect(document.querySelector('[data-ops-ownership-section]').hidden).toBe(true);
-    expect(document.querySelector('[data-ops-multisig-section]').hidden).toBe(false);
+    expect(document.querySelector('[data-ops-sign-submit]').hidden).toBe(false);
     expect(document.querySelector('[data-ops-is-signer]').textContent).toBe('Yes');
   });
 

@@ -16,6 +16,7 @@ export function installCommonWindowStubs({ txEnabled = true } = {}) {
         SOURCE: {
           NAME: 'Polygon Amoy',
           CHAIN_ID: 80002,
+          BLOCK_EXPLORER: 'https://amoy.polygonscan.com',
         },
       },
       CONTRACTS: {
@@ -29,6 +30,11 @@ export function installCommonWindowStubs({ txEnabled = true } = {}) {
   window.ethers = {
     utils: {
       getAddress: normalizeAddress,
+      formatUnits: (value, decimals = 18) => {
+        const scale = 10 ** Number(decimals || 18);
+        const numeric = Number(value?.toString?.() ?? value ?? 0);
+        return String(numeric / scale);
+      },
     },
   };
 
@@ -46,6 +52,11 @@ export function installCommonWindowStubs({ txEnabled = true } = {}) {
       signerError: null,
       error: null,
     })),
+    getStatusSnapshot: vi.fn(() => ({ requiredSignatures: 3 })),
+    getReadOnlyProvider: vi.fn(() => null),
+    getReadContract: vi.fn(() => null),
+    getOperationsBatch: vi.fn(async () => new Map()),
+    refreshStatus: vi.fn(async () => ({})),
   };
 
   window.networkManager = {
@@ -58,6 +69,8 @@ export function installCommonWindowStubs({ txEnabled = true } = {}) {
     show: vi.fn(() => null),
     error: vi.fn(),
     success: vi.fn(),
+    loading: vi.fn(() => 'toast-id'),
+    update: vi.fn(),
   };
 
   window.location.hash = '';

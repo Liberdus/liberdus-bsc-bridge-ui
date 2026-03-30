@@ -65,4 +65,64 @@ describe('ContractManager access state', () => {
     expect(noContract.isOwner).toBe(false);
     expect(noContract.isSigner).toBe(false);
   });
+
+  it('batch-loads operation state and expiry', async () => {
+    const manager = new ContractManager();
+    manager.contractRead = {
+      operations: async (operationId) => ({
+        0: { toString: () => (operationId === 'op-1' ? '0' : '2') },
+        1: OWNER,
+        2: { toString: () => '100' },
+        3: '0x',
+        4: { toString: () => '2' },
+        5: operationId === 'op-2',
+        6: { toString: () => '2000000000' },
+      }),
+      isOperationExpired: async (operationId) => operationId === 'op-1',
+    };
+
+    const result = await manager.getOperationsBatch(['op-1', 'op-2']);
+
+    expect(result.get('op-1')).toMatchObject({
+      operationId: 'op-1',
+      opType: 0,
+      target: OWNER,
+      data: '0x',
+      numSignatures: 2,
+      executed: false,
+      deadline: 2000000000,
+      expired: true,
+    });
+    expect(result.get('op-2')).toMatchObject({
+      operationId: 'op-2',
+      opType: 2,
+      executed: true,
+      expired: false,
+    });
+  });
+
+  it('does not require enumerable operation reads in the status snapshot', async () => {
+    const manager = new ContractManager();
+    manager.contractRead = {
+      getChainId: async () => ({ toString: () => '80002' }),
+      chainId: async () => ({ toString: () => '80002' }),
+      owner: async () => OWNER,
+      operationCount: async () => ({ toString: () => '9' }),
+      OPERATION_DEADLINE: async () => ({ toString: () => '259200' }),
+      token: async () => '0x9999999999999999999999999999999999999999',
+      REQUIRED_SIGNATURES: async () => ({ toString: () => '3' }),
+      bridgeOutEnabled: async () => true,
+      halted: async () => false,
+      maxBridgeOutAmount: async () => ({ toString: () => '1000' }),
+      getVaultBalance: async () => ({ toString: () => '5000' }),
+      signers: async (index) => [OWNER, SIGNER, STRANGER, '0x4444444444444444444444444444444444444444'][index],
+    };
+
+    const snapshot = await manager.refreshStatus();
+
+    expect(snapshot.operationCount).toBe(9);
+    expect(snapshot).not.toHaveProperty('activeOperationCount');
+    expect(snapshot.requiredSignatures).toBe(3);
+    expect(snapshot.error).toBeNull();
+  });
 });
