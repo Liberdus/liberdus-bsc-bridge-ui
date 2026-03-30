@@ -193,7 +193,7 @@ export class Header {
       : `
         <div class="wallet-picker-empty">
           <p class="wallet-picker-empty-title">No browser wallet found</p>
-          <p class="wallet-picker-empty-copy">Install or unlock a compatible injected wallet to continue.</p>
+          <p class="wallet-picker-empty-copy">Install or unlock an EVM-compatible wallet to continue.</p>
         </div>
       `;
 

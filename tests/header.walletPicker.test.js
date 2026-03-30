@@ -83,7 +83,7 @@ describe('Header wallet picker', () => {
     expect(document.getElementById('wallet-picker-container').innerHTML).toBe('');
   });
 
-  it('shows a generic empty-state message when no injected wallets are available', () => {
+  it('shows a generic empty-state message when no browser wallets are available', () => {
     window.walletManager.getAvailableWallets = vi.fn(() => []);
     window.walletManager.getLastSelectedWalletId = vi.fn(() => null);
 
@@ -93,7 +93,7 @@ describe('Header wallet picker', () => {
     document.getElementById('connect-wallet-btn').click();
 
     expect(document.body.textContent).toContain('No browser wallet found');
-    expect(document.body.textContent).toContain('Install or unlock a compatible injected wallet to continue.');
+    expect(document.body.textContent).toContain('Install or unlock an EVM-compatible wallet to continue.');
   });
 
   it('refreshes an open picker when wallets are discovered after it renders', () => {
