@@ -709,10 +709,7 @@ export class PolygonBscBridgeModule {
       progressSession.updateStep(stepId.confirm, { status: 'completed', detail: 'Confirmed' });
       progressSession.finishSuccess(bridgedOut ? 'Bridge out confirmed.' : 'Bridge confirmed.');
 
-      const sourceChainId = Number(this.config?.BRIDGE?.CHAINS?.SOURCE?.CHAIN_ID);
-      if (Number.isFinite(sourceChainId) && sourceChainId > 0) {
-        void this._notifyBridgeOutObserver({ chainId: sourceChainId });
-      }
+      void this._notifyBridgeOutObserver({ chainId: this.config?.BRIDGE?.CHAINS?.SOURCE?.CHAIN_ID });
 
       if (bridgedOut) {
         const detail = {
