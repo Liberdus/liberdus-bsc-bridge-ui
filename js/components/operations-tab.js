@@ -1,7 +1,10 @@
+import { RefreshButton } from './refresh-button.js';
+
 export class OperationsTab {
   constructor() {
     this.panel = null;
     this.tabButton = null;
+    this.refreshBtn = null;
     this._access = {
       connected: false,
       address: null,
@@ -17,6 +20,11 @@ export class OperationsTab {
     this._isLoadingOperation = false;
     this._actionToastSequence = 0;
     this._accessRequestId = 0;
+    this.refreshControl = new RefreshButton({
+      ariaLabel: 'Refresh admin access',
+      attributes: { 'data-ops-refresh': '' },
+      onRefresh: () => this._runRefresh(),
+    });
   }
 
   load() {
@@ -34,7 +42,7 @@ export class OperationsTab {
       <div class="panel-header">
         <div class="card-title-row">
           <h2>Admin</h2>
-          <button type="button" class="btn btn--ghost btn--footer" data-ops-refresh>Refresh</button>
+          ${this.refreshControl.render()}
         </div>
         <p class="muted" data-ops-status>Connect a wallet to check access.</p>
       </div>
@@ -202,6 +210,8 @@ export class OperationsTab {
       </div>
     `;
 
+    this.refreshBtn = this.panel.querySelector('[data-ops-refresh]');
+    this.refreshControl.mount(this.refreshBtn);
     this.panel.addEventListener('click', (e) => this._onClick(e));
     this.panel.addEventListener('change', (e) => this._onChange(e));
     document.addEventListener('walletConnected', () => void this._syncAccess());
@@ -211,6 +221,15 @@ export class OperationsTab {
     document.addEventListener('contractManagerUpdated', () => void this._syncAccess());
 
     void this._syncAccess();
+  }
+
+  async refresh() {
+    return this.refreshControl.run();
+  }
+
+  async _runRefresh() {
+    await window.contractManager?.refreshStatus?.({ reason: 'operationsTabRefresh' }).catch(() => {});
+    await this._syncAccess().catch(() => {});
   }
 
   _tokenSymbol() {
@@ -441,12 +460,6 @@ export class OperationsTab {
   async _onClick(event) {
     const target = event.target;
     if (!(target instanceof Element)) return;
-
-    if (target.closest('[data-ops-refresh]')) {
-      await window.contractManager?.refreshStatus?.({ reason: 'operationsTabRefresh' }).catch(() => {});
-      await this._syncAccess().catch(() => {});
-      return;
-    }
 
     const copyBtn = target.closest('[data-ops-copy]');
     if (copyBtn) {

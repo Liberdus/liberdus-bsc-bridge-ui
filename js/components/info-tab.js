@@ -1,9 +1,15 @@
+import { RefreshButton } from './refresh-button.js';
+
 export class InfoTab {
   constructor() {
     this.panel = null;
     this.refreshBtn = null;
-    this._isLoading = false;
     this._lastErrorToastMessage = null;
+    this.refreshControl = new RefreshButton({
+      ariaLabel: 'Refresh contract info',
+      attributes: { 'data-info-refresh': '' },
+      onRefresh: () => this._runRefresh(),
+    });
   }
 
   load() {
@@ -15,7 +21,7 @@ export class InfoTab {
         <div class="panel-header info-hero">
           <div class="card-title-row info-hero-row">
             <h2>Contract Info</h2>
-            <button type="button" class="btn btn--ghost btn--footer info-refresh-btn" data-info-refresh>Refresh</button>
+            ${this.refreshControl.render()}
           </div>
         </div>
 
@@ -94,7 +100,7 @@ export class InfoTab {
 
     this.refreshBtn = this.panel.querySelector('[data-info-refresh]');
 
-    this.refreshBtn?.addEventListener('click', () => this.refresh());
+    this.refreshControl.mount(this.refreshBtn);
     this.panel.addEventListener('click', (event) => this._handlePanelClick(event));
 
     document.addEventListener('contractManagerUpdated', () => {
@@ -102,12 +108,6 @@ export class InfoTab {
       if (!snapshot) return;
       this.render(snapshot);
       this._notifyReadError(snapshot);
-    });
-
-    document.addEventListener('tabActivated', (event) => {
-      if (event?.detail?.tabName === 'info') {
-        this.refresh();
-      }
     });
 
     const snapshot = window.contractManager?.getStatusSnapshot?.();
@@ -118,19 +118,17 @@ export class InfoTab {
   }
 
   async refresh() {
-    if (this._isLoading) return;
-    this._isLoading = true;
-    this._setLoading(true);
+    return this.refreshControl.run();
+  }
 
-    const contractManager = window.contractManager;
-    if (!contractManager) {
-      window.toastManager?.error?.('Contract manager is not available.', { timeoutMs: 4000 });
-      this._isLoading = false;
-      this._setLoading(false);
-      return;
-    }
-
+  async _runRefresh() {
     try {
+      const contractManager = window.contractManager;
+      if (!contractManager) {
+        window.toastManager?.error?.('Contract manager is not available.', { timeoutMs: 4000 });
+        return;
+      }
+
       const snapshot = await contractManager.refreshStatus({ reason: 'infoTabRefresh' });
       this.render(snapshot);
       this._notifyReadError(snapshot);
@@ -138,9 +136,6 @@ export class InfoTab {
       const fallback = contractManager.getStatusSnapshot?.();
       if (fallback) this.render(fallback);
       window.toastManager?.error?.(error?.message || 'Failed to refresh contract status.', { timeoutMs: 4000 });
-    } finally {
-      this._isLoading = false;
-      this._setLoading(false);
     }
   }
 
@@ -265,12 +260,6 @@ export class InfoTab {
         return false;
       }
     }
-  }
-
-  _setLoading(isLoading) {
-    if (!this.refreshBtn) return;
-    this.refreshBtn.disabled = !!isLoading;
-    this.refreshBtn.textContent = isLoading ? 'Refreshing...' : 'Refresh';
   }
 
   _setText(selector, text) {

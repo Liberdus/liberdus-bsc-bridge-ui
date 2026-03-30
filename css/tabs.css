@@ -70,10 +70,6 @@
   margin-bottom: 0;
 }
 
-.tab-panel[data-panel="info"] .info-refresh-btn {
-  background: transparent;
-}
-
 .tab-panel[data-panel="info"] .info-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -209,10 +205,6 @@
 
   .tab-panel[data-panel="info"] .info-hero-row {
     align-items: center;
-  }
-
-  .tab-panel[data-panel="info"] .info-refresh-btn {
-    width: auto;
   }
 
   .tab-panel[data-panel="info"] .info-card {
