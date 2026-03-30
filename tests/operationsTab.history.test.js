@@ -63,6 +63,30 @@ function installReadContract(item) {
   return contract;
 }
 
+async function openOperationModal({
+  historyItem,
+  freshItem = historyItem,
+  historyItems = [historyItem],
+} = {}) {
+  const contract = installReadContract(freshItem);
+  const historyService = {
+    load: vi.fn(async () => ({
+      items: historyItems,
+    })),
+  };
+
+  const tab = new OperationsTab({ operationsService: historyService });
+  tab.load();
+  await tab._syncAccess();
+  tab._isActive = true;
+  await tab._refreshRequestedOperations();
+
+  document.querySelector('[data-ops-history-row]').click();
+  await flushPromises();
+
+  return { contract, historyService, tab };
+}
+
 describe('OperationsTab requested operations history', () => {
   beforeEach(() => {
     setupOperationsTabDom();
@@ -195,117 +219,71 @@ describe('OperationsTab requested operations history', () => {
     expect(detailValue('executed')).toBe('No');
   });
 
-  it('renders only relevant fields for Set Bridge Out Amount operations', async () => {
-    installReadContract(makeHistoryItem({
-      operationId: OPERATION_ID_ONE,
-      opType: 0,
-      target: '0x0000000000000000000000000000000000000000',
-      value: '20000000000000000000000',
-      numSignatures: 0,
-    }));
+  [
+    {
+      name: 'Set Bridge Out Amount',
+      item: makeHistoryItem({
+        operationId: OPERATION_ID_ONE,
+        opType: 0,
+        target: '0x0000000000000000000000000000000000000000',
+        value: '20000000000000000000000',
+        numSignatures: 0,
+      }),
+      expectedValues: {
+        operation: 'Set Bridge Out Amount',
+        maxBridgeOutAmount: '20,000 LIB',
+        signatures: '0/3',
+      },
+      missingRows: ['target', 'value', 'data'],
+      signHidden: true,
+    },
+    {
+      name: 'Set Bridge Out Enabled',
+      item: makeHistoryItem({
+        operationId: OPERATION_ID_ONE,
+        opType: 2,
+        target: '0x0000000000000000000000000000000000000000',
+        value: '0',
+        data: `0x${'0'.repeat(63)}1`,
+      }),
+      expectedValues: {
+        operation: 'Set Bridge Out Enabled',
+        bridgeOutStatus: 'Enabled',
+      },
+      missingRows: ['target', 'value', 'data'],
+      signHidden: true,
+    },
+    {
+      name: 'Relinquish Tokens',
+      item: makeHistoryItem({
+        operationId: OPERATION_ID_ONE,
+        opType: 3,
+        target: '0x0000000000000000000000000000000000000000',
+        value: '0',
+        data: '0x',
+      }),
+      expectedValues: {
+        operation: 'Relinquish Tokens',
+      },
+      actionIncludes: 'Relinquish all vault tokens and halt the vault',
+      missingRows: ['target', 'value', 'data'],
+      signHidden: true,
+    },
+  ].forEach(({ name, item, expectedValues, actionIncludes, missingRows, signHidden }) => {
+    it(`renders only relevant fields for ${name} operations`, async () => {
+      await openOperationModal({ historyItem: item });
 
-    const historyService = {
-      load: vi.fn(async () => ({
-        items: [makeHistoryItem({
-          operationId: OPERATION_ID_ONE,
-          opType: 0,
-          target: '0x0000000000000000000000000000000000000000',
-          value: '20000000000000000000000',
-          numSignatures: 0,
-        })],
-      })),
-    };
-
-    const tab = new OperationsTab({ operationsService: historyService });
-    tab.load();
-    await tab._syncAccess();
-    tab._isActive = true;
-    await tab._refreshRequestedOperations();
-
-    document.querySelector('[data-ops-history-row]').click();
-    await flushPromises();
-
-    expect(detailValue('operation')).toBe('Set Bridge Out Amount');
-    expect(detailValue('maxBridgeOutAmount')).toBe('20,000 LIB');
-    expect(detailValue('signatures')).toBe('0/3');
-    expect(document.querySelector('[data-ops-detail-row="target"]')).toBeNull();
-    expect(document.querySelector('[data-ops-detail-row="value"]')).toBeNull();
-    expect(document.querySelector('[data-ops-detail-row="data"]')).toBeNull();
-    expect(document.querySelector('[data-ops-sign-submit]').hidden).toBe(true);
-  });
-
-  it('renders only relevant fields for Set Bridge Out Enabled operations', async () => {
-    installReadContract(makeHistoryItem({
-      operationId: OPERATION_ID_ONE,
-      opType: 2,
-      target: '0x0000000000000000000000000000000000000000',
-      value: '0',
-      data: `0x${'0'.repeat(63)}1`,
-    }));
-
-    const historyService = {
-      load: vi.fn(async () => ({
-        items: [makeHistoryItem({
-          operationId: OPERATION_ID_ONE,
-          opType: 2,
-          target: '0x0000000000000000000000000000000000000000',
-          value: '0',
-          data: `0x${'0'.repeat(63)}1`,
-        })],
-      })),
-    };
-
-    const tab = new OperationsTab({ operationsService: historyService });
-    tab.load();
-    await tab._syncAccess();
-    tab._isActive = true;
-    await tab._refreshRequestedOperations();
-
-    document.querySelector('[data-ops-history-row]').click();
-    await flushPromises();
-
-    expect(detailValue('operation')).toBe('Set Bridge Out Enabled');
-    expect(detailValue('bridgeOutStatus')).toBe('Enabled');
-    expect(document.querySelector('[data-ops-detail-row="target"]')).toBeNull();
-    expect(document.querySelector('[data-ops-detail-row="value"]')).toBeNull();
-    expect(document.querySelector('[data-ops-detail-row="data"]')).toBeNull();
-  });
-
-  it('renders only relevant fields for Relinquish Tokens operations', async () => {
-    installReadContract(makeHistoryItem({
-      operationId: OPERATION_ID_ONE,
-      opType: 3,
-      target: '0x0000000000000000000000000000000000000000',
-      value: '0',
-      data: '0x',
-    }));
-
-    const historyService = {
-      load: vi.fn(async () => ({
-        items: [makeHistoryItem({
-          operationId: OPERATION_ID_ONE,
-          opType: 3,
-          target: '0x0000000000000000000000000000000000000000',
-          value: '0',
-          data: '0x',
-        })],
-      })),
-    };
-
-    const tab = new OperationsTab({ operationsService: historyService });
-    tab.load();
-    await tab._syncAccess();
-    tab._isActive = true;
-    await tab._refreshRequestedOperations();
-
-    document.querySelector('[data-ops-history-row]').click();
-    await flushPromises();
-
-    expect(detailValue('operation')).toBe('Relinquish Tokens');
-    expect(detailValue('action')).toContain('Relinquish all vault tokens and halt the vault');
-    expect(document.querySelector('[data-ops-detail-row="target"]')).toBeNull();
-    expect(document.querySelector('[data-ops-detail-row="value"]')).toBeNull();
-    expect(document.querySelector('[data-ops-detail-row="data"]')).toBeNull();
+      Object.entries(expectedValues).forEach(([key, value]) => {
+        expect(detailValue(key)).toBe(value);
+      });
+      if (actionIncludes) {
+        expect(detailValue('action')).toContain(actionIncludes);
+      }
+      missingRows.forEach((key) => {
+        expect(document.querySelector(`[data-ops-detail-row="${key}"]`)).toBeNull();
+      });
+      expect(document.querySelector('[data-ops-sign-submit]').hidden).toBe(signHidden);
+    });
   });
 
   it('disables signing for expired operations', async () => {
@@ -316,22 +294,7 @@ describe('OperationsTab requested operations history', () => {
       value: encodeAddressValue(NEW_SIGNER),
       expired: true,
     });
-    installReadContract(expiredOperation);
-
-    const historyService = {
-      load: vi.fn(async () => ({
-        items: [expiredOperation],
-      })),
-    };
-
-    const tab = new OperationsTab({ operationsService: historyService });
-    tab.load();
-    await tab._syncAccess();
-    tab._isActive = true;
-    await tab._refreshRequestedOperations();
-
-    document.querySelector('[data-ops-history-row]').click();
-    await flushPromises();
+    await openOperationModal({ historyItem: expiredOperation });
 
     const signBtn = document.querySelector('[data-ops-sign-submit]');
     expect(signBtn.hidden).toBe(false);

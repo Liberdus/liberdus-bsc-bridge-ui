@@ -22,6 +22,7 @@
     "js/components/header.js",
     "js/components/info-tab.js",
     "js/components/operations-tab.js",
+    "js/components/operations-tab-template.js",
     "js/components/tab-bar.js",
     "js/components/toast-manager.js",
     "js/components/transactions-tab.js",
