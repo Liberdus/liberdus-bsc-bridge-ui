@@ -1,5 +1,6 @@
 import { CONFIG } from '../config.js';
 import { getReadOnlyProviderForNetwork } from '../utils/read-only-provider.js';
+import { getCoordinatorBaseUrl } from '../utils/coordinator-url.js';
 import { RefreshButton } from './refresh-button.js';
 
 function shortenHex(value, { head = 4, tail = 4 } = {}) {
@@ -156,12 +157,6 @@ export function mergeTransactions(primary, secondary, { limit = 500 } = {}) {
   return Array.from(map.values()).sort(sortByTimestampDesc).slice(0, Number(limit || 500));
 }
 
-function normalizeCoordinatorUrl(url) {
-  const value = String(url || '').trim();
-  if (!value) return '';
-  return value.replace(/\/$/, '');
-}
-
 function renderTxLink(chainKey, txHash) {
   if (!txHash) return '<span class="tx-muted">--</span>';
   const raw = normalizeTxHash(txHash) || String(txHash || '');
@@ -265,7 +260,7 @@ function mapCoordinatorTransaction(tx, chains, chainIdIndex) {
 async function loadTransactionsFromCoordinator({ limit = 200 } = {}) {
   const chains = CONFIG.BRIDGE.CHAINS;
   const chainIdIndex = buildChainIdIndex(chains);
-  const coordinatorUrl = normalizeCoordinatorUrl(CONFIG.BRIDGE.COORDINATOR_URL);
+  const coordinatorUrl = getCoordinatorBaseUrl(CONFIG);
 
   const allTransactions = [];
   let page = 1;
@@ -314,6 +309,7 @@ export class TransactionsTab {
     this._bridgeOutHandler = null;
     this._seenBridgeOutTx = new Set();
     this._bridgeOutWatchRetryTimer = null;
+    this._bridgeOutNotifyRefreshTimer = null;
     this.onlyMine = false;
     this.onlyMineCheckbox = null;
     this._pendingPollerTimer = null;
@@ -435,6 +431,7 @@ export class TransactionsTab {
     });
     if (!this._bridgeListenerBound) {
       document.addEventListener('bridgeOutEvent', (e) => this._onBridgeOutEvent(e));
+      document.addEventListener('bridgeOutNotifyAccepted', (e) => this._onBridgeOutNotifyAccepted(e));
       this._bridgeListenerBound = true;
     }
 
@@ -622,6 +619,21 @@ export class TransactionsTab {
     this.render();
   }
 
+  _onBridgeOutNotifyAccepted(e) {
+    const detail = e?.detail || null;
+    const chainId = Number(detail?.chainId);
+    const sourceChainId = Number(CONFIG.BRIDGE.CHAINS?.SOURCE?.CHAIN_ID);
+    if (!Number.isFinite(chainId) || !Number.isFinite(sourceChainId) || chainId !== sourceChainId) return;
+
+    void this._checkPendingStatuses();
+
+    if (this._bridgeOutNotifyRefreshTimer) clearTimeout(this._bridgeOutNotifyRefreshTimer);
+    this._bridgeOutNotifyRefreshTimer = setTimeout(() => {
+      this._bridgeOutNotifyRefreshTimer = null;
+      void this._checkPendingStatuses();
+    }, 1500);
+  }
+
   async _ensureBridgeOutWatch() {
     if (this._bridgeOutWatchInit || this._bridgeOutWatchStarting) return;
     this._bridgeOutWatchStarting = true;
@@ -709,6 +721,10 @@ export class TransactionsTab {
     if (this._bridgeOutWatchRetryTimer) {
       clearTimeout(this._bridgeOutWatchRetryTimer);
       this._bridgeOutWatchRetryTimer = null;
+    }
+    if (this._bridgeOutNotifyRefreshTimer) {
+      clearTimeout(this._bridgeOutNotifyRefreshTimer);
+      this._bridgeOutNotifyRefreshTimer = null;
     }
     this._bridgeOutWatchStarting = false;
     this._bridgeOutWatchInit = false;

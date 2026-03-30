@@ -1,4 +1,5 @@
 import { createTransactionProgressSession } from '../utils/transaction-progress-session.js';
+import { getCoordinatorBaseUrl } from '../utils/coordinator-url.js';
 
 export class PolygonBscBridgeModule {
   constructor({
@@ -708,6 +709,11 @@ export class PolygonBscBridgeModule {
       progressSession.updateStep(stepId.confirm, { status: 'completed', detail: 'Confirmed' });
       progressSession.finishSuccess(bridgedOut ? 'Bridge out confirmed.' : 'Bridge confirmed.');
 
+      const sourceChainId = Number(this.config?.BRIDGE?.CHAINS?.SOURCE?.CHAIN_ID);
+      if (Number.isFinite(sourceChainId) && sourceChainId > 0) {
+        void this._notifyBridgeOutObserver({ chainId: sourceChainId });
+      }
+
       if (bridgedOut) {
         const detail = {
           txHash: tx.hash,
@@ -752,6 +758,44 @@ export class PolygonBscBridgeModule {
       return null;
     } catch (_) {
       return null;
+    }
+  }
+
+  async _notifyBridgeOutObserver({ chainId }) {
+    const normalizedChainId = Number(chainId);
+    if (!Number.isFinite(normalizedChainId) || normalizedChainId <= 0) return;
+
+    const coordinatorBaseUrl = getCoordinatorBaseUrl(this.config);
+    if (!coordinatorBaseUrl || typeof fetch !== 'function') return;
+
+    try {
+      const response = await fetch(`${coordinatorBaseUrl}/notify-bridgeout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chainId: normalizedChainId }),
+        keepalive: true,
+      });
+
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch {}
+
+      if (!response.ok) {
+        const message = payload?.Err || `HTTP ${response.status}`;
+        throw new Error(message);
+      }
+
+      document.dispatchEvent(new CustomEvent('bridgeOutNotifyAccepted', {
+        detail: {
+          chainId: normalizedChainId,
+          status: payload?.Ok || 'accepted',
+        },
+      }));
+    } catch (error) {
+      try {
+        console.warn?.('[BridgeOut] Observer notify failed', error);
+      } catch {}
     }
   }
 
