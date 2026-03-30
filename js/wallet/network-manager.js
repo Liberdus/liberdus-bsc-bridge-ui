@@ -4,7 +4,7 @@ import { CONFIG } from '../config.js';
  * NetworkManager (Phase 2)
  * Configured source-network only:
  * - Read-only mode uses CONFIG.BRIDGE.CHAINS.SOURCE.RPC_URL
- * - Tx-enabled mode requires MetaMask connected AND chainId === CONFIG.BRIDGE.CHAINS.SOURCE.CHAIN_ID
+ * - Tx-enabled mode requires a connected wallet AND chainId === CONFIG.BRIDGE.CHAINS.SOURCE.CHAIN_ID
  */
 export class NetworkManager {
   constructor({ walletManager } = {}) {
@@ -86,7 +86,7 @@ export class NetworkManager {
 
   async switchToChain(network) {
     const walletProvider = await this.walletManager?.getEip1193Provider?.({ waitMs: 200 });
-    if (!walletProvider) throw new Error('MetaMask not available');
+    if (!walletProvider) throw new Error('Wallet not available');
     const chainHex = this._toHexChainId(network.CHAIN_ID);
     try {
       await walletProvider.request({

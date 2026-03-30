@@ -795,7 +795,7 @@ export class OperationsTab {
       toastId,
       type: 'loading',
       title: 'Loading',
-      message: `Switch to ${this._requiredNetworkName()} in MetaMask to continue`,
+      message: `Switch to ${this._requiredNetworkName()} in your wallet to continue`,
       timeoutMs: 0,
       dismissible: false,
     });
@@ -852,7 +852,7 @@ export class OperationsTab {
   _actionErrorMessage(error, fallback) {
     if (error?._phase === 'networkSwitch') {
       if (error?.code === 4001) return 'Network switch request was rejected.';
-      if (error?.code === -32002) return 'Network switch request already pending in MetaMask.';
+      if (error?.code === -32002) return 'Network switch request already pending in your wallet.';
       return this._extractActionErrorMessage(error) || `Failed to switch to ${this._requiredNetworkName()}.`;
     }
     return this._extractActionErrorMessage(error) || fallback;

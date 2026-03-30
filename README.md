@@ -6,7 +6,7 @@ Skeleton UI for the Liberdus vault bridge app.
 
 ### Functional now
 - Header + wallet connect button
-- MetaMask-only wallet flow (connect, restore, disconnect)
+- Injected browser wallet flow with explicit wallet selection, silent restore, and disconnect
 - Config-driven source-network gating (no switch on connect; no popup network switching)
 - Read-only contract wiring to:
   - `0x1469f20C91da50BF9Cc82d7cFB9A8D9EF1dEe86a`
@@ -34,7 +34,7 @@ Open `http://localhost:8080`.
 - `index.html` app shell
 - `css/` shared reference styles
 - `js/app.js` bootstrap + global manager wiring
-- `js/wallet/` MetaMask + network management
+- `js/wallet/` injected-wallet discovery, connection, and network management
 - `js/contracts/contract-manager.js` ABI/provider/contract wiring
 - `js/components/` tabs + header + toast components
 - `abi/vault.json` full Vault ABI (manually defined from `Vault.sol`)

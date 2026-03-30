@@ -856,7 +856,7 @@ export class PolygonBscBridgeModule {
     const activeToastId = this._showActionToast({
       toastId,
       title: 'Loading',
-      message: `Switch to ${requiredNetworkName} in MetaMask to continue`,
+      message: `Switch to ${requiredNetworkName} in your wallet to continue`,
       type: 'loading',
       timeoutMs: 0,
       dismissible: false,
@@ -901,7 +901,7 @@ export class PolygonBscBridgeModule {
     if (error?._phase === 'networkSwitch') {
       const requiredNetworkName = this.config.BRIDGE.CHAINS.SOURCE.NAME;
       if (error?.code === 4001) return 'Network switch request was rejected.';
-      if (error?.code === -32002) return 'Network switch request already pending in MetaMask.';
+      if (error?.code === -32002) return 'Network switch request already pending in your wallet.';
       return this._extractActionErrorMessage(error) || `Failed to switch to ${requiredNetworkName}.`;
     }
     return this._extractActionErrorMessage(error) || fallback;

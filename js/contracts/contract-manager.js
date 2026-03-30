@@ -70,6 +70,7 @@ export class ContractManager {
     document.addEventListener('walletDisconnected', syncOnWalletEvent);
     document.addEventListener('walletAccountChanged', syncOnWalletEvent);
     document.addEventListener('walletChainChanged', syncOnWalletEvent);
+    document.addEventListener('walletProvidersChanged', syncOnWalletEvent);
   }
 
   _makeContract(signerOrProvider) {
