@@ -140,6 +140,7 @@ function createModule() {
       ADDRESS: tokenAddr,
     },
     BRIDGE: {
+      OBSERVER_URL: 'https://observer.example.test/observer/',
       CONTRACTS: {
         SOURCE: {
           ADDRESS: vaultAddr,
@@ -203,10 +204,15 @@ beforeEach(() => {
       parseUnits,
     },
   };
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    ok: true,
+    json: vi.fn().mockResolvedValue({ Ok: 'triggered' }),
+  }));
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -300,5 +306,57 @@ describe('PolygonBscBridgeModule token state reads', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(refreshBalance).toHaveBeenCalledTimes(1);
     expect(module._refreshTimerId).toBeNull();
+  });
+});
+
+describe('PolygonBscBridgeModule bridge-out observer notify', () => {
+  it('posts the source chain id to the observer notify endpoint after a successful bridge out', async () => {
+    const { module } = createModule();
+    vi.spyOn(module, '_readSourceTokenState').mockResolvedValue({
+      balanceWei: new FakeBigNumber(25),
+      allowanceWei: new FakeBigNumber(25),
+    });
+    const refreshBalance = vi.spyOn(module, '_refreshBalance').mockResolvedValue(undefined);
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ Ok: 'triggered' }),
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await module._onBridgeClicked();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://observer.example.test/observer/notify-bridgeout',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chainId: 56 }),
+        keepalive: true,
+      }),
+    );
+    expect(refreshBalance).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not block bridge success when the observer notify request fails', async () => {
+    const { module } = createModule();
+    vi.spyOn(module, '_readSourceTokenState').mockResolvedValue({
+      balanceWei: new FakeBigNumber(25),
+      allowanceWei: new FakeBigNumber(25),
+    });
+    const refreshBalance = vi.spyOn(module, '_refreshBalance').mockResolvedValue(undefined);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('notify failed')));
+
+    const outcome = await Promise.race([
+      module._onBridgeClicked().then(() => 'resolved'),
+      new Promise((resolve) => setTimeout(() => resolve('timeout'), 25)),
+    ]);
+    await Promise.resolve();
+
+    expect(outcome).toBe('resolved');
+    expect(refreshBalance).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalled();
   });
 });

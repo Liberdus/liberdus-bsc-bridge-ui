@@ -1,5 +1,6 @@
 import { CONFIG } from '../config.js';
 import { getReadOnlyProviderForNetwork } from '../utils/read-only-provider.js';
+import { getObserverBaseUrl } from '../utils/observer-url.js';
 import { RefreshButton } from './refresh-button.js';
 
 function shortenHex(value, { head = 4, tail = 4 } = {}) {
@@ -156,12 +157,6 @@ export function mergeTransactions(primary, secondary, { limit = 500 } = {}) {
   return Array.from(map.values()).sort(sortByTimestampDesc).slice(0, Number(limit || 500));
 }
 
-function normalizeCoordinatorUrl(url) {
-  const value = String(url || '').trim();
-  if (!value) return '';
-  return value.replace(/\/$/, '');
-}
-
 function renderTxLink(chainKey, txHash) {
   if (!txHash) return '<span class="tx-muted">--</span>';
   const raw = normalizeTxHash(txHash) || String(txHash || '');
@@ -215,7 +210,7 @@ function renderStatus(status) {
   return `<span class="tx-status tx-status--unknown">Unknown</span>`;
 }
 
-function mapCoordinatorTransaction(tx, chains, chainIdIndex) {
+function mapObserverTransaction(tx, chains, chainIdIndex) {
   const type = Number(tx?.type);
   const chainId = Number(tx?.chainId);
   const destinationChainId = chains.DESTINATION.CHAIN_ID;
@@ -262,17 +257,17 @@ function mapCoordinatorTransaction(tx, chains, chainIdIndex) {
   };
 }
 
-async function loadTransactionsFromCoordinator({ limit = 200 } = {}) {
+async function loadTransactionsFromObserver({ limit = 200 } = {}) {
   const chains = CONFIG.BRIDGE.CHAINS;
   const chainIdIndex = buildChainIdIndex(chains);
-  const coordinatorUrl = normalizeCoordinatorUrl(CONFIG.BRIDGE.COORDINATOR_URL);
+  const observerUrl = getObserverBaseUrl(CONFIG);
 
   const allTransactions = [];
   let page = 1;
   let totalPages = 1;
 
   while (page <= totalPages) {
-    const response = await fetch(`${coordinatorUrl}/transaction?page=${page}`);
+    const response = await fetch(`${observerUrl}/transaction?page=${page}`);
     if (!response.ok) throw new Error(`Failed to load transactions: ${response.status}`);
     const data = await response.json();
     const ok = data?.Ok || null;
@@ -284,7 +279,7 @@ async function loadTransactionsFromCoordinator({ limit = 200 } = {}) {
   }
 
   const rows = allTransactions
-    .map((tx) => mapCoordinatorTransaction(tx, chains, chainIdIndex))
+    .map((tx) => mapObserverTransaction(tx, chains, chainIdIndex))
     .sort(sortByTimestampDesc)
     .slice(0, Number(limit || 200));
 
@@ -493,7 +488,7 @@ export class TransactionsTab {
     } catch {}
 
     try {
-      const fetched = await loadTransactionsFromCoordinator({ limit: 250 });
+      const fetched = await loadTransactionsFromObserver({ limit: 250 });
       this._rows = mergeTransactions(fetched, this._rows, { limit: 500 });
       this.render();
       try {
@@ -818,7 +813,7 @@ export class TransactionsTab {
     if (!hasPending) return;
 
     try {
-      const fetched = await loadTransactionsFromCoordinator({ limit: 50 });
+      const fetched = await loadTransactionsFromObserver({ limit: 50 });
       const before = JSON.stringify(this._rows);
       this._rows = mergeTransactions(fetched, this._rows, { limit: 500 });
       const after = JSON.stringify(this._rows);

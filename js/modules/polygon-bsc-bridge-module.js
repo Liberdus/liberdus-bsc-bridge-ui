@@ -1,4 +1,5 @@
 import { createTransactionProgressSession } from '../utils/transaction-progress-session.js';
+import { getObserverBaseUrl } from '../utils/observer-url.js';
 
 export class PolygonBscBridgeModule {
   constructor({
@@ -708,6 +709,8 @@ export class PolygonBscBridgeModule {
       progressSession.updateStep(stepId.confirm, { status: 'completed', detail: 'Confirmed' });
       progressSession.finishSuccess(bridgedOut ? 'Bridge out confirmed.' : 'Bridge confirmed.');
 
+      void this._notifyBridgeOutObserver({ chainId: this.config?.BRIDGE?.CHAINS?.SOURCE?.CHAIN_ID });
+
       if (bridgedOut) {
         const detail = {
           txHash: tx.hash,
@@ -752,6 +755,38 @@ export class PolygonBscBridgeModule {
       return null;
     } catch (_) {
       return null;
+    }
+  }
+
+  async _notifyBridgeOutObserver({ chainId }) {
+    const normalizedChainId = Number(chainId);
+    if (!Number.isFinite(normalizedChainId) || normalizedChainId <= 0) return;
+
+    const observerBaseUrl = getObserverBaseUrl(this.config);
+    if (!observerBaseUrl || typeof fetch !== 'function') return;
+
+    try {
+      const response = await fetch(`${observerBaseUrl}/notify-bridgeout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chainId: normalizedChainId }),
+        keepalive: true,
+      });
+
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch {}
+
+      if (!response.ok) {
+        const message = payload?.Err || `HTTP ${response.status}`;
+        throw new Error(message);
+      }
+
+    } catch (error) {
+      try {
+        console.warn?.('[BridgeOut] Observer notify failed', error);
+      } catch {}
     }
   }
 
