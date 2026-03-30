@@ -1,6 +1,7 @@
 import { RefreshButton } from './refresh-button.js';
 import { renderOperationsTabTemplate } from './operations-tab-template.js';
 import { AdminOperationsService } from '../services/admin-operations-service.js';
+import { escapeHtml } from '../utils/helpers.js';
 import {
   buildVaultOperationDetailRows,
   buildVaultOperationSummary,
@@ -403,7 +404,7 @@ export class OperationsTab {
         loadedTotal === 0
           ? (this._historyLoading ? 'Loading requested operations...' : 'No requested operations found.')
           : 'No requested operations match the current filters.';
-      listEl.innerHTML = `<div class="param-row muted">${this._escapeHtml(emptyText)}</div>`;
+      listEl.innerHTML = `<div class="param-row muted">${escapeHtml(emptyText)}</div>`;
     } else {
       listEl.innerHTML = visible.map((event) => this._renderHistoryRow(event)).join('');
     }
@@ -427,8 +428,8 @@ export class OperationsTab {
   _renderHistoryError(errorState) {
     return `
       <div class="ops-history-error" role="alert">
-        <div class="ops-history-error-title">${this._escapeHtml(errorState?.title || 'Unable to load requested operations')}</div>
-        <div class="ops-history-error-detail">${this._escapeHtml(errorState?.detail || 'Unknown error.')}</div>
+        <div class="ops-history-error-title">${escapeHtml(errorState?.title || 'Unable to load requested operations')}</div>
+        <div class="ops-history-error-detail">${escapeHtml(errorState?.detail || 'Unknown error.')}</div>
       </div>
     `;
   }
@@ -439,17 +440,17 @@ export class OperationsTab {
     const selectedClass = this._selectedOperation?.operationId === event.operationId ? ' is-selected' : '';
     const helpers = this._vaultOperationDisplayHelpers();
     return `
-      <button type="button" class="proposal-row ${statusClass}${selectedClass}" data-ops-history-row="${this._escapeHtml(event.operationId)}">
+      <button type="button" class="proposal-row ${statusClass}${selectedClass}" data-ops-history-row="${escapeHtml(event.operationId)}">
         <div class="proposal-row-main">
           <div class="proposal-row-top">
-            <div class="proposal-opid"><code>${this._escapeHtml(this._shortenHex(event.operationId, 8, 6))}</code></div>
-            <div class="proposal-status">${this._escapeHtml(status)}</div>
+            <div class="proposal-opid"><code>${escapeHtml(this._shortenHex(event.operationId, 8, 6))}</code></div>
+            <div class="proposal-status">${escapeHtml(status)}</div>
           </div>
           <div class="proposal-row-bottom">
-            <div class="proposal-meta">${this._escapeHtml(getVaultOperationTypeLabel(event.opType))}${this._renderHistoryDeadlineMeta(event)}</div>
-            <div class="proposal-sigs">${this._escapeHtml(this._historySignatureLabel(event))}</div>
+            <div class="proposal-meta">${escapeHtml(getVaultOperationTypeLabel(event.opType))}${this._renderHistoryDeadlineMeta(event)}</div>
+            <div class="proposal-sigs">${escapeHtml(this._historySignatureLabel(event))}</div>
           </div>
-          <div class="ops-history-summary">${this._escapeHtml(buildVaultOperationSummary(event, helpers))}</div>
+          <div class="ops-history-summary">${escapeHtml(buildVaultOperationSummary(event, helpers))}</div>
         </div>
       </button>
     `;
@@ -851,8 +852,8 @@ export class OperationsTab {
   }
 
   _renderOperationDetailRow(row) {
-    const key = this._escapeHtml(row?.key || 'detail');
-    const label = this._escapeHtml(row?.label || '--');
+    const key = escapeHtml(row?.key || 'detail');
+    const label = escapeHtml(row?.label || '--');
     const value = this._renderOperationDetailValue(row);
 
     return `
@@ -865,14 +866,14 @@ export class OperationsTab {
 
   _renderOperationDetailValue(row) {
     const text = String(row?.value ?? '--');
-    const escapedText = this._escapeHtml(text);
+    const escapedText = escapeHtml(text);
     const copyValue = String(row?.copyValue || '').trim();
 
     if (copyValue) {
       return `
         <div class="param-address">
           <code>${escapedText}</code>
-          <button type="button" class="copy-inline" data-ops-copy data-copy-value="${this._escapeHtml(copyValue)}">Copy</button>
+          <button type="button" class="copy-inline" data-ops-copy data-copy-value="${escapeHtml(copyValue)}">Copy</button>
         </div>
       `;
     }
@@ -1207,15 +1208,6 @@ export class OperationsTab {
 
   _shortenAddress(value) {
     return this._shortenHex(value, 4, 4);
-  }
-
-  _escapeHtml(value) {
-    return String(value ?? '')
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#39;');
   }
 
   async _copy(text) {
