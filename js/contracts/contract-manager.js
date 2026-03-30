@@ -1,5 +1,6 @@
 import { CONFIG } from '../config.js';
 import { getReadOnlyProvider } from '../utils/read-only-provider.js';
+import { createUnavailableVaultOperation, normalizeVaultOperation } from '../utils/vault-operations.js';
 
 export class ContractManager {
   constructor({ walletManager, networkManager } = {}) {
@@ -96,12 +97,44 @@ export class ContractManager {
     return !!this.contractRead;
   }
 
+  getReadOnlyProvider() {
+    return this.readOnlyProvider || this.provider || null;
+  }
+
   getReadContract() {
     return this.contractRead;
   }
 
   getWriteContract() {
     return this.contractWrite;
+  }
+
+  async getOperationsBatch(operationIds) {
+    const contract = this.getReadContract();
+    if (!contract) return new Map();
+    if (!Array.isArray(operationIds) || operationIds.length === 0) return new Map();
+
+    const results = await Promise.allSettled(operationIds.map(async (operationId) => {
+      const [operation, expired] = await Promise.all([
+        contract.operations(operationId),
+        contract.isOperationExpired(operationId),
+      ]);
+
+      return normalizeVaultOperation(operationId, operation, expired);
+    }));
+
+    const out = new Map();
+    results.forEach((result, index) => {
+      const operationId = operationIds[index];
+      if (result.status === 'fulfilled') {
+        out.set(operationId, result.value);
+        return;
+      }
+
+      out.set(operationId, createUnavailableVaultOperation(operationId));
+    });
+
+    return out;
   }
 
   getStatusSnapshot() {

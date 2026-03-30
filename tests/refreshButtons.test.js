@@ -4,6 +4,7 @@ import { InfoTab } from '../js/components/info-tab.js';
 import { OperationsTab } from '../js/components/operations-tab.js';
 import { MIN_REFRESH_SPIN_MS, RefreshButton } from '../js/components/refresh-button.js';
 import { TransactionsTab } from '../js/components/transactions-tab.js';
+import { CONFIG } from '../js/config.js';
 import { installCommonWindowStubs } from './helpers/test-utils.js';
 
 function createDeferred() {
@@ -132,7 +133,7 @@ describe('shared refresh button treatment', () => {
 
     const refreshPromise = txTab.refresh();
 
-    expect(globalThis.fetch).toHaveBeenCalledWith('https://tss1-test.liberdus.com/transaction?page=1');
+    expect(globalThis.fetch).toHaveBeenCalledWith(`${CONFIG.BRIDGE.COORDINATOR_URL}/transaction?page=1`);
     expect(txTab.refreshBtn?.disabled).toBe(true);
     expect(txTab.refreshBtn?.classList.contains('is-loading')).toBe(true);
     expect(txTab.refreshBtn?.getAttribute('aria-busy')).toBe('true');
@@ -183,22 +184,27 @@ describe('shared refresh button treatment', () => {
     const opsIcon = opsTab.refreshBtn?.querySelector('[data-refresh-icon]');
 
     expect(infoIcon?.outerHTML).toBe(opsIcon?.outerHTML);
+    expect(opsTab.refreshBtn?.textContent?.trim()).toBe('');
 
-    const refreshPromise = opsTab.refresh();
+    opsTab.refreshBtn?.click();
+    const refreshPromise = opsTab.refreshControl._runPromise;
 
     expect(opsTab.refreshBtn?.disabled).toBe(true);
     expect(opsTab.refreshBtn?.classList.contains('is-loading')).toBe(true);
     expect(opsTab.refreshBtn?.getAttribute('aria-busy')).toBe('true');
+    expect(opsTab.refreshBtn?.textContent).not.toContain('Refreshing...');
 
     deferred.resolve();
     await Promise.resolve();
 
     expect(opsTab.refreshBtn?.disabled).toBe(true);
     expect(opsTab.refreshBtn?.classList.contains('is-loading')).toBe(true);
+    expect(opsTab.refreshBtn?.textContent).not.toContain('Refreshing...');
 
     await vi.advanceTimersByTimeAsync(MIN_REFRESH_SPIN_MS);
     await refreshPromise;
 
+    expect(opsTab.refreshBtn?.textContent?.trim()).toBe('');
     expect(opsTab.refreshBtn?.disabled).toBe(false);
     expect(opsTab.refreshBtn?.classList.contains('is-loading')).toBe(false);
     expect(opsTab.refreshBtn?.hasAttribute('aria-busy')).toBe(false);
