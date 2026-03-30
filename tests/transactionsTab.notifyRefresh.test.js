@@ -15,7 +15,7 @@ describe('TransactionsTab bridge-out notify refresh', () => {
     vi.useFakeTimers();
     setupTransactionsTabDom();
     installCommonWindowStubs();
-    window.CONFIG.BRIDGE.COORDINATOR_URL = 'https://coordinator.example.test/observer';
+    window.CONFIG.BRIDGE.OBSERVER_URL = 'https://observer.example.test/observer';
     vi.spyOn(TransactionsTab.prototype, 'refresh').mockImplementation(() => {});
     vi.spyOn(TransactionsTab.prototype, '_ensureBridgeOutWatch').mockImplementation(() => {});
     vi.spyOn(TransactionsTab.prototype, '_startIssuedTicker').mockImplementation(() => {});

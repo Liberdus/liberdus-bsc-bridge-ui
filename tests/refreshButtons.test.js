@@ -133,7 +133,7 @@ describe('shared refresh button treatment', () => {
 
     const refreshPromise = txTab.refresh();
 
-    expect(globalThis.fetch).toHaveBeenCalledWith(`${CONFIG.BRIDGE.COORDINATOR_URL}/transaction?page=1`);
+    expect(globalThis.fetch).toHaveBeenCalledWith(`${CONFIG.BRIDGE.OBSERVER_URL}/transaction?page=1`);
     expect(txTab.refreshBtn?.disabled).toBe(true);
     expect(txTab.refreshBtn?.classList.contains('is-loading')).toBe(true);
     expect(txTab.refreshBtn?.getAttribute('aria-busy')).toBe('true');

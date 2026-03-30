@@ -13,8 +13,8 @@ describe('TransactionsTab transaction hash normalization', () => {
     expect(normalizeTxHash('AbCd')).toBe('abcd');
   });
 
-  it('dedupes local and coordinator rows that only differ by a 0x prefix', () => {
-    const coordinatorRow = {
+  it('dedupes local and observer rows that only differ by a 0x prefix', () => {
+    const observerRow = {
       txHash: 'abcd1234',
       status: TRANSACTION_STATUS.COMPLETED,
       type: 2,
@@ -29,7 +29,7 @@ describe('TransactionsTab transaction hash normalization', () => {
       receiptTxHash: '',
     };
 
-    const merged = mergeTransactions([coordinatorRow], [localRow]);
+    const merged = mergeTransactions([observerRow], [localRow]);
 
     expect(merged).toHaveLength(1);
     expect(merged[0]).toMatchObject({
@@ -41,7 +41,7 @@ describe('TransactionsTab transaction hash normalization', () => {
     expect(typeof merged[0].status).toBe('number');
   });
 
-  it('treats numeric coordinator statuses as pending-like until completion', () => {
+  it('treats numeric observer statuses as pending-like until completion', () => {
     expect(isPendingStatus('Pending')).toBe(true);
     expect(isPendingStatus('Processing')).toBe(true);
     expect(isPendingStatus(TRANSACTION_STATUS.PENDING)).toBe(true);
@@ -55,14 +55,14 @@ describe('TransactionsTab transaction hash normalization', () => {
       timestamp: 100,
       receiptTxHash: '',
     };
-    const coordinatorPendingRow = {
+    const observerPendingRow = {
       txHash: 'abcd1234',
       status: TRANSACTION_STATUS.PENDING,
       type: 2,
       timestamp: 100,
       receiptTxHash: '',
     };
-    const coordinatorCompletedRow = {
+    const observerCompletedRow = {
       txHash: 'abcd1234',
       status: TRANSACTION_STATUS.COMPLETED,
       type: 2,
@@ -70,11 +70,11 @@ describe('TransactionsTab transaction hash normalization', () => {
       receiptTxHash: 'beef5678',
     };
 
-    const pendingMerged = mergeTransactions([coordinatorPendingRow], [localRow]);
+    const pendingMerged = mergeTransactions([observerPendingRow], [localRow]);
     expect(pendingMerged).toHaveLength(1);
     expect(isPendingStatus(pendingMerged[0].status)).toBe(true);
 
-    const completedMerged = mergeTransactions([coordinatorCompletedRow], pendingMerged);
+    const completedMerged = mergeTransactions([observerCompletedRow], pendingMerged);
     expect(completedMerged).toHaveLength(1);
     expect(completedMerged[0]).toMatchObject({
       txHash: 'abcd1234',

@@ -46,7 +46,7 @@ Edit `js/config.js` to change network/contract settings:
 - `CONFIG.RUNTIME.PROFILE` selects `dev` or `prod`
 - `PROFILES.<profile>.SOURCE_NETWORK` and `PROFILES.<profile>.DESTINATION_NETWORK`
 - `PROFILES.<profile>.SOURCE_CONTRACT` and `PROFILES.<profile>.DESTINATION_CONTRACT`
-- `PROFILES.<profile>.BRIDGE.COORDINATOR_URL`
+- `PROFILES.<profile>.BRIDGE.OBSERVER_URL`
 - Runtime source aliases `CONFIG.NETWORK` and `CONFIG.CONTRACT` are derived from `SOURCE_*` for source-chain internals
 - Canonical bridge runtime config lives at `CONFIG.BRIDGE.CHAINS.{SOURCE,DESTINATION}` and `CONFIG.BRIDGE.CONTRACTS.{SOURCE,DESTINATION}`
 

@@ -140,7 +140,7 @@ function createModule() {
       ADDRESS: tokenAddr,
     },
     BRIDGE: {
-      COORDINATOR_URL: 'https://coordinator.example.test/observer/',
+      OBSERVER_URL: 'https://observer.example.test/observer/',
       CONTRACTS: {
         SOURCE: {
           ADDRESS: vaultAddr,
@@ -310,7 +310,7 @@ describe('PolygonBscBridgeModule token state reads', () => {
 });
 
 describe('PolygonBscBridgeModule bridge-out observer notify', () => {
-  it('posts the source chain id to the coordinator notify endpoint after a successful bridge out', async () => {
+  it('posts the source chain id to the observer notify endpoint after a successful bridge out', async () => {
     const { module } = createModule();
     vi.spyOn(module, '_readSourceTokenState').mockResolvedValue({
       balanceWei: new FakeBigNumber(25),
@@ -332,7 +332,7 @@ describe('PolygonBscBridgeModule bridge-out observer notify', () => {
     await Promise.resolve();
 
     expect(fetchSpy).toHaveBeenCalledWith(
-      'https://coordinator.example.test/observer/notify-bridgeout',
+      'https://observer.example.test/observer/notify-bridgeout',
       expect.objectContaining({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

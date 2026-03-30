@@ -1,5 +1,5 @@
 import { createTransactionProgressSession } from '../utils/transaction-progress-session.js';
-import { getCoordinatorBaseUrl } from '../utils/coordinator-url.js';
+import { getObserverBaseUrl } from '../utils/observer-url.js';
 
 export class PolygonBscBridgeModule {
   constructor({
@@ -765,11 +765,11 @@ export class PolygonBscBridgeModule {
     const normalizedChainId = Number(chainId);
     if (!Number.isFinite(normalizedChainId) || normalizedChainId <= 0) return;
 
-    const coordinatorBaseUrl = getCoordinatorBaseUrl(this.config);
-    if (!coordinatorBaseUrl || typeof fetch !== 'function') return;
+    const observerBaseUrl = getObserverBaseUrl(this.config);
+    if (!observerBaseUrl || typeof fetch !== 'function') return;
 
     try {
-      const response = await fetch(`${coordinatorBaseUrl}/notify-bridgeout`, {
+      const response = await fetch(`${observerBaseUrl}/notify-bridgeout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chainId: normalizedChainId }),

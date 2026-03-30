@@ -35,7 +35,7 @@ const PROFILES = {
       ADDRESS: '0x48463C89254d001Bdc6B5d2af92d531E60FB4f72',
     },
     BRIDGE: {
-      COORDINATOR_URL: 'https://dev.liberdus.com:3030/observer',
+      OBSERVER_URL: 'https://dev.liberdus.com:3030/observer',
     },
   },
   prod: {
@@ -75,7 +75,7 @@ const PROFILES = {
       ADDRESS: '0x48463C89254d001Bdc6B5d2af92d531E60FB4f72',
     },
     BRIDGE: {
-      COORDINATOR_URL: 'https://dev.liberdus.com:3030/observer',
+      OBSERVER_URL: 'https://dev.liberdus.com:3030/observer',
     },
   },
 };
@@ -90,7 +90,7 @@ export const CONFIG = {
   },
   BRIDGE: {
     LOOKBACK_BLOCKS: 60000,
-    COORDINATOR_URL: '',
+    OBSERVER_URL: '',
     CHAINS: {},
     CONTRACTS: {},
   },
@@ -143,7 +143,7 @@ function assertProfile(profileName, profile) {
   assertNetwork(profileName, 'DESTINATION_NETWORK', profile.DESTINATION_NETWORK);
   assertContract(profileName, 'DESTINATION_CONTRACT', profile.DESTINATION_CONTRACT);
   assert(profile.BRIDGE && typeof profile.BRIDGE === 'object' && !Array.isArray(profile.BRIDGE), `Invalid profile ${profileName}: missing BRIDGE`);
-  assertString(profile.BRIDGE.COORDINATOR_URL, 'BRIDGE.COORDINATOR_URL', profileName);
+  assertString(profile.BRIDGE.OBSERVER_URL, 'BRIDGE.OBSERVER_URL', profileName);
 }
 
 const profileName = CONFIG.RUNTIME.PROFILE;
@@ -159,7 +159,7 @@ try {
 }
 
 CONFIG.TOKEN = profile.TOKEN;
-CONFIG.BRIDGE.COORDINATOR_URL = profile.BRIDGE.COORDINATOR_URL;
+CONFIG.BRIDGE.OBSERVER_URL = profile.BRIDGE.OBSERVER_URL;
 CONFIG.BRIDGE.CHAINS = {
   SOURCE: profile.SOURCE_NETWORK,
   DESTINATION: profile.DESTINATION_NETWORK,

@@ -12,6 +12,7 @@ export function installCommonWindowStubs({ txEnabled = true } = {}) {
   window.CONFIG = {
     TOKEN: { SYMBOL: 'LIB', DECIMALS: 18 },
     BRIDGE: {
+      OBSERVER_URL: 'https://dev.liberdus.com:3030/observer',
       CHAINS: {
         SOURCE: {
           NAME: 'Polygon Amoy',
