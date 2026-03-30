@@ -101,6 +101,38 @@ describe('ContractManager access state', () => {
     });
   });
 
+  it('keeps unavailable operation placeholders when one batch read fails', async () => {
+    const manager = new ContractManager();
+    manager.contractRead = {
+      operations: async (operationId) => {
+        if (operationId === 'op-2') throw new Error('temporary rpc issue');
+        return {
+          0: { toString: () => '0' },
+          1: OWNER,
+          2: { toString: () => '100' },
+          3: '0x',
+          4: { toString: () => '1' },
+          5: false,
+          6: { toString: () => '2000000000' },
+        };
+      },
+      isOperationExpired: async () => false,
+    };
+
+    const result = await manager.getOperationsBatch(['op-1', 'op-2']);
+
+    expect(result.get('op-1')).toMatchObject({
+      operationId: 'op-1',
+      opType: 0,
+      expired: false,
+    });
+    expect(result.get('op-2')).toEqual({
+      state: 'unavailable',
+      operationId: 'op-2',
+      message: 'Operation details unavailable. Refresh to retry.',
+    });
+  });
+
   it('does not require enumerable operation reads in the status snapshot', async () => {
     const manager = new ContractManager();
     manager.contractRead = {

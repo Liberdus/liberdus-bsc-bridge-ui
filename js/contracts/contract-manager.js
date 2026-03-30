@@ -1,6 +1,6 @@
 import { CONFIG } from '../config.js';
 import { getReadOnlyProvider } from '../utils/read-only-provider.js';
-import { normalizeVaultOperation } from '../utils/vault-operations.js';
+import { createUnavailableVaultOperation, normalizeVaultOperation } from '../utils/vault-operations.js';
 
 export class ContractManager {
   constructor({ walletManager, networkManager } = {}) {
@@ -120,15 +120,18 @@ export class ContractManager {
         contract.isOperationExpired(operationId),
       ]);
 
-      return { operationId, operation, expired };
+      return normalizeVaultOperation(operationId, operation, expired);
     }));
 
     const out = new Map();
-    results.forEach((result) => {
-      if (result.status !== 'fulfilled') return;
+    results.forEach((result, index) => {
+      const operationId = operationIds[index];
+      if (result.status === 'fulfilled') {
+        out.set(operationId, result.value);
+        return;
+      }
 
-      const { operationId, operation, expired } = result.value;
-      out.set(operationId, normalizeVaultOperation(operationId, operation, expired));
+      out.set(operationId, createUnavailableVaultOperation(operationId));
     });
 
     return out;

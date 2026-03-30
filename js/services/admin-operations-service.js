@@ -1,3 +1,5 @@
+import { createUnavailableVaultOperation } from '../utils/vault-operations.js';
+
 export class AdminOperationsService {
   constructor(contractManager) {
     this.contractManager = contractManager;
@@ -16,7 +18,7 @@ export class AdminOperationsService {
     const itemsById = await contractManager.getOperationsBatch?.(operationIds);
 
     return {
-      items: operationIds.map((operationId) => itemsById?.get?.(operationId)).filter(Boolean),
+      items: operationIds.map((operationId) => itemsById?.get?.(operationId) || createUnavailableVaultOperation(operationId)),
       activeCount: operationIds.length,
     };
   }

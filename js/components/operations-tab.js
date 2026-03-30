@@ -374,6 +374,7 @@ export class OperationsTab {
 
   _getFilteredHistoryEvents() {
     return this._historyEvents.filter((event) => {
+      if (event?.state === 'unavailable') return true;
       if (this._historyFilterOpType != null && event.opType !== this._historyFilterOpType) return false;
       if (this._historyFilterStatus != null && this._historyFilterStatus !== this._historyStatusLabel(event)) return false;
       return true;
@@ -438,6 +439,24 @@ export class OperationsTab {
     const status = this._historyStatusLabel(event);
     const statusClass = status === 'Executed' ? 'is-executed' : status === 'Expired' ? 'is-expired' : '';
     const selectedClass = this._selectedOperation?.operationId === event.operationId ? ' is-selected' : '';
+    if (event?.state === 'unavailable') {
+      return `
+        <button type="button" class="proposal-row${selectedClass}" data-ops-history-row="${escapeHtml(event.operationId)}">
+          <div class="proposal-row-main">
+            <div class="proposal-row-top">
+              <div class="proposal-opid"><code>${escapeHtml(this._shortenHex(event.operationId, 8, 6))}</code></div>
+              <div class="proposal-status">${escapeHtml(status)}</div>
+            </div>
+            <div class="proposal-row-bottom">
+              <div class="proposal-meta">Refresh to retry</div>
+              <div class="proposal-sigs"></div>
+            </div>
+            <div class="ops-history-summary">${escapeHtml(event.message)}</div>
+          </div>
+        </button>
+      `;
+    }
+
     const helpers = this._vaultOperationDisplayHelpers();
     return `
       <button type="button" class="proposal-row ${statusClass}${selectedClass}" data-ops-history-row="${escapeHtml(event.operationId)}">
@@ -898,6 +917,7 @@ export class OperationsTab {
   }
 
   _historyStatusLabel(item) {
+    if (item?.state === 'unavailable') return 'Unavailable';
     return item?.executed === true ? 'Executed' : this._isOperationExpiredState(item) ? 'Expired' : 'Pending';
   }
 
@@ -938,9 +958,10 @@ export class OperationsTab {
   }
 
   _renderHistoryDeadlineMeta(item) {
+    if (item?.state === 'unavailable') return '';
     const deadline = Number(item?.deadline || 0);
     if (!Number.isFinite(deadline) || deadline <= 0) return '';
-    return ` | ${this._formatDeadlineRelative(deadline)}`;
+    return ` | ${this._formatDeadlineRelative(deadline, item?.expired === true)}`;
   }
 
   _formatUnix(seconds) {
@@ -953,21 +974,30 @@ export class OperationsTab {
     }
   }
 
-  _formatDeadlineRelative(unixSeconds) {
+  _formatDeadlineRelative(unixSeconds, expired = false) {
     const seconds = Number(unixSeconds);
     if (!Number.isFinite(seconds) || seconds <= 0) return 'No deadline';
     const diff = seconds - Math.floor(Date.now() / 1000);
     const abs = Math.abs(diff);
-    const prefix = diff >= 0 ? 'Expires in ' : 'Expired ';
 
-    if (abs < 60) return diff >= 0 ? 'Expires soon' : 'Expired just now';
+    if (expired) {
+      if (abs < 60) return 'Expired just now';
+      const minutes = Math.floor(abs / 60);
+      if (minutes < 60) return `Expired ${minutes}m ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `Expired ${hours}h ago`;
+      const days = Math.floor(hours / 24);
+      return `Expired ${days}d ago`;
+    }
+
+    if (diff <= 0 || abs < 60) return 'Expires soon';
 
     const minutes = Math.floor(abs / 60);
-    if (minutes < 60) return `${prefix}${minutes}m${diff >= 0 ? '' : ' ago'}`;
+    if (minutes < 60) return `Expires in ${minutes}m`;
     const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${prefix}${hours}h${diff >= 0 ? '' : ' ago'}`;
+    if (hours < 24) return `Expires in ${hours}h`;
     const days = Math.floor(hours / 24);
-    return `${prefix}${days}d${diff >= 0 ? '' : ' ago'}`;
+    return `Expires in ${days}d`;
   }
 
   _describeHistoryLoadError(error) {
@@ -1147,9 +1177,7 @@ export class OperationsTab {
   }
 
   _isOperationExpiredState(item) {
-    if (item?.expired === true) return true;
-    const deadline = Number(item?.deadline || 0);
-    return Number.isFinite(deadline) && deadline > 0 && Math.floor(Date.now() / 1000) > deadline;
+    return item?.expired === true;
   }
 
   _formatTokenAmount(value) {

@@ -75,7 +75,7 @@ describe('AdminOperationsService', () => {
     expect(result.items.map((item) => item.operationId)).toEqual([OPERATION_ID_TWO, OPERATION_ID_ONE]);
   });
 
-  it('returns only successfully hydrated operations', async () => {
+  it('keeps unavailable operations as placeholders instead of dropping them', async () => {
     const { service } = createHarness({
       operationDetails: {
         [OPERATION_ID_ONE]: null,
@@ -96,7 +96,13 @@ describe('AdminOperationsService', () => {
     const result = await service.load();
 
     expect(result.activeCount).toBe(2);
-    expect(result.items.map((item) => item.operationId)).toEqual([OPERATION_ID_TWO]);
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0].operationId).toBe(OPERATION_ID_TWO);
+    expect(result.items[1]).toMatchObject({
+      state: 'unavailable',
+      operationId: OPERATION_ID_ONE,
+      message: 'Operation details unavailable. Refresh to retry.',
+    });
   });
 
   it('throws a clear error when the ABI cannot enumerate operation ids', async () => {

@@ -139,6 +139,30 @@ describe('OperationsTab requested operations history', () => {
     expect(document.querySelector('[data-ops-history-count]').textContent).toBe('Showing 2 of 4 total');
   });
 
+  it('renders unavailable operations as retry placeholders', async () => {
+    const historyService = {
+      load: vi.fn(async () => ({
+        activeCount: 1,
+        items: [{
+          state: 'unavailable',
+          operationId: OPERATION_ID_ONE,
+          message: 'Operation details unavailable. Refresh to retry.',
+        }],
+      })),
+    };
+
+    const tab = new OperationsTab({ operationsService: historyService });
+    tab.load();
+    await tab._syncAccess();
+    tab._isActive = true;
+    await tab._refreshRequestedOperations();
+
+    const row = document.querySelector('[data-ops-history-row]');
+    expect(row.textContent).toContain('Unavailable');
+    expect(row.textContent).toContain('Refresh to retry');
+    expect(row.textContent).toContain('Operation details unavailable. Refresh to retry.');
+  });
+
   it('renders a friendly error state when the history service fails', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     const error = new Error('Contract ABI does not expose enumerable operation IDs.');
@@ -300,6 +324,23 @@ describe('OperationsTab requested operations history', () => {
     expect(signBtn.hidden).toBe(false);
     expect(signBtn.disabled).toBe(true);
     expect(signBtn.title).toBe('Operation expired.');
+  });
+
+  it('keeps operations pending when the deadline is past but on-chain expiry is false', async () => {
+    const pendingOperation = makeHistoryItem({
+      operationId: OPERATION_ID_ONE,
+      opType: 1,
+      target: OLD_SIGNER,
+      value: encodeAddressValue(NEW_SIGNER),
+      deadline: 1,
+      expired: false,
+    });
+
+    await openOperationModal({ historyItem: pendingOperation });
+
+    expect(document.querySelector('[data-ops-history-row]').textContent).toContain('Pending');
+    expect(detailValue('expired')).toBe('No');
+    expect(document.querySelector('[data-ops-sign-submit]').disabled).toBe(false);
   });
 
 });

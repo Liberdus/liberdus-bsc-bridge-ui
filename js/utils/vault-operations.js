@@ -70,6 +70,14 @@ export function normalizeVaultOperation(operationId, operation, expired) {
   };
 }
 
+export function createUnavailableVaultOperation(operationId) {
+  return {
+    state: 'unavailable',
+    operationId,
+    message: 'Operation details unavailable. Refresh to retry.',
+  };
+}
+
 export function buildVaultOperationSummary(item, helpers) {
   switch (item.opType) {
     case SET_BRIDGE_OUT_AMOUNT:
