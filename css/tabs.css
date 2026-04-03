@@ -70,6 +70,36 @@
   margin-bottom: 0;
 }
 
+.tab-panel[data-panel="info"] .info-contracts {
+  display: grid;
+  gap: 18px;
+}
+
+.tab-panel[data-panel="info"] .info-contract-section {
+  display: grid;
+  gap: 12px;
+}
+
+.tab-panel[data-panel="info"] .info-contract-header {
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.tab-panel[data-panel="info"] .info-contract-alert {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(239, 108, 0, 0.32);
+  border-radius: var(--radius-md);
+  background: rgba(239, 108, 0, 0.12);
+  color: #9a3f00;
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
+.tab-panel[data-panel="info"] .info-contract-alert.hidden {
+  display: none;
+}
+
 .tab-panel[data-panel="info"] .info-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -147,6 +177,47 @@
 
 .tab-panel[data-panel="info"] .info-signer-address code {
   font-size: 13px;
+}
+
+.ops-contract-switch {
+  flex-wrap: wrap;
+}
+
+.ops-contract-switch .tab-button {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.ops-status-banner {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
+.ops-status-banner.is-neutral {
+  background: var(--hover-background);
+  color: var(--secondary-text-color);
+}
+
+.ops-status-banner.is-info {
+  background: rgba(0, 102, 204, 0.08);
+  border-color: rgba(0, 102, 204, 0.24);
+  color: var(--info-color);
+}
+
+.ops-status-banner.is-warning {
+  background: rgba(239, 108, 0, 0.12);
+  border-color: rgba(239, 108, 0, 0.32);
+  color: #9a3f00;
+}
+
+.ops-status-banner.is-success {
+  background: rgba(40, 167, 69, 0.1);
+  border-color: rgba(40, 167, 69, 0.26);
+  color: #1d7a33;
 }
 
 @media (max-width: 768px) {

@@ -19,10 +19,18 @@ export function installCommonWindowStubs({ txEnabled = true } = {}) {
           CHAIN_ID: 80002,
           BLOCK_EXPLORER: 'https://amoy.polygonscan.com',
         },
+        DESTINATION: {
+          NAME: 'BNB Testnet',
+          CHAIN_ID: 97,
+          BLOCK_EXPLORER: 'https://testnet.bscscan.com',
+        },
       },
       CONTRACTS: {
         SOURCE: {
           ADDRESS: '0x1111111111111111111111111111111111111111',
+        },
+        DESTINATION: {
+          ADDRESS: '0x2222222222222222222222222222222222222222',
         },
       },
     },
@@ -53,17 +61,25 @@ export function installCommonWindowStubs({ txEnabled = true } = {}) {
       signerError: null,
       error: null,
     })),
-    getStatusSnapshot: vi.fn(() => ({ requiredSignatures: 3 })),
+    getStatusSnapshot: vi.fn(() => ({ requiredSignatures: 3, operationDeadlineSeconds: 259200 })),
+    getStatusSnapshots: vi.fn(() => ({
+      source: { requiredSignatures: 3, operationDeadlineSeconds: 259200 },
+      destination: { requiredSignatures: 3, operationDeadlineSeconds: 259200 },
+    })),
     getReadOnlyProvider: vi.fn(() => null),
     getReadContract: vi.fn(() => null),
     getOperationsBatch: vi.fn(async () => new Map()),
     refreshStatus: vi.fn(async () => ({})),
+    refreshAllStatus: vi.fn(async () => ({})),
   };
 
   window.networkManager = {
     isTxEnabled: vi.fn(() => txEnabled),
+    isTxEnabledFor: vi.fn(() => txEnabled),
     isOnRequiredNetwork: vi.fn(() => txEnabled),
+    isOnNetwork: vi.fn(() => txEnabled),
     ensureRequiredNetwork: vi.fn(async () => ({ switched: false })),
+    ensureNetwork: vi.fn(async () => ({ switched: false })),
   };
 
   window.toastManager = {

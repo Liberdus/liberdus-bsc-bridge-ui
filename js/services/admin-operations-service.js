@@ -5,9 +5,9 @@ export class AdminOperationsService {
     this.contractManager = contractManager;
   }
 
-  async load() {
+  async load(contractKey = 'source') {
     const contractManager = this.contractManager;
-    const contract = contractManager?.getReadContract?.();
+    const contract = contractManager?.getReadContract?.(contractKey);
     if (!contractManager || !contract) {
       const error = new Error('Contract not ready.');
       error.code = 'ADMIN_OPERATIONS_CONTRACT_NOT_READY';
@@ -15,7 +15,7 @@ export class AdminOperationsService {
     }
 
     const operationIds = await getOperationIds(contract);
-    const itemsById = await contractManager.getOperationsBatch?.(operationIds);
+    const itemsById = await contractManager.getOperationsBatch?.(operationIds, contractKey);
 
     return {
       items: operationIds.map((operationId) => itemsById?.get?.(operationId) || createUnavailableVaultOperation(operationId)),
