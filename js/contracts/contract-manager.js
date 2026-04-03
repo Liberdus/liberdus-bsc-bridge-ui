@@ -98,14 +98,28 @@ export class ContractManager {
     const context = this.getContext(key);
     context.loadError = null;
 
-    try {
-      context.readOnlyProvider = await getReadOnlyProviderForNetwork(getNetworkConfig(key));
-      context.abi = await this._fetchAbi(key);
-    } catch (error) {
+    const [abiResult, providerResult] = await Promise.allSettled([
+      context.abi ? Promise.resolve(context.abi) : this._fetchAbi(key),
+      getReadOnlyProviderForNetwork(getNetworkConfig(key)),
+    ]);
+
+    if (abiResult.status === 'fulfilled') {
+      context.abi = abiResult.value;
+    }
+
+    if (providerResult.status === 'fulfilled') {
+      context.readOnlyProvider = providerResult.value;
+    } else {
       context.readOnlyProvider = null;
-      context.abi = null;
-      context.loadError = error?.message || `Failed to initialize ${getContractMetadata(key).label}`;
-      throw error;
+    }
+
+    const failures = [abiResult, providerResult].filter((result) => result.status === 'rejected');
+    if (failures.length > 0) {
+      const failureMessages = failures.map((result) => result.reason?.message).filter(Boolean);
+      context.loadError =
+        failureMessages[0] ||
+        `Failed to initialize ${getContractMetadata(key).label}`;
+      throw failures[0].reason;
     }
   }
 

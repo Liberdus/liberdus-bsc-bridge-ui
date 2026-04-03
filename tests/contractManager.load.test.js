@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../js/utils/read-only-provider.js', () => ({
+  getReadOnlyProviderForNetwork: vi.fn(),
+}));
+
 import { ContractManager } from '../js/contracts/contract-manager.js';
+import { getReadOnlyProviderForNetwork } from '../js/utils/read-only-provider.js';
 import { installCommonWindowStubs, normalizeAddress } from './helpers/test-utils.js';
 
 const OWNER = '0x1111111111111111111111111111111111111111';
@@ -13,6 +18,7 @@ describe('ContractManager load behavior', () => {
       abi,
       signerOrProvider,
     }));
+    vi.mocked(getReadOnlyProviderForNetwork).mockResolvedValue({ name: 'read-only-provider' });
   });
 
   afterEach(() => {
@@ -83,5 +89,44 @@ describe('ContractManager load behavior', () => {
     await expect(manager.load()).rejects.toThrow('Source Vault: source offline');
     expect(manager.isReady('source')).toBe(false);
     expect(manager.isReady('destination')).toBe(false);
+  });
+
+  it('preserves a loaded ABI when the public provider fails to initialize', async () => {
+    const walletProvider = { name: 'wallet-provider' };
+    const walletSigner = { name: 'wallet-signer' };
+    const manager = new ContractManager({
+      walletManager: {
+        getProvider: vi.fn(() => walletProvider),
+        getSigner: vi.fn(() => walletSigner),
+      },
+      networkManager: {
+        isTxEnabled: vi.fn(() => false),
+        isTxEnabledFor: vi.fn((key) => key === 'destination'),
+      },
+    });
+
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(manager, '_fetchAbi').mockImplementation(async () => ['destination-abi']);
+    const providerSpy = vi.spyOn(window.ethers, 'Contract');
+    vi.mocked(getReadOnlyProviderForNetwork).mockRejectedValue(new Error('Destination RPC down'));
+
+    await expect(manager._loadContext('destination')).rejects.toThrow('Destination RPC down');
+
+    manager.updateConnections({ reason: 'test' });
+
+    expect(manager.getAbi('destination')).toEqual(['destination-abi']);
+    expect(manager.getReadContract('destination')).not.toBeNull();
+    expect(manager.getWriteContract('destination')).not.toBeNull();
+    expect(getReadOnlyProviderForNetwork).toHaveBeenCalledTimes(1);
+    expect(providerSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      ['destination-abi'],
+      walletProvider
+    );
+    expect(providerSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      ['destination-abi'],
+      walletSigner
+    );
   });
 });

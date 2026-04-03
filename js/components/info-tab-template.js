@@ -58,6 +58,7 @@ function renderInfoContractShell(contractKey) {
           <div class="muted">On-chain configuration and multisig state</div>
         </div>
       </div>
+      <div class="info-contract-alert hidden" data-info-field="${meta.key}:read-alert" role="status"></div>
       <div class="info-layout">
         <div class="card info-card info-card--summary">
           <div class="kv-grid info-kv-grid">

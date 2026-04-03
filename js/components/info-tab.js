@@ -83,6 +83,7 @@ export class InfoTab {
     this._renderAddress(contractKey, 'owner-address', snapshot.owner || '--');
     this._setText(contractKey, 'chain-id', this._valueOrDash(snapshot.onChainId ?? snapshot.onChainChainId));
     this._setText(contractKey, 'bridge-out-enabled', this._boolLabel(snapshot.bridgeOutEnabled));
+    this._renderReadAlert(contractKey, snapshot.error);
 
     if (contractKey === 'destination') {
       this._renderAddress(contractKey, 'bridge-in-caller', snapshot.bridgeInCaller || '--');
@@ -224,6 +225,21 @@ export class InfoTab {
   _setText(contractKey, field, text) {
     const el = this._fieldElement(contractKey, field);
     if (el) el.textContent = text;
+  }
+
+  _renderReadAlert(contractKey, errorMessage) {
+    const el = this._fieldElement(contractKey, 'read-alert');
+    if (!(el instanceof HTMLElement)) return;
+
+    const message = typeof errorMessage === 'string' ? errorMessage.trim() : '';
+    if (!message) {
+      el.hidden = true;
+      el.textContent = '';
+      return;
+    }
+
+    el.hidden = false;
+    el.textContent = `Read warning: ${message}`;
   }
 
   _valueOrDash(value) {

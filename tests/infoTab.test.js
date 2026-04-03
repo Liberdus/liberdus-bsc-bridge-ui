@@ -136,4 +136,53 @@ describe('InfoTab read warning toasts', () => {
 
     expect(document.querySelector('[data-info-field="destination:bridge-in-cooldown"]').textContent).toBe('0s');
   });
+
+  it('shows destination read failures inline in the destination contract section', () => {
+    const tab = new InfoTab();
+    tab.load();
+
+    tab.render({
+      source: {
+        configuredNetworkName: 'Polygon Amoy',
+        configuredAddress: '0x1111111111111111111111111111111111111111',
+        owner: null,
+        onChainId: null,
+        onChainChainId: null,
+        bridgeOutEnabled: null,
+        token: null,
+        halted: null,
+        maxBridgeOutAmount: null,
+        vaultBalance: null,
+        requiredSignatures: null,
+        signers: [],
+        operationDeadlineSeconds: null,
+        error: null,
+      },
+      destination: {
+        configuredNetworkName: 'BNB Testnet',
+        configuredAddress: '0x2222222222222222222222222222222222222222',
+        owner: null,
+        onChainId: null,
+        onChainChainId: null,
+        bridgeOutEnabled: null,
+        bridgeInCaller: null,
+        bridgeInEnabled: null,
+        maxBridgeInAmount: null,
+        bridgeInCooldown: null,
+        minBridgeOutAmount: null,
+        lastBridgeInTime: null,
+        symbol: null,
+        totalSupply: null,
+        requiredSignatures: null,
+        signers: [],
+        operationDeadlineSeconds: null,
+        error: 'Destination contract unavailable',
+        errors: {},
+      },
+    });
+
+    const alert = document.querySelector('[data-info-field="destination:read-alert"]');
+    expect(alert.hidden).toBe(false);
+    expect(alert.textContent).toBe('Read warning: Destination contract unavailable');
+  });
 });

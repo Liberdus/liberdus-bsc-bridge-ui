@@ -85,6 +85,21 @@
   margin-bottom: 0;
 }
 
+.tab-panel[data-panel="info"] .info-contract-alert {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(239, 108, 0, 0.32);
+  border-radius: var(--radius-md);
+  background: rgba(239, 108, 0, 0.12);
+  color: #9a3f00;
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
+.tab-panel[data-panel="info"] .info-contract-alert.hidden {
+  display: none;
+}
+
 .tab-panel[data-panel="info"] .info-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
