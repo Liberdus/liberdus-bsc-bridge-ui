@@ -1,4 +1,5 @@
 import { RefreshButton } from './refresh-button.js';
+import { renderInfoTabTemplate } from './info-tab-template.js';
 import { escapeHtml } from '../utils/helpers.js';
 import { CONTRACT_KEYS, getContractMetadata } from '../contracts/contract-types.js';
 
@@ -18,20 +19,10 @@ export class InfoTab {
     this.panel = document.querySelector('.tab-panel[data-panel="info"]');
     if (!this.panel) return;
 
-    this.panel.innerHTML = `
-      <div class="info-shell">
-        <div class="panel-header info-hero">
-          <div class="card-title-row info-hero-row">
-            <h2>Contract Info</h2>
-            ${this.refreshControl.render()}
-          </div>
-        </div>
-
-        <div class="info-contracts">
-          ${CONTRACT_KEYS.map((contractKey) => this._renderContractShell(contractKey)).join('')}
-        </div>
-      </div>
-    `;
+    this.panel.innerHTML = renderInfoTabTemplate({
+      contractKeys: CONTRACT_KEYS,
+      refreshButton: this.refreshControl.render(),
+    });
 
     this.refreshBtn = this.panel.querySelector('[data-info-refresh]');
     this.refreshControl.mount(this.refreshBtn);
@@ -118,83 +109,6 @@ export class InfoTab {
 
     this._renderSignersMeta(contractKey, snapshot.requiredSignatures, snapshot.signers || [], snapshot.operationDeadlineSeconds);
     this._renderSigners(contractKey, snapshot.signers || []);
-  }
-
-  _renderContractShell(contractKey) {
-    const meta = getContractMetadata(contractKey);
-    const summaryFields = contractKey === 'destination'
-      ? [
-          this._kvHtml(contractKey, 'Network', 'network'),
-          this._kvHtml(contractKey, 'Chain ID', 'chain-id'),
-          this._kvHtml(contractKey, 'Bridge In Enabled', 'bridge-in-enabled'),
-          this._kvHtml(contractKey, 'Bridge Out Enabled', 'bridge-out-enabled'),
-          this._kvHtml(contractKey, 'Max Bridge In Amount', 'max-bridge-in'),
-          this._kvHtml(contractKey, 'Bridge In Cooldown', 'bridge-in-cooldown'),
-          this._kvHtml(contractKey, 'Min Bridge Out Amount', 'min-bridge-out'),
-          this._kvHtml(contractKey, 'Last Bridge In', 'last-bridge-in'),
-          this._kvHtml(contractKey, 'Contract Address', 'contract-address', { address: true }),
-          this._kvHtml(contractKey, 'Bridge In Caller', 'bridge-in-caller', { address: true }),
-          this._kvHtml(contractKey, 'Owner', 'owner-address', { address: true }),
-          this._kvHtml(contractKey, 'Token Symbol', 'token-symbol'),
-          this._kvHtml(contractKey, 'Total Supply', 'total-supply'),
-        ]
-      : [
-          this._kvHtml(contractKey, 'Network', 'network'),
-          this._kvHtml(contractKey, 'Vault Chain ID', 'chain-id'),
-          this._kvHtml(contractKey, 'Bridge Out Enabled', 'bridge-out-enabled'),
-          this._kvHtml(contractKey, 'Vault Halted', 'vault-halted'),
-          this._kvHtml(contractKey, 'Max Bridge Out Amount', 'max-bridge-out'),
-          this._kvHtml(contractKey, 'Vault Balance', 'vault-balance'),
-          this._kvHtml(contractKey, 'Contract Address', 'contract-address', { address: true }),
-          this._kvHtml(contractKey, 'Token Address', 'token-address', { address: true }),
-          this._kvHtml(contractKey, 'Owner', 'owner-address', { address: true }),
-        ];
-
-    return `
-      <section class="info-contract-section" data-info-contract="${meta.key}">
-        <div class="card-title-row info-contract-header">
-          <div>
-            <div class="card-title">${escapeHtml(meta.label)}</div>
-            <div class="muted">On-chain configuration and multisig state</div>
-          </div>
-        </div>
-        <div class="info-layout">
-          <div class="card info-card info-card--summary">
-            <div class="kv-grid info-kv-grid">
-              ${summaryFields.join('')}
-            </div>
-          </div>
-
-          <div class="card info-card info-card--signers">
-            <div class="card-title-row info-signers-header">
-              <div class="card-title" data-info-field="${meta.key}:signers-title">Signers</div>
-              <div class="info-signers-subtitle" data-info-field="${meta.key}:signers-subtitle">Multisig participants</div>
-            </div>
-            <div class="info-signers-grid" data-info-field="${meta.key}:signers">
-              <div class="param-row muted">No signer data returned.</div>
-            </div>
-          </div>
-        </div>
-      </section>
-    `;
-  }
-
-  _kvHtml(contractKey, label, field, { address = false } = {}) {
-    return `
-      <div class="kv">
-        <div class="kv-label">${escapeHtml(label)}</div>
-        <div class="kv-value">
-          ${address
-            ? `
-              <div class="param-address">
-                <code data-info-field="${contractKey}:${field}">--</code>
-                <button type="button" class="copy-inline" data-copy-address data-address="">Copy</button>
-              </div>
-            `
-            : `<div data-info-field="${contractKey}:${field}">--</div>`}
-        </div>
-      </div>
-    `;
   }
 
   _renderSignersMeta(contractKey, requiredSignatures, signers, operationDeadlineSeconds) {
