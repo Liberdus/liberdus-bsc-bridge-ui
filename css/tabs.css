@@ -173,6 +173,38 @@
   min-width: 0;
 }
 
+.ops-status-banner {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
+.ops-status-banner.is-neutral {
+  background: var(--hover-background);
+  color: var(--secondary-text-color);
+}
+
+.ops-status-banner.is-info {
+  background: rgba(0, 102, 204, 0.08);
+  border-color: rgba(0, 102, 204, 0.24);
+  color: var(--info-color);
+}
+
+.ops-status-banner.is-warning {
+  background: rgba(239, 108, 0, 0.12);
+  border-color: rgba(239, 108, 0, 0.32);
+  color: #9a3f00;
+}
+
+.ops-status-banner.is-success {
+  background: rgba(40, 167, 69, 0.1);
+  border-color: rgba(40, 167, 69, 0.26);
+  color: #1d7a33;
+}
+
 @media (max-width: 768px) {
   .tab-bar {
     display: grid;

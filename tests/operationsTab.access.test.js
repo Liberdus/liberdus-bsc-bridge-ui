@@ -37,6 +37,7 @@ describe('OperationsTab access behavior', () => {
     expect(tab.tabButton.hidden).toBe(false);
     expect(document.querySelector('[data-ops-role]').textContent).toBe('Owner');
     expect(document.querySelector('[data-ops-status]').textContent).toBe('Ready.');
+    expect(document.querySelector('[data-ops-status]').className).toContain('is-success');
     expect(document.querySelector('[data-ops-admin-section]').hidden).toBe(false);
     expect(document.querySelector('[data-ops-history-section]').hidden).toBe(false);
     expect(document.querySelector('[data-ops-ownership-section]').hidden).toBe(false);
@@ -134,6 +135,7 @@ describe('OperationsTab access behavior', () => {
     expect(document.querySelector('[data-ops-owner]').textContent).toBe('Unavailable');
     expect(document.querySelector('[data-ops-is-signer]').textContent).toBe('Yes');
     expect(document.querySelector('[data-ops-status]').textContent).toBe('Signer verified, owner status unavailable.');
+    expect(document.querySelector('[data-ops-status]').className).toContain('is-info');
 
     window.walletManager.getAddress = vi.fn(() => OWNER);
     window.contractManager.getAccessState = vi.fn(async () => ({
@@ -151,6 +153,7 @@ describe('OperationsTab access behavior', () => {
     expect(document.querySelector('[data-ops-owner]').textContent).toBe(normalizeAddress(OWNER));
     expect(document.querySelector('[data-ops-is-signer]').textContent).toBe('Unavailable');
     expect(document.querySelector('[data-ops-status]').textContent).toBe('Owner verified, signer status unavailable.');
+    expect(document.querySelector('[data-ops-status]').className).toContain('is-info');
   });
 
   it('keeps authorized users on Admin while refreshing access for the same wallet', async () => {
@@ -180,6 +183,7 @@ describe('OperationsTab access behavior', () => {
     expect(window.location.hash).toBe('#operations');
     expect(document.querySelector('[data-ops-role]').textContent).toBe('Checking...');
     expect(document.querySelector('[data-ops-status]').textContent).toBe('Checking wallet access against Source Vault.');
+    expect(document.querySelector('[data-ops-status]').className).toContain('is-info');
     expect(document.querySelector('[data-ops-admin-section]').hidden).toBe(false);
     expect(document.querySelector('[data-ops-ownership-section]').hidden).toBe(false);
   });
@@ -199,6 +203,7 @@ describe('OperationsTab access behavior', () => {
     expect(tab.tabButton.hidden).toBe(true);
     expect(window.location.hash).toBe('#operations');
     expect(document.querySelector('[data-ops-status]').textContent).toBe('Checking wallet access against Source Vault.');
+    expect(document.querySelector('[data-ops-status]').className).toContain('is-info');
   });
 
   it('hides the Admin tab and redirects away from operations to the default visible tab when disconnected', async () => {
@@ -213,6 +218,40 @@ describe('OperationsTab access behavior', () => {
     expect(tab.tabButton.hidden).toBe(true);
     expect(window.location.hash).toBe('#bridge');
     expect(document.querySelector('[data-ops-status]').textContent).toBe('Connect a wallet to check access.');
+    expect(document.querySelector('[data-ops-status]').className).toContain('is-neutral');
+  });
+
+  it('shows a contract-specific warning when the selected admin contract is on a different network', async () => {
+    window.walletManager.isConnected = vi.fn(() => true);
+    window.walletManager.getAddress = vi.fn(() => OWNER);
+    window.walletManager.getChainId = vi.fn(() => 80002);
+    window.contractManager.getAccessState = vi.fn(async (_address, key) => ({
+      owner: OWNER,
+      isOwner: key === 'destination',
+      isSigner: false,
+      ownerError: null,
+      signerError: null,
+      error: null,
+    }));
+    window.networkManager.isTxEnabledFor = vi.fn((key) => key === 'source');
+    window.networkManager.getCurrentChainId = vi.fn(() => 80002);
+    window.networkManager.getCurrentNetworkKey = vi.fn(() => 'source');
+    window.networkManager.getNetworkConfig = vi.fn((key) => (
+      key === 'destination'
+        ? { NAME: 'BNB Testnet', CHAIN_ID: 97 }
+        : { NAME: 'Polygon Amoy', CHAIN_ID: 80002 }
+    ));
+
+    const tab = new OperationsTab();
+    tab.load();
+    await tab._syncAccess();
+
+    expect(tab._selectedContractKey).toBe('destination');
+    expect(document.querySelector('[data-ops-status]').textContent).toBe(
+      'Wallet is currently on Polygon Amoy. Transaction actions for Destination Liberdus will prompt a switch to BNB Testnet when used.'
+    );
+    expect(document.querySelector('[data-ops-status]').className).toContain('is-warning');
+    expect(document.querySelector('[data-ops-tx-enabled]').textContent).toBe('No');
   });
 
   it('ignores stale access responses after an account switch', async () => {

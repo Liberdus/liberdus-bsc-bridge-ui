@@ -345,6 +345,7 @@ export class OperationsTab {
 
     const metadata = this._selectedMetadata();
     const requiredNetworkName = this._requiredNetworkName();
+    const currentNetworkName = this._currentNetworkName();
     const address = this._normalizeAddress(this._access.address) || null;
     const ownerAddress = this._normalizeAddress(this._access.owner) || null;
     const txEnabled = !!window.networkManager?.isTxEnabledFor?.(this._selectedContractKey);
@@ -401,30 +402,40 @@ export class OperationsTab {
     this._syncSignButtonVisibility();
 
     if (statusEl) {
+      let statusTone = 'neutral';
       const partialStatus = this._partialAccessStatusMessage();
       if (!this._access.connected) {
         statusEl.textContent = 'Connect a wallet to check access.';
+        statusTone = 'neutral';
       } else if (this._access.loading) {
         statusEl.textContent = `Checking wallet access against ${metadata.label}.`;
+        statusTone = 'info';
       } else if (partialStatus) {
         statusEl.textContent = partialStatus;
+        statusTone = this._networkNeedsSwitch() ? 'warning' : 'info';
       } else if (this._access.error) {
         statusEl.textContent = `Unable to read ${metadata.label} access state: ${this._access.error}`;
+        statusTone = 'warning';
       } else if (!this._access.isAdmin && !this._access.isMultisig) {
         statusEl.textContent = `Connected wallet is not allowed to access ${metadata.label} Admin.`;
+        statusTone = 'warning';
       } else if (!txEnabled) {
-        statusEl.textContent = `Connected on the wrong network. Transaction actions will prompt a switch to ${requiredNetworkName} when used.`;
+        statusEl.textContent = `Wallet is currently on ${currentNetworkName}. Transaction actions for ${metadata.label} will prompt a switch to ${requiredNetworkName} when used.`;
+        statusTone = 'warning';
       } else {
         statusEl.textContent = 'Ready.';
+        statusTone = 'success';
       }
+
+      this._setStatusTone(statusEl, statusTone);
     }
   }
 
   _partialAccessStatusMessage() {
     const ownerUnavailable = !!this._access.ownerError;
     const signerUnavailable = !!this._access.signerError;
-    const wrongNetworkNote = !window.networkManager?.isTxEnabledFor?.(this._selectedContractKey)
-      ? ` Transaction actions will prompt a switch to ${this._requiredNetworkName()} when used.`
+    const wrongNetworkNote = this._networkNeedsSwitch()
+      ? ` Wallet is currently on ${this._currentNetworkName()}. Transaction actions for ${this._selectedMetadata().label} will prompt a switch to ${this._requiredNetworkName()} when used.`
       : '';
 
     if (ownerUnavailable && !signerUnavailable) {
@@ -440,6 +451,30 @@ export class OperationsTab {
     }
 
     return null;
+  }
+
+  _networkNeedsSwitch() {
+    return !window.networkManager?.isTxEnabledFor?.(this._selectedContractKey);
+  }
+
+  _currentNetworkName() {
+    const currentNetworkKey = window.networkManager?.getCurrentNetworkKey?.();
+    if (currentNetworkKey) {
+      return window.networkManager?.getNetworkConfig?.(currentNetworkKey)?.NAME || 'the current wallet network';
+    }
+
+    const chainId = window.networkManager?.getCurrentChainId?.();
+    if (Number.isFinite(chainId)) {
+      return `chain ${chainId}`;
+    }
+
+    return 'an unsupported network';
+  }
+
+  _setStatusTone(statusEl, tone = 'neutral') {
+    if (!(statusEl instanceof HTMLElement)) return;
+    statusEl.classList.remove('is-neutral', 'is-info', 'is-warning', 'is-success');
+    statusEl.classList.add('ops-status-banner', `is-${tone}`);
   }
 
   _syncOperationSelectors() {

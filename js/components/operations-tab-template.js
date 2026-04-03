@@ -5,7 +5,7 @@ export function renderOperationsTabTemplate({ refreshButton, tokenSymbol }) {
         <h2>Admin</h2>
         ${refreshButton}
       </div>
-      <p class="muted" data-ops-status>Connect a wallet to check access.</p>
+      <p class="ops-status-banner is-neutral" data-ops-status>Connect a wallet to check access.</p>
     </div>
 
     <div class="stack">
