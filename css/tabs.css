@@ -70,6 +70,21 @@
   margin-bottom: 0;
 }
 
+.tab-panel[data-panel="info"] .info-contracts {
+  display: grid;
+  gap: 18px;
+}
+
+.tab-panel[data-panel="info"] .info-contract-section {
+  display: grid;
+  gap: 12px;
+}
+
+.tab-panel[data-panel="info"] .info-contract-header {
+  align-items: center;
+  margin-bottom: 0;
+}
+
 .tab-panel[data-panel="info"] .info-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -147,6 +162,15 @@
 
 .tab-panel[data-panel="info"] .info-signer-address code {
   font-size: 13px;
+}
+
+.ops-contract-switch {
+  flex-wrap: wrap;
+}
+
+.ops-contract-switch .tab-button {
+  flex: 1 1 220px;
+  min-width: 0;
 }
 
 @media (max-width: 768px) {

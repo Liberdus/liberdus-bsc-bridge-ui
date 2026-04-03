@@ -1,11 +1,6 @@
 import { CONFIG } from '../config.js';
+import { getContractMetadata, normalizeContractKey } from '../contracts/contract-types.js';
 
-/**
- * NetworkManager (Phase 2)
- * Configured source-network only:
- * - Read-only mode uses CONFIG.BRIDGE.CHAINS.SOURCE.RPC_URL
- * - Tx-enabled mode requires a connected wallet AND chainId === CONFIG.BRIDGE.CHAINS.SOURCE.CHAIN_ID
- */
 export class NetworkManager {
   constructor({ walletManager } = {}) {
     this.walletManager = walletManager || null;
@@ -22,27 +17,63 @@ export class NetworkManager {
     this.updateUIState();
   }
 
-  isOnRequiredNetwork(chainId = null) {
+  getNetworkConfig(key = 'source') {
+    const meta = getContractMetadata(key);
+    return CONFIG?.BRIDGE?.CHAINS?.[meta.networkConfigKey] || null;
+  }
+
+  getCurrentNetworkKey(chainId = null) {
     const cid = this._normalizeChainId(chainId ?? this.getCurrentChainId());
-    return Number(cid) === Number(this._requiredChainId());
+    if (!Number.isFinite(cid)) return null;
+
+    const source = this.getNetworkConfig('source');
+    if (Number(source?.CHAIN_ID) === cid) return 'source';
+
+    const destination = this.getNetworkConfig('destination');
+    if (Number(destination?.CHAIN_ID) === cid) return 'destination';
+
+    return null;
+  }
+
+  isOnRequiredNetwork(chainId = null) {
+    return this.isOnNetwork('source', chainId);
+  }
+
+  isOnNetwork(key = 'source', chainId = null) {
+    const cid = this._normalizeChainId(chainId ?? this.getCurrentChainId());
+    return Number(cid) === Number(this._requiredChainId(key));
   }
 
   isTxEnabled() {
+    return this.isTxEnabledFor('source');
+  }
+
+  isTxEnabledFor(key = 'source') {
     const connected = !!this.walletManager?.isConnected?.();
-    return connected && this.isOnRequiredNetwork();
+    return connected && this.isOnNetwork(key);
   }
 
   async ensureRequiredNetwork({ timeoutMs = 15000 } = {}) {
-    if (this.isOnRequiredNetwork()) {
+    return await this.ensureNetwork('source', { timeoutMs });
+  }
+
+  async ensureNetwork(key = 'source', { timeoutMs = 15000 } = {}) {
+    const normalizedKey = normalizeContractKey(key);
+    const network = this.getNetworkConfig(normalizedKey);
+    if (!network) {
+      throw new Error(`Unknown network for ${normalizedKey}`);
+    }
+
+    if (this.isOnNetwork(normalizedKey)) {
       return { switched: false };
     }
 
-    await this.switchToChain(CONFIG.BRIDGE.CHAINS.SOURCE);
-    if (this.isOnRequiredNetwork()) {
+    await this.switchToChain(network);
+    if (this.isOnNetwork(normalizedKey)) {
       return { switched: true };
     }
 
-    const waiter = this._createRequiredNetworkWaiter({ timeoutMs });
+    const waiter = this._createNetworkWaiter(network, { timeoutMs });
     try {
       await waiter.promise;
       return { switched: true };
@@ -53,25 +84,26 @@ export class NetworkManager {
   }
 
   getAvailableNetworks() {
-    const { SOURCE, DESTINATION } = CONFIG.BRIDGE.CHAINS;
+    const source = this.getNetworkConfig('source');
+    const destination = this.getNetworkConfig('destination');
     return [
       {
         key: 'source',
-        chainId: SOURCE.CHAIN_ID,
-        name: SOURCE.NAME,
-        rpcUrl: SOURCE.RPC_URL,
-        fallbackRpcs: SOURCE.FALLBACK_RPCS,
-        blockExplorer: SOURCE.BLOCK_EXPLORER,
-        nativeCurrency: SOURCE.NATIVE_CURRENCY,
+        chainId: source?.CHAIN_ID,
+        name: source?.NAME,
+        rpcUrl: source?.RPC_URL,
+        fallbackRpcs: source?.FALLBACK_RPCS,
+        blockExplorer: source?.BLOCK_EXPLORER,
+        nativeCurrency: source?.NATIVE_CURRENCY,
       },
       {
         key: 'destination',
-        chainId: DESTINATION.CHAIN_ID,
-        name: DESTINATION.NAME,
-        rpcUrl: DESTINATION.RPC_URL,
-        fallbackRpcs: DESTINATION.FALLBACK_RPCS,
-        blockExplorer: DESTINATION.BLOCK_EXPLORER,
-        nativeCurrency: DESTINATION.NATIVE_CURRENCY,
+        chainId: destination?.CHAIN_ID,
+        name: destination?.NAME,
+        rpcUrl: destination?.RPC_URL,
+        fallbackRpcs: destination?.FALLBACK_RPCS,
+        blockExplorer: destination?.BLOCK_EXPLORER,
+        nativeCurrency: destination?.NATIVE_CURRENCY,
       },
     ];
   }
@@ -162,12 +194,15 @@ export class NetworkManager {
     return Number(cid);
   }
 
-  _requiredChainId() {
-    return CONFIG.BRIDGE.CHAINS.SOURCE.CHAIN_ID;
+  _requiredChainId(key = 'source') {
+    return this.getNetworkConfig(key)?.CHAIN_ID;
   }
 
-  _createRequiredNetworkWaiter({ timeoutMs = 3000 } = {}) {
-    if (this.isOnRequiredNetwork()) {
+  _createNetworkWaiter(network, { timeoutMs = 3000 } = {}) {
+    const expectedChainId = Number(network?.CHAIN_ID);
+    const networkName = network?.NAME || 'the required network';
+
+    if (this.isOnNetwork(this.getCurrentNetworkKey(expectedChainId) || 'source', expectedChainId)) {
       return {
         promise: Promise.resolve(true),
         cancel() {},
@@ -188,7 +223,7 @@ export class NetworkManager {
     };
 
     const resolveIfReady = (resolve) => {
-      if (!resolved && this.isOnRequiredNetwork()) {
+      if (!resolved && this._normalizeChainId(this.getCurrentChainId()) === expectedChainId) {
         resolved = true;
         cleanup();
         resolve(true);
@@ -203,7 +238,7 @@ export class NetworkManager {
         if (resolved) return;
         resolved = true;
         cleanup();
-        reject(new Error(`Timed out waiting for wallet to switch to ${CONFIG.BRIDGE.CHAINS.SOURCE.NAME}`));
+        reject(new Error(`Timed out waiting for wallet to switch to ${networkName}`));
       }, timeoutMs);
 
       pollId = window.setInterval(() => resolveIfReady(resolve), 50);

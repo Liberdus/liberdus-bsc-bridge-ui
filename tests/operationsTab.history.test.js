@@ -221,6 +221,7 @@ describe('OperationsTab requested operations history', () => {
     tab._isActive = true;
     await tab._refreshRequestedOperations();
 
+    const expectedRequestedAt = tab._formatUnix(freshOperation.deadline - 259200);
     document.querySelector('[data-ops-history-row]').click();
     await flushPromises();
 
@@ -231,16 +232,61 @@ describe('OperationsTab requested operations history', () => {
     expect(document.querySelector('[data-ops-operation-modal]').hidden).toBe(false);
     expect(document.querySelector('[data-ops-operation-details]').hidden).toBe(false);
     expect(document.querySelector('[data-ops-operation-modal-title]').textContent).toBe('Update Signer Details');
+    expect(document.querySelector('[data-ops-history-row]').textContent).toContain(expectedRequestedAt);
     expect(detailValue('operation')).toBe('Update Signer');
     expect(detailValue('oldSigner')).toBe(OLD_SIGNER);
     expect(detailValue('newSigner')).toBe(NEW_SIGNER);
     expect(detailValue('signatures')).toBe('2/3');
+    expect(detailValue('requestedAt')).toBe(expectedRequestedAt);
     expect(document.querySelector('[data-ops-detail-row="target"]')).toBeNull();
     expect(document.querySelector('[data-ops-detail-row="value"]')).toBeNull();
     expect(document.querySelector('[data-ops-detail-row="data"]')).toBeNull();
     expect(document.querySelector('[data-ops-sign-submit]').hidden).toBe(false);
     expect(document.querySelector('[data-ops-sign-submit]').disabled).toBe(false);
     expect(detailValue('executed')).toBe('No');
+  });
+
+  it('shows requested-at timestamps for destination contract operations', async () => {
+    window.contractManager.getAccessState = vi.fn(async (_address, key) => ({
+      owner: OWNER,
+      isOwner: key === 'destination',
+      isSigner: false,
+      ownerError: null,
+      signerError: null,
+      error: null,
+    }));
+
+    const destinationOperation = makeHistoryItem({
+      operationId: OPERATION_ID_ONE,
+      opType: 4,
+      value: '0',
+      data: `0x${'0'.repeat(63)}1`,
+      numSignatures: 2,
+    });
+
+    const historyService = {
+      load: vi.fn(async () => ({
+        items: [destinationOperation],
+      })),
+    };
+
+    const contract = installReadContract(destinationOperation);
+    const tab = new OperationsTab({ operationsService: historyService });
+    tab.load();
+    await tab._syncAccess();
+    tab._isActive = true;
+    await tab._refreshRequestedOperations();
+
+    const expectedRequestedAt = tab._formatUnix(destinationOperation.deadline - 259200);
+    document.querySelector('[data-ops-history-row]').click();
+    await flushPromises();
+
+    expect(tab._selectedContractKey).toBe('destination');
+    expect(historyService.load).toHaveBeenCalledWith('destination');
+    expect(contract.operations).toHaveBeenCalledWith(OPERATION_ID_ONE);
+    expect(document.querySelector('[data-ops-history-row]').textContent).toContain(expectedRequestedAt);
+    expect(detailValue('requestedAt')).toBe(expectedRequestedAt);
+    expect(detailValue('operation')).toBe('Set Bridge Out Enabled');
   });
 
   [

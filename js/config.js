@@ -18,7 +18,7 @@ const PROFILES = {
     },
     SOURCE_CONTRACT: {
       ADDRESS: '0x45F54526165b0dC75E298A560F9a1B1cb06bb41E',
-      ABI_PATH: './abi/vault.json',
+      ABI_PATH: './abi/source-vault.json',
     },
     DESTINATION_NETWORK: {
       CHAIN_ID: 97,
@@ -33,6 +33,7 @@ const PROFILES = {
     },
     DESTINATION_CONTRACT: {
       ADDRESS: '0x48463C89254d001Bdc6B5d2af92d531E60FB4f72',
+      ABI_PATH: './abi/destination-liberdus.json',
     },
     BRIDGE: {
       OBSERVER_URL: 'https://dev.liberdus.com:3030/observer',
@@ -58,7 +59,7 @@ const PROFILES = {
     },
     SOURCE_CONTRACT: {
       ADDRESS: '0x45F54526165b0dC75E298A560F9a1B1cb06bb41E',
-      ABI_PATH: './abi/vault.json',
+      ABI_PATH: './abi/source-vault.json',
     },
     DESTINATION_NETWORK: {
       CHAIN_ID: 97,
@@ -73,6 +74,7 @@ const PROFILES = {
     },
     DESTINATION_CONTRACT: {
       ADDRESS: '0x48463C89254d001Bdc6B5d2af92d531E60FB4f72',
+      ABI_PATH: './abi/destination-liberdus.json',
     },
     BRIDGE: {
       OBSERVER_URL: 'https://dev.liberdus.com:3030/observer',
@@ -83,7 +85,7 @@ const PROFILES = {
 export const CONFIG = {
   APP: {
     NAME: 'Liberdus BSC Bridge UI',
-    VERSION: '0.1.1',
+    VERSION: '0.1.2',
   },
   RUNTIME: {
     PROFILE: 'dev', // 'dev' or 'prod'
@@ -132,7 +134,7 @@ function assertNetwork(profileName, kind, network) {
 function assertContract(profileName, kind, contract) {
   assert(contract && typeof contract === 'object' && !Array.isArray(contract), `Invalid profile ${profileName}: missing ${kind}`);
   assertString(contract.ADDRESS, `${kind}.ADDRESS`, profileName);
-  if (kind === 'SOURCE_CONTRACT') assertString(contract.ABI_PATH, `${kind}.ABI_PATH`, profileName);
+  assertString(contract.ABI_PATH, `${kind}.ABI_PATH`, profileName);
 }
 
 function assertProfile(profileName, profile) {

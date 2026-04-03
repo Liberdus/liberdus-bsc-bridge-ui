@@ -37,7 +37,8 @@ Open `http://localhost:8080`.
 - `js/wallet/` injected-wallet discovery, connection, and network management
 - `js/contracts/contract-manager.js` ABI/provider/contract wiring
 - `js/components/` tabs + header + toast components
-- `abi/vault.json` full Vault ABI (manually defined from `Vault.sol`)
+- `abi/source-vault.json` source Vault ABI
+- `abi/destination-liberdus.json` destination Liberdus ABI
 
 ## Configuration
 

@@ -928,6 +928,10 @@ textarea:focus-visible {
   font-size: var(--font-size-sm);
 }
 
+.ops-history-timestamp {
+  margin-top: 6px;
+}
+
 .ops-history-lookup {
   margin-bottom: 14px;
 }

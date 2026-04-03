@@ -2,13 +2,16 @@ import { RefreshButton } from './refresh-button.js';
 import { renderOperationsTabTemplate } from './operations-tab-template.js';
 import { AdminOperationsService } from '../services/admin-operations-service.js';
 import { escapeHtml } from '../utils/helpers.js';
+import { normalizeVaultOperation } from '../utils/vault-operations.js';
 import {
-  buildVaultOperationDetailRows,
-  buildVaultOperationSummary,
-  getVaultOperationTypeLabel,
-  isOwnerSignableVaultOperationType,
-  normalizeVaultOperation,
-} from '../utils/vault-operations.js';
+  buildOperationDetailRows,
+  buildOperationSummary,
+  getOperationTypeLabel,
+  getRequestOperationTypeOrder,
+  isOwnerSignableOperationType,
+  renderOperationOptions,
+} from '../utils/contract-operations.js';
+import { CONTRACT_KEYS, getContractMetadata, getNetworkConfig, normalizeContractKey } from '../contracts/contract-types.js';
 
 export class OperationsTab {
   constructor({ operationsService = null } = {}) {
@@ -17,17 +20,9 @@ export class OperationsTab {
     this.refreshBtn = null;
     this._operationsService = operationsService;
     this.historyPageSize = 10;
-    this._access = {
-      connected: false,
-      address: null,
-      owner: null,
-      isAdmin: false,
-      isMultisig: false,
-      loading: false,
-      ownerError: null,
-      signerError: null,
-      error: null,
-    };
+    this._selectedContractKey = 'source';
+    this._access = this._emptyAccessState();
+    this._accessByContract = this._emptyAccessMap();
     this._historyEvents = [];
     this._historyActiveCount = 0;
     this._historyLoaded = false;
@@ -59,6 +54,7 @@ export class OperationsTab {
       this.tabButton.setAttribute('aria-hidden', 'true');
       this.tabButton.tabIndex = -1;
     }
+
     this.panel.innerHTML = renderOperationsTabTemplate({
       refreshButton: this.refreshControl.render(),
       tokenSymbol: this._tokenSymbol(),
@@ -66,24 +62,28 @@ export class OperationsTab {
 
     this.refreshBtn = this.panel.querySelector('[data-ops-refresh]');
     this.refreshControl.mount(this.refreshBtn);
-    this.panel.addEventListener('click', (e) => this._onClick(e));
-    this.panel.addEventListener('change', (e) => this._onChange(e));
-    this.panel.addEventListener('input', (e) => this._onInput(e));
+    this.panel.addEventListener('click', (event) => this._onClick(event));
+    this.panel.addEventListener('change', (event) => this._onChange(event));
+    this.panel.addEventListener('input', (event) => this._onInput(event));
+
     document.addEventListener('walletConnected', () => void this._syncAccess());
     document.addEventListener('walletDisconnected', () => void this._syncAccess());
     document.addEventListener('walletAccountChanged', () => void this._syncAccess());
     document.addEventListener('walletChainChanged', () => void this._syncAccess());
     document.addEventListener('contractManagerUpdated', () => void this._syncAccess());
-    document.addEventListener('tabActivated', (e) => {
-      if (e?.detail?.tabName !== 'operations') return;
+    document.addEventListener('tabActivated', (event) => {
+      if (event?.detail?.tabName !== 'operations') return;
       this._isActive = true;
       void this._ensureHistoryLoaded();
     });
-    document.addEventListener('tabDeactivated', (e) => {
-      if (e?.detail?.tabName !== 'operations') return;
+    document.addEventListener('tabDeactivated', (event) => {
+      if (event?.detail?.tabName !== 'operations') return;
       this._isActive = false;
     });
 
+    this._renderContractSwitch();
+    this._syncOperationSelectors();
+    this._renderAccessSummary();
     void this._syncAccess();
   }
 
@@ -92,11 +92,44 @@ export class OperationsTab {
   }
 
   async _runRefresh() {
-    await window.contractManager?.refreshStatus?.({ reason: 'operationsTabRefresh' }).catch(() => {});
+    await window.contractManager?.refreshAllStatus?.({ reason: 'operationsTabRefresh' }).catch(async () => {
+      await window.contractManager?.refreshStatus?.({ key: this._selectedContractKey, reason: 'operationsTabRefresh' }).catch(() => {});
+    });
     await this._syncAccess().catch(() => {});
     if (this._hasAdminAccess()) {
       await this._refreshRequestedOperations().catch(() => {});
     }
+  }
+
+  _emptyAccessState(overrides = {}) {
+    return {
+      connected: false,
+      address: null,
+      owner: null,
+      isAdmin: false,
+      isMultisig: false,
+      loading: false,
+      ownerError: null,
+      signerError: null,
+      error: null,
+      ...overrides,
+    };
+  }
+
+  _emptyAccessMap() {
+    return Object.fromEntries(CONTRACT_KEYS.map((key) => [key, this._emptyAccessState()]));
+  }
+
+  _selectedMetadata() {
+    return getContractMetadata(this._selectedContractKey);
+  }
+
+  _selectedNetworkConfig() {
+    return getNetworkConfig(this._selectedContractKey);
+  }
+
+  _selectedStatusSnapshot() {
+    return window.contractManager?.getStatusSnapshot?.(this._selectedContractKey) || {};
   }
 
   _tokenSymbol() {
@@ -104,20 +137,8 @@ export class OperationsTab {
   }
 
   _tokenDecimals() {
-    const d = Number(window.CONFIG?.TOKEN?.DECIMALS ?? 18);
-    return Number.isFinite(d) ? d : 18;
-  }
-
-  _hasAdminAccess() {
-    return !!(this._access.connected && (this._access.isAdmin || this._access.isMultisig));
-  }
-
-  _getOperationsService() {
-    if (!this._operationsService) {
-      this._operationsService = new AdminOperationsService(window.contractManager);
-    }
-
-    return this._operationsService;
+    const decimals = Number(window.CONFIG?.TOKEN?.DECIMALS ?? 18);
+    return Number.isFinite(decimals) ? decimals : 18;
   }
 
   _normalizeAddress(address) {
@@ -129,90 +150,188 @@ export class OperationsTab {
     }
   }
 
+  _hasAdminAccess(key = this._selectedContractKey) {
+    const access = this._accessByContract[normalizeContractKey(key)] || this._emptyAccessState();
+    return !!(access.connected && (access.isAdmin || access.isMultisig));
+  }
+
+  _hasAnyAdminAccess() {
+    return CONTRACT_KEYS.some((key) => this._hasAdminAccess(key));
+  }
+
+  _isAnyAccessLoading() {
+    return CONTRACT_KEYS.some((key) => this._accessByContract[key]?.loading);
+  }
+
+  _getOperationsService() {
+    if (!this._operationsService) {
+      this._operationsService = new AdminOperationsService(window.contractManager);
+    }
+
+    return this._operationsService;
+  }
+
   async _syncAccess() {
     const walletManager = window.walletManager;
     const address = walletManager?.getAddress?.() || null;
     const connected = !!walletManager?.isConnected?.();
     const normalizedAddress = this._normalizeAddress(address);
     const requestId = ++this._accessRequestId;
-    const previousAccess = this._access;
-    const preserveConfirmedAccess = !!(
-      connected &&
-      normalizedAddress &&
-      previousAccess?.connected &&
-      previousAccess?.address === normalizedAddress &&
-      (previousAccess?.isAdmin || previousAccess?.isMultisig)
+    const previousAccessByContract = this._accessByContract;
+
+    this._accessByContract = Object.fromEntries(
+      CONTRACT_KEYS.map((key) => {
+        const previousAccess = previousAccessByContract[key] || this._emptyAccessState();
+        const preserveConfirmedAccess = !!(
+          connected &&
+          normalizedAddress &&
+          previousAccess?.connected &&
+          previousAccess?.address === normalizedAddress &&
+          (previousAccess?.isAdmin || previousAccess?.isMultisig)
+        );
+
+        return [
+          key,
+          this._emptyAccessState({
+            connected,
+            address: normalizedAddress || address,
+            owner: preserveConfirmedAccess ? previousAccess.owner : null,
+            isAdmin: preserveConfirmedAccess ? !!previousAccess.isAdmin : false,
+            isMultisig: preserveConfirmedAccess ? !!previousAccess.isMultisig : false,
+            loading: !!(connected && normalizedAddress),
+            error: connected && address && !normalizedAddress ? 'Invalid connected address' : null,
+          }),
+        ];
+      })
     );
 
-    this._access = {
-      connected,
-      address: normalizedAddress || address,
-      owner: preserveConfirmedAccess ? previousAccess.owner : null,
-      isAdmin: preserveConfirmedAccess ? !!previousAccess.isAdmin : false,
-      isMultisig: preserveConfirmedAccess ? !!previousAccess.isMultisig : false,
-      loading: !!(connected && normalizedAddress),
-      ownerError: null,
-      signerError: null,
-      error: connected && address && !normalizedAddress ? 'Invalid connected address' : null,
-    };
-
+    this._syncSelectedContractFromAvailableAccess();
     this._updateTabVisibility();
+    this._renderContractSwitch();
     this._renderAccessSummary();
-    this._syncOperationTypeFields();
+    this._syncOperationSelectors();
 
     if (!connected || !normalizedAddress) return;
 
     try {
-      const nextAccess = await window.contractManager?.getAccessState?.(normalizedAddress);
+      const results = await Promise.all(
+        CONTRACT_KEYS.map(async (key) => [
+          key,
+          await window.contractManager?.getAccessState?.(normalizedAddress, key),
+        ])
+      );
       if (requestId !== this._accessRequestId) return;
 
-      this._access = {
-        connected,
-        address: normalizedAddress,
-        owner: nextAccess?.owner || null,
-        isAdmin: !!nextAccess?.isOwner,
-        isMultisig: !!nextAccess?.isSigner,
-        loading: false,
-        ownerError: nextAccess?.ownerError || null,
-        signerError: nextAccess?.signerError || null,
-        error: nextAccess?.error || null,
-      };
+      this._accessByContract = Object.fromEntries(
+        results.map(([key, nextAccess]) => [
+          key,
+          this._emptyAccessState({
+            connected,
+            address: normalizedAddress,
+            owner: nextAccess?.owner || null,
+            isAdmin: !!nextAccess?.isOwner,
+            isMultisig: !!nextAccess?.isSigner,
+            loading: false,
+            ownerError: nextAccess?.ownerError || null,
+            signerError: nextAccess?.signerError || null,
+            error: nextAccess?.error || null,
+          }),
+        ])
+      );
     } catch (error) {
       if (requestId !== this._accessRequestId) return;
 
-      this._access = {
-        connected,
-        address: normalizedAddress,
-        owner: null,
-        isAdmin: false,
-        isMultisig: false,
-        loading: false,
-        ownerError: error?.message || 'Failed to read contract access state.',
-        signerError: error?.message || 'Failed to read contract access state.',
-        error: error?.message || 'Failed to read contract access state.',
-      };
+      this._accessByContract = Object.fromEntries(
+        CONTRACT_KEYS.map((key) => [
+          key,
+          this._emptyAccessState({
+            connected,
+            address: normalizedAddress,
+            loading: false,
+            ownerError: error?.message || 'Failed to read contract access state.',
+            signerError: error?.message || 'Failed to read contract access state.',
+            error: error?.message || 'Failed to read contract access state.',
+          }),
+        ])
+      );
     }
 
+    this._syncSelectedContractFromAvailableAccess();
     this._updateTabVisibility();
+    this._renderContractSwitch();
     this._renderAccessSummary();
+    this._syncOperationSelectors();
     void this._ensureHistoryLoaded();
+  }
+
+  _syncSelectedContractFromAvailableAccess() {
+    const current = this._accessByContract[this._selectedContractKey];
+    const keepCurrent = !!(current && (current.loading || this._hasAdminAccess(this._selectedContractKey)));
+    if (!keepCurrent) {
+      const nextKey = CONTRACT_KEYS.find((key) => {
+        const access = this._accessByContract[key];
+        return access?.loading || this._hasAdminAccess(key);
+      });
+      if (nextKey && nextKey !== this._selectedContractKey) {
+        this._selectedContractKey = nextKey;
+        this._resetHistoryState();
+      }
+    }
+
+    this._access = this._accessByContract[this._selectedContractKey] || this._emptyAccessState();
   }
 
   _updateTabVisibility() {
     if (!this.tabButton) return;
-    const allowed = this._hasAdminAccess();
+    const allowed = this._hasAnyAdminAccess();
 
     this.tabButton.hidden = !allowed;
     this.tabButton.setAttribute('aria-hidden', allowed ? 'false' : 'true');
-    this.tabButton.tabIndex = allowed ? -1 : -1;
+    this.tabButton.tabIndex = -1;
 
-    if (!allowed && !this._access.loading && (window.location.hash || '') === '#operations') {
+    if (!allowed && !this._isAnyAccessLoading() && (window.location.hash || '') === '#operations') {
       window.location.hash = '#bridge';
+    }
+  }
+
+  _renderContractSwitch() {
+    const helper = this.panel?.querySelector('[data-ops-contract-helper]');
+    if (helper) {
+      helper.textContent = 'Choose which contract to administer.';
+    }
+
+    const currentAddress = this._normalizeAddress(this._access.address) || null;
+    for (const key of CONTRACT_KEYS) {
+      const button = this.panel?.querySelector(`[data-ops-contract-tab="${key}"]`);
+      if (!(button instanceof HTMLButtonElement)) continue;
+
+      const isActive = key === this._selectedContractKey;
+      const access = this._accessByContract[key] || this._emptyAccessState();
+      const suffix = access.loading
+        ? 'Checking...'
+        : access.isAdmin && access.isMultisig
+          ? 'Owner + Multisig'
+          : access.isAdmin
+            ? 'Owner'
+            : access.isMultisig
+              ? 'Multisig'
+              : currentAddress
+                ? 'No access'
+                : 'Connect wallet';
+
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      button.textContent = `${getContractMetadata(key).shortLabel} · ${suffix}`;
     }
   }
 
   _renderAccessSummary() {
     const statusEl = this.panel?.querySelector('[data-ops-status]');
+    const contractLabelEl = this.panel?.querySelector('[data-ops-contract-label]');
+    const requiredNetworkEl = this.panel?.querySelector('[data-ops-required-network]');
+    const historyCopyEl = this.panel?.querySelector('[data-ops-history-copy]');
+    const historyIntroEl = this.panel?.querySelector('[data-ops-history-intro]');
+    const actionsTitleEl = this.panel?.querySelector('[data-ops-actions-title]');
     const addressEl = this.panel?.querySelector('[data-ops-address]');
     const copyBtn = this.panel?.querySelector('[data-ops-copy][data-copy-value]');
     const roleEl = this.panel?.querySelector('[data-ops-role]');
@@ -220,15 +339,25 @@ export class OperationsTab {
     const ownerEl = this.panel?.querySelector('[data-ops-owner]');
     const ownerCopyBtn = ownerEl?.closest('.param-address')?.querySelector('[data-ops-copy][data-copy-value]');
     const isSignerEl = this.panel?.querySelector('[data-ops-is-signer]');
+    const adminSection = this.panel?.querySelector('[data-ops-admin-section]');
+    const historySection = this.panel?.querySelector('[data-ops-history-section]');
+    const ownershipSection = this.panel?.querySelector('[data-ops-ownership-section]');
 
+    const metadata = this._selectedMetadata();
+    const requiredNetworkName = this._requiredNetworkName();
     const address = this._normalizeAddress(this._access.address) || null;
+    const ownerAddress = this._normalizeAddress(this._access.owner) || null;
+    const txEnabled = !!window.networkManager?.isTxEnabledFor?.(this._selectedContractKey);
+
+    if (contractLabelEl) contractLabelEl.textContent = metadata.label;
+    if (requiredNetworkEl) requiredNetworkEl.textContent = requiredNetworkName;
+    if (historyCopyEl) historyCopyEl.textContent = `Paste a ${metadata.contractLabel.toLowerCase()} operation ID or select one below to review it.`;
+    if (historyIntroEl) historyIntroEl.textContent = `Loaded from the ${metadata.label.toLowerCase()}'s current on-chain operation storage.`;
+    if (actionsTitleEl) actionsTitleEl.textContent = `${metadata.label} Actions`;
     if (addressEl) addressEl.textContent = address || '--';
     if (copyBtn) copyBtn.setAttribute('data-copy-value', address || '');
-
-    const txEnabled = !!window.networkManager?.isTxEnabled?.();
     if (txEnabledEl) txEnabledEl.textContent = txEnabled ? 'Yes' : 'No';
 
-    const ownerAddress = this._normalizeAddress(this._access.owner) || null;
     if (ownerEl) {
       ownerEl.textContent = this._access.loading
         ? 'Checking...'
@@ -265,28 +394,26 @@ export class OperationsTab {
     if (roleEl) roleEl.textContent = role;
 
     const hasAccess = this._hasAdminAccess();
-    const adminSection = this.panel?.querySelector('[data-ops-admin-section]');
-    const historySection = this.panel?.querySelector('[data-ops-history-section]');
     if (adminSection) adminSection.hidden = !hasAccess;
     if (historySection) historySection.hidden = !hasAccess;
-    this._syncSignButtonVisibility();
-    const ownershipSection = this.panel?.querySelector('[data-ops-ownership-section]');
     if (ownershipSection) ownershipSection.hidden = !(this._access.connected && this._access.isAdmin);
+
+    this._syncSignButtonVisibility();
 
     if (statusEl) {
       const partialStatus = this._partialAccessStatusMessage();
       if (!this._access.connected) {
         statusEl.textContent = 'Connect a wallet to check access.';
       } else if (this._access.loading) {
-        statusEl.textContent = 'Checking wallet access against the Vault.';
+        statusEl.textContent = `Checking wallet access against ${metadata.label}.`;
       } else if (partialStatus) {
         statusEl.textContent = partialStatus;
       } else if (this._access.error) {
-        statusEl.textContent = `Unable to read Vault access state: ${this._access.error}`;
+        statusEl.textContent = `Unable to read ${metadata.label} access state: ${this._access.error}`;
       } else if (!this._access.isAdmin && !this._access.isMultisig) {
-        statusEl.textContent = 'Connected wallet is not allowed to access Admin.';
+        statusEl.textContent = `Connected wallet is not allowed to access ${metadata.label} Admin.`;
       } else if (!txEnabled) {
-        statusEl.textContent = `Connected on the wrong network. Transaction actions will prompt a switch to ${this._requiredNetworkName()} when used.`;
+        statusEl.textContent = `Connected on the wrong network. Transaction actions will prompt a switch to ${requiredNetworkName} when used.`;
       } else {
         statusEl.textContent = 'Ready.';
       }
@@ -296,7 +423,7 @@ export class OperationsTab {
   _partialAccessStatusMessage() {
     const ownerUnavailable = !!this._access.ownerError;
     const signerUnavailable = !!this._access.signerError;
-    const wrongNetworkNote = !window.networkManager?.isTxEnabled?.()
+    const wrongNetworkNote = !window.networkManager?.isTxEnabledFor?.(this._selectedContractKey)
       ? ` Transaction actions will prompt a switch to ${this._requiredNetworkName()} when used.`
       : '';
 
@@ -313,6 +440,42 @@ export class OperationsTab {
     }
 
     return null;
+  }
+
+  _syncOperationSelectors() {
+    const typeSelect = this.panel?.querySelector('[data-op-type]');
+    const historyTypeSelect = this.panel?.querySelector('[data-ops-history-filter-type]');
+    const requestedOrder = getRequestOperationTypeOrder(this._selectedContractKey);
+
+    if (typeSelect instanceof HTMLSelectElement) {
+      const previousValue = typeSelect.value;
+      typeSelect.innerHTML = renderOperationOptions(this._selectedContractKey, { order: requestedOrder });
+      const values = new Set(Array.from(typeSelect.options).map((option) => option.value));
+      typeSelect.value = values.has(previousValue) ? previousValue : String(requestedOrder[0] ?? '');
+    }
+
+    if (historyTypeSelect instanceof HTMLSelectElement) {
+      const previousValue = historyTypeSelect.value;
+      historyTypeSelect.innerHTML = renderOperationOptions(this._selectedContractKey, { includeAll: true });
+      const values = new Set(Array.from(historyTypeSelect.options).map((option) => option.value));
+      historyTypeSelect.value = values.has(previousValue) ? previousValue : '';
+    }
+
+    this._syncHistoryFilters();
+    this._syncOperationTypeFields();
+  }
+
+  _resetHistoryState() {
+    this._historyEvents = [];
+    this._historyActiveCount = 0;
+    this._historyLoaded = false;
+    this._historyLoading = false;
+    this._historyError = null;
+    this._historyVisibleCount = this.historyPageSize;
+    this._lastOperationId = null;
+    this._selectedOperation = null;
+    this._renderRequestResult({ operationId: null, txHash: null });
+    this._closeOperationModal();
   }
 
   _syncHistoryFilters() {
@@ -343,10 +506,9 @@ export class OperationsTab {
     this._renderRequestedOperations();
 
     try {
-      const result = await this._getOperationsService().load();
+      const result = await this._getOperationsService().load(this._selectedContractKey);
       this._historyEvents = Array.isArray(result?.items) ? result.items : [];
       this._historyActiveCount = Number.isFinite(result?.activeCount) ? result.activeCount : this._historyEvents.length;
-      this._historyError = null;
       this._historyLoaded = true;
       this._historyVisibleCount = Math.max(this._historyVisibleCount, this.historyPageSize);
       this._renderRequestedOperations();
@@ -357,6 +519,7 @@ export class OperationsTab {
         error,
         title: errorState.title,
         detail: errorState.detail,
+        contractKey: this._selectedContractKey,
       });
       window.toastManager?.error?.('Failed to load requested operations', {
         message: errorState.detail,
@@ -366,9 +529,7 @@ export class OperationsTab {
     } finally {
       this._historyLoading = false;
       this._setHistoryLoading(false);
-      if (this._historyError) {
-        this._renderRequestedOperations();
-      }
+      if (this._historyError) this._renderRequestedOperations();
     }
   }
 
@@ -457,7 +618,11 @@ export class OperationsTab {
       `;
     }
 
-    const helpers = this._vaultOperationDisplayHelpers();
+    const helpers = this._operationDisplayHelpers();
+    const requestedAt = this._formatOperationCreatedAt(event);
+    const requestedAtMarkup = requestedAt === '--'
+      ? ''
+      : `<div class="proposal-meta ops-history-timestamp">Requested ${escapeHtml(requestedAt)}</div>`;
     return `
       <button type="button" class="proposal-row ${statusClass}${selectedClass}" data-ops-history-row="${escapeHtml(event.operationId)}">
         <div class="proposal-row-main">
@@ -466,10 +631,11 @@ export class OperationsTab {
             <div class="proposal-status">${escapeHtml(status)}</div>
           </div>
           <div class="proposal-row-bottom">
-            <div class="proposal-meta">${escapeHtml(getVaultOperationTypeLabel(event.opType))}${this._renderHistoryDeadlineMeta(event)}</div>
+            <div class="proposal-meta">${escapeHtml(getOperationTypeLabel(this._selectedContractKey, event.opType))}${this._renderHistoryDeadlineMeta(event)}</div>
             <div class="proposal-sigs">${escapeHtml(this._historySignatureLabel(event))}</div>
           </div>
-          <div class="ops-history-summary">${escapeHtml(buildVaultOperationSummary(event, helpers))}</div>
+          <div class="ops-history-summary">${escapeHtml(buildOperationSummary(this._selectedContractKey, event, helpers))}</div>
+          ${requestedAtMarkup}
         </div>
       </button>
     `;
@@ -492,10 +658,16 @@ export class OperationsTab {
       if (el) el.hidden = !on;
     };
 
-    show('amount', opType === 0);
-    show('enabled', opType === 2);
-    show('oldSigner', opType === 1);
-    show('newSigner', opType === 1);
+    show('amount', this._selectedContractKey === 'source' && opType === 0);
+    show('enabled', this._selectedContractKey === 'source' && opType === 2);
+    show('destBridgeInCaller', this._selectedContractKey === 'destination' && opType === 0);
+    show('destBridgeInAmount', this._selectedContractKey === 'destination' && opType === 1);
+    show('destBridgeInCooldown', this._selectedContractKey === 'destination' && opType === 1);
+    show('destBridgeInEnabled', this._selectedContractKey === 'destination' && opType === 3);
+    show('destBridgeOutEnabled', this._selectedContractKey === 'destination' && opType === 4);
+    show('destMinBridgeOutAmount', this._selectedContractKey === 'destination' && opType === 5);
+    show('oldSigner', (this._selectedContractKey === 'source' && opType === 1) || (this._selectedContractKey === 'destination' && opType === 2));
+    show('newSigner', (this._selectedContractKey === 'source' && opType === 1) || (this._selectedContractKey === 'destination' && opType === 2));
   }
 
   async _onChange(event) {
@@ -533,6 +705,12 @@ export class OperationsTab {
 
     if (target.closest('[data-ops-close-operation]')) {
       this._closeOperationModal();
+      return;
+    }
+
+    const contractTab = target.closest('[data-ops-contract-tab]');
+    if (contractTab) {
+      await this._selectContract(contractTab.getAttribute('data-ops-contract-tab'));
       return;
     }
 
@@ -596,6 +774,22 @@ export class OperationsTab {
     }
   }
 
+  async _selectContract(contractKey) {
+    const nextKey = normalizeContractKey(contractKey);
+    if (nextKey === this._selectedContractKey) return;
+
+    this._selectedContractKey = nextKey;
+    this._access = this._accessByContract[nextKey] || this._emptyAccessState();
+    this._resetHistoryState();
+    this._renderContractSwitch();
+    this._renderAccessSummary();
+    this._syncOperationSelectors();
+
+    if (this._isActive && this._hasAdminAccess()) {
+      await this._refreshRequestedOperations().catch(() => {});
+    }
+  }
+
   async _requestOperation() {
     if (!this._access.connected || !(this._access.isAdmin || this._access.isMultisig)) return;
 
@@ -606,45 +800,9 @@ export class OperationsTab {
       return;
     }
 
-    const ethers = window.ethers;
-    const utils = ethers?.utils;
-    const AddressZero = ethers?.constants?.AddressZero || '0x0000000000000000000000000000000000000000';
-
-    let target = AddressZero;
-    let value = ethers?.constants?.Zero || 0;
-    let data = '0x';
-
+    let payload = null;
     try {
-      if (opType === 0) {
-        const amountInput = this.panel?.querySelector('[data-op-amount]');
-        const amountStr = amountInput instanceof HTMLInputElement ? amountInput.value.trim() : '';
-        if (!amountStr) throw new Error('Enter a max bridge out amount.');
-        if (!utils?.parseUnits) throw new Error('Ethers utils unavailable.');
-        value = utils.parseUnits(amountStr, this._tokenDecimals());
-      } else if (opType === 2) {
-        const enabledSelect = this.panel?.querySelector('[data-op-enabled]');
-        const enabled = enabledSelect instanceof HTMLSelectElement ? enabledSelect.value === 'true' : null;
-        if (enabled == null) throw new Error('Select enabled/disabled.');
-        if (!utils?.defaultAbiCoder?.encode) throw new Error('Ethers encoder unavailable.');
-        data = utils.defaultAbiCoder.encode(['bool'], [enabled]);
-      } else if (opType === 1) {
-        const oldInput = this.panel?.querySelector('[data-op-old-signer]');
-        const newInput = this.panel?.querySelector('[data-op-new-signer]');
-        const oldSigner = oldInput instanceof HTMLInputElement ? oldInput.value.trim() : '';
-        const newSigner = newInput instanceof HTMLInputElement ? newInput.value.trim() : '';
-        const oldAddr = this._normalizeAddress(oldSigner);
-        const newAddr = this._normalizeAddress(newSigner);
-        if (!oldAddr) throw new Error('Invalid old signer address.');
-        if (!newAddr) throw new Error('Invalid new signer address.');
-        target = oldAddr;
-        value = ethers.BigNumber.from(newAddr);
-      } else if (opType === 3) {
-        target = AddressZero;
-        value = 0;
-        data = '0x';
-      } else {
-        throw new Error('Unknown operation type.');
-      }
+      payload = this._buildRequestOperationPayload(opType);
     } catch (error) {
       window.toastManager?.error?.(error?.message || 'Invalid operation parameters.');
       return;
@@ -656,17 +814,17 @@ export class OperationsTab {
       const switchResult = await this._ensureRequiredNetworkForAction(actionToastId);
       toastId = switchResult.toastId || null;
 
-      const contract = window.contractManager?.getWriteContract?.();
+      const contract = window.contractManager?.getWriteContract?.(this._selectedContractKey);
       if (!contract) throw new Error(`Connect a wallet on ${this._requiredNetworkName()} to request operations.`);
 
       toastId = this._showActionLoadingToast({
         toastId: toastId || actionToastId,
         message: 'Submitting request...',
       });
-      const tx = await contract.requestOperation(opType, target, value, data);
+      const tx = await contract.requestOperation(opType, payload.target, payload.value, payload.data);
       const receipt = await tx.wait?.();
 
-      const opId = receipt?.events?.find?.((e) => e?.event === 'OperationRequested')?.args?.operationId || null;
+      const opId = receipt?.events?.find?.((entry) => entry?.event === 'OperationRequested')?.args?.operationId || null;
       const operationId = opId ? String(opId) : null;
       this._lastOperationId = operationId;
 
@@ -675,15 +833,14 @@ export class OperationsTab {
         txHash: tx?.hash ? String(tx.hash) : null,
       });
 
-      const explorer = window.CONFIG?.BRIDGE?.CHAINS?.SOURCE?.BLOCK_EXPLORER || '';
+      const explorer = this._selectedNetworkConfig()?.BLOCK_EXPLORER || '';
       const link = tx?.hash && explorer ? `${explorer.replace(/\/$/, '')}/tx/${tx.hash}` : '';
-
       const message = link
         ? `Request submitted. <a href="${link}" target="_blank">View transaction</a>`
         : 'Request submitted.';
       this._showActionToast({ toastId, type: 'success', title: 'Done', message, timeoutMs: 3500, dismissible: true, allowHtml: true });
 
-      await window.contractManager?.refreshStatus?.({ reason: 'operationRequested' }).catch(() => {});
+      await window.contractManager?.refreshStatus?.({ key: this._selectedContractKey, reason: 'operationRequested' }).catch(() => {});
       await this._refreshRequestedOperations();
       if (operationId) {
         const input = this.panel?.querySelector('[data-ops-operation-id]');
@@ -697,6 +854,96 @@ export class OperationsTab {
       const msg = this._actionErrorMessage(error, 'Request failed.');
       this._showActionToast({ toastId, type: 'error', title: 'Error', message: msg, timeoutMs: 0, dismissible: true });
     }
+  }
+
+  _buildRequestOperationPayload(opType) {
+    const ethers = window.ethers;
+    const utils = ethers?.utils;
+    const AddressZero = ethers?.constants?.AddressZero || '0x0000000000000000000000000000000000000000';
+    let target = AddressZero;
+    let value = ethers?.constants?.Zero || 0;
+    let data = '0x';
+
+    if (this._selectedContractKey === 'destination') {
+      if (opType === 0) {
+        const input = this.panel?.querySelector('[data-op-dest-bridge-in-caller]');
+        const address = input instanceof HTMLInputElement ? input.value.trim() : '';
+        const normalized = this._normalizeAddress(address);
+        if (!normalized) throw new Error('Invalid bridge in caller address.');
+        target = normalized;
+      } else if (opType === 1) {
+        const amountInput = this.panel?.querySelector('[data-op-dest-bridge-in-amount]');
+        const cooldownInput = this.panel?.querySelector('[data-op-dest-bridge-in-cooldown]');
+        const amountStr = amountInput instanceof HTMLInputElement ? amountInput.value.trim() : '';
+        const cooldownStr = cooldownInput instanceof HTMLInputElement ? cooldownInput.value.trim() : '';
+        if (!amountStr) throw new Error('Enter a max bridge in amount.');
+        if (!cooldownStr) throw new Error('Enter a bridge in cooldown.');
+        if (!utils?.parseUnits || !utils?.defaultAbiCoder?.encode) throw new Error('Ethers utils unavailable.');
+        const cooldown = BigInt(cooldownStr);
+        if (cooldown <= 0n) throw new Error('Bridge in cooldown must be greater than zero.');
+        value = utils.parseUnits(amountStr, this._tokenDecimals());
+        data = utils.defaultAbiCoder.encode(['uint256'], [cooldown.toString()]);
+      } else if (opType === 2) {
+        ({ target, value } = this._buildUpdateSignerPayload());
+      } else if (opType === 3) {
+        data = this._encodeBooleanSelection('[data-op-dest-bridge-in-enabled]');
+      } else if (opType === 4) {
+        data = this._encodeBooleanSelection('[data-op-dest-bridge-out-enabled]');
+      } else if (opType === 5) {
+        const amountInput = this.panel?.querySelector('[data-op-dest-min-bridge-out-amount]');
+        const amountStr = amountInput instanceof HTMLInputElement ? amountInput.value.trim() : '';
+        if (!amountStr) throw new Error('Enter a min bridge out amount.');
+        if (!utils?.parseUnits) throw new Error('Ethers utils unavailable.');
+        value = utils.parseUnits(amountStr, this._tokenDecimals());
+      } else {
+        throw new Error('Unknown operation type.');
+      }
+
+      return { target, value, data };
+    }
+
+    if (opType === 0) {
+      const amountInput = this.panel?.querySelector('[data-op-amount]');
+      const amountStr = amountInput instanceof HTMLInputElement ? amountInput.value.trim() : '';
+      if (!amountStr) throw new Error('Enter a max bridge out amount.');
+      if (!utils?.parseUnits) throw new Error('Ethers utils unavailable.');
+      value = utils.parseUnits(amountStr, this._tokenDecimals());
+    } else if (opType === 1) {
+      ({ target, value } = this._buildUpdateSignerPayload());
+    } else if (opType === 2) {
+      data = this._encodeBooleanSelection('[data-op-enabled]');
+    } else if (opType === 3) {
+      target = AddressZero;
+      value = 0;
+      data = '0x';
+    } else {
+      throw new Error('Unknown operation type.');
+    }
+
+    return { target, value, data };
+  }
+
+  _buildUpdateSignerPayload() {
+    const oldInput = this.panel?.querySelector('[data-op-old-signer]');
+    const newInput = this.panel?.querySelector('[data-op-new-signer]');
+    const oldSigner = oldInput instanceof HTMLInputElement ? oldInput.value.trim() : '';
+    const newSigner = newInput instanceof HTMLInputElement ? newInput.value.trim() : '';
+    const oldAddr = this._normalizeAddress(oldSigner);
+    const newAddr = this._normalizeAddress(newSigner);
+    if (!oldAddr) throw new Error('Invalid old signer address.');
+    if (!newAddr) throw new Error('Invalid new signer address.');
+    return {
+      target: oldAddr,
+      value: window.ethers.BigNumber.from(newAddr),
+    };
+  }
+
+  _encodeBooleanSelection(selector) {
+    const enabledSelect = this.panel?.querySelector(selector);
+    const enabled = enabledSelect instanceof HTMLSelectElement ? enabledSelect.value === 'true' : null;
+    if (enabled == null) throw new Error('Select enabled/disabled.');
+    if (!window.ethers?.utils?.defaultAbiCoder?.encode) throw new Error('Ethers encoder unavailable.');
+    return window.ethers.utils.defaultAbiCoder.encode(['bool'], [enabled]);
   }
 
   async _transferOwnership() {
@@ -716,7 +963,7 @@ export class OperationsTab {
       const switchResult = await this._ensureRequiredNetworkForAction(actionToastId);
       toastId = switchResult.toastId || null;
 
-      const contract = window.contractManager?.getWriteContract?.();
+      const contract = window.contractManager?.getWriteContract?.(this._selectedContractKey);
       if (!contract) throw new Error(`Connect a wallet on ${this._requiredNetworkName()} to transfer ownership.`);
 
       toastId = this._showActionLoadingToast({
@@ -726,14 +973,15 @@ export class OperationsTab {
       const tx = await contract.transferOwnership(normalized);
       await tx.wait?.();
 
-      const explorer = window.CONFIG?.BRIDGE?.CHAINS?.SOURCE?.BLOCK_EXPLORER || '';
+      const explorer = this._selectedNetworkConfig()?.BLOCK_EXPLORER || '';
       const link = tx?.hash && explorer ? `${explorer.replace(/\/$/, '')}/tx/${tx.hash}` : '';
       const message = link
         ? `Transfer submitted. <a href="${link}" target="_blank">View transaction</a>`
         : 'Transfer submitted.';
       this._showActionToast({ toastId, type: 'success', title: 'Done', message, timeoutMs: 3500, dismissible: true, allowHtml: true });
 
-      await window.contractManager?.refreshStatus?.({ reason: 'ownershipTransferred' }).catch(() => {});
+      await window.contractManager?.refreshStatus?.({ key: this._selectedContractKey, reason: 'ownershipTransferred' }).catch(() => {});
+      await this._syncAccess().catch(() => {});
     } catch (error) {
       toastId = toastId || error?._actionToastId || actionToastId;
       const msg = this._actionErrorMessage(error, 'Transfer failed.');
@@ -771,7 +1019,7 @@ export class OperationsTab {
       idInput.value = operationId;
     }
 
-    const contract = window.contractManager?.getReadContract?.();
+    const contract = window.contractManager?.getReadContract?.(this._selectedContractKey);
     if (!contract) {
       window.toastManager?.error?.('Contract is not ready.');
       this._isLoadingOperation = false;
@@ -803,7 +1051,7 @@ export class OperationsTab {
     if (!details || !(rowsEl instanceof HTMLElement)) return;
 
     const status = this._historyStatusLabel(item);
-    const typeLabel = getVaultOperationTypeLabel(item.opType);
+    const typeLabel = getOperationTypeLabel(this._selectedContractKey, item.opType);
     const rows = [
       {
         key: 'operationId',
@@ -822,11 +1070,16 @@ export class OperationsTab {
         label: 'Status',
         value: status,
       },
-      ...buildVaultOperationDetailRows(item, this._vaultOperationDisplayHelpers()),
+      ...buildOperationDetailRows(this._selectedContractKey, item, this._operationDisplayHelpers()),
       {
         key: 'signatures',
         label: 'Signatures',
         value: this._historySignatureLabel(item),
+      },
+      {
+        key: 'requestedAt',
+        label: 'Requested At',
+        value: this._formatOperationCreatedAt(item),
       },
       {
         key: 'deadline',
@@ -858,10 +1111,12 @@ export class OperationsTab {
     this._renderRequestedOperations();
   }
 
-  _vaultOperationDisplayHelpers() {
+  _operationDisplayHelpers() {
     return {
       decodeBoolData: (data) => this._decodeBoolData(data),
+      decodeUint256Data: (data) => this._decodeUint256Data(data),
       formatOperationDataDisplay: (data) => this._formatOperationDataDisplay(data),
+      formatSeconds: (seconds) => this._formatSeconds(seconds),
       formatTokenAmount: (value) => this._formatTokenAmount(value),
       isZeroAddress: (value) => this._isZeroAddress(value),
       normalizeAddress: (value) => this._normalizeAddress(value),
@@ -924,7 +1179,7 @@ export class OperationsTab {
   _canOwnerSignSelectedOperation() {
     if (!this._access.connected || !this._access.isAdmin || this._access.isMultisig) return false;
     if (!this._selectedOperation) return false;
-    return isOwnerSignableVaultOperationType(this._selectedOperation.opType);
+    return isOwnerSignableOperationType(this._selectedContractKey, this._selectedOperation.opType);
   }
 
   _canCurrentUserSignOperation() {
@@ -953,7 +1208,7 @@ export class OperationsTab {
 
   _historySignatureLabel(item) {
     const count = Number.isFinite(item?.numSignatures) ? Number(item.numSignatures) : null;
-    const required = Number(window.contractManager?.getStatusSnapshot?.()?.requiredSignatures || 3) || 3;
+    const required = Number(window.contractManager?.getStatusSnapshot?.(this._selectedContractKey)?.requiredSignatures || 3) || 3;
     return count == null ? `--/${required}` : `${count}/${required}`;
   }
 
@@ -964,14 +1219,45 @@ export class OperationsTab {
     return ` | ${this._formatDeadlineRelative(deadline, item?.expired === true)}`;
   }
 
+  _getOperationCreatedAt(item) {
+    if (item?.state === 'unavailable') return null;
+
+    const deadline = Number(item?.deadline || 0);
+    const operationDeadlineSeconds = Number(this._selectedStatusSnapshot()?.operationDeadlineSeconds || 0);
+    if (!Number.isFinite(deadline) || deadline <= 0) return null;
+    if (!Number.isFinite(operationDeadlineSeconds) || operationDeadlineSeconds <= 0) return null;
+
+    const createdAt = deadline - operationDeadlineSeconds;
+    return Number.isFinite(createdAt) && createdAt > 0 ? createdAt : null;
+  }
+
+  _formatOperationCreatedAt(item) {
+    const createdAt = this._getOperationCreatedAt(item);
+    return createdAt ? this._formatUnix(createdAt) : '--';
+  }
+
   _formatUnix(seconds) {
     const ms = Number(seconds) * 1000;
     if (!Number.isFinite(ms) || ms <= 0) return '--';
     try {
-      return new Date(ms).toLocaleString();
+      return new Date(ms).toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      });
     } catch {
       return String(seconds);
     }
+  }
+
+  _formatSeconds(seconds) {
+    const total = Number(seconds);
+    if (!Number.isFinite(total) || total < 0) return '--';
+    if (total === 0) return '0s';
+    const mins = Math.floor(total / 60);
+    const secs = total % 60;
+    if (mins && secs) return `${mins}m ${secs}s`;
+    if (mins) return `${mins}m`;
+    return `${secs}s`;
   }
 
   _formatDeadlineRelative(unixSeconds, expired = false) {
@@ -1038,8 +1324,8 @@ export class OperationsTab {
       const switchResult = await this._ensureRequiredNetworkForAction(actionToastId);
       toastId = switchResult.toastId || null;
 
-      const contractRead = window.contractManager?.getReadContract?.();
-      const contractWrite = window.contractManager?.getWriteContract?.();
+      const contractRead = window.contractManager?.getReadContract?.(this._selectedContractKey);
+      const contractWrite = window.contractManager?.getWriteContract?.(this._selectedContractKey);
       const signer = window.walletManager?.getSigner?.();
       if (!contractRead || !contractWrite || !signer) {
         throw new Error(`Connect a wallet on ${this._requiredNetworkName()} to submit signatures.`);
@@ -1054,14 +1340,14 @@ export class OperationsTab {
       const tx = await contractWrite.submitSignature(operationId, signature);
       await tx.wait?.();
 
-      const explorer = window.CONFIG?.BRIDGE?.CHAINS?.SOURCE?.BLOCK_EXPLORER || '';
+      const explorer = this._selectedNetworkConfig()?.BLOCK_EXPLORER || '';
       const link = tx?.hash && explorer ? `${explorer.replace(/\/$/, '')}/tx/${tx.hash}` : '';
       const message = link
         ? `Signature submitted. <a href="${link}" target="_blank">View transaction</a>`
         : 'Signature submitted.';
       this._showActionToast({ toastId, type: 'success', title: 'Done', message, timeoutMs: 3500, dismissible: true, allowHtml: true });
 
-      await window.contractManager?.refreshStatus?.({ reason: 'signatureSubmitted' }).catch(() => {});
+      await window.contractManager?.refreshStatus?.({ key: this._selectedContractKey, reason: 'signatureSubmitted' }).catch(() => {});
       await this._refreshRequestedOperations();
       await this._loadOperationDetails().catch(() => {});
     } catch (error) {
@@ -1072,7 +1358,7 @@ export class OperationsTab {
   }
 
   async _ensureRequiredNetworkForAction(toastId) {
-    if (window.networkManager?.isOnRequiredNetwork?.()) {
+    if (window.networkManager?.isOnNetwork?.(this._selectedContractKey)) {
       return { switched: false, toastId: null };
     }
 
@@ -1086,8 +1372,8 @@ export class OperationsTab {
     });
 
     try {
-      const result = await window.networkManager?.ensureRequiredNetwork?.();
-      await window.contractManager?.refreshStatus?.({ reason: 'requiredNetworkEnsured' }).catch(() => {});
+      const result = await window.networkManager?.ensureNetwork?.(this._selectedContractKey);
+      await window.contractManager?.refreshStatus?.({ key: this._selectedContractKey, reason: 'requiredNetworkEnsured' }).catch(() => {});
       await this._syncAccess().catch(() => {});
       return { switched: !!result?.switched, toastId: activeToastId };
     } catch (error) {
@@ -1100,7 +1386,7 @@ export class OperationsTab {
   }
 
   _requiredNetworkName() {
-    return window.CONFIG?.BRIDGE?.CHAINS?.SOURCE?.NAME || 'the required network';
+    return this._selectedNetworkConfig()?.NAME || 'the required network';
   }
 
   _showActionLoadingToast({ toastId = null, message }) {
@@ -1206,6 +1492,16 @@ export class OperationsTab {
     if (/^0{63}1$/.test(body)) return true;
     if (/^0{64}$/.test(body)) return false;
     return null;
+  }
+
+  _decodeUint256Data(data) {
+    const normalized = String(data || '').trim().toLowerCase();
+    if (!/^0x[0-9a-f]+$/.test(normalized)) return null;
+    try {
+      return BigInt(normalized).toString();
+    } catch {
+      return null;
+    }
   }
 
   _formatOperationDataDisplay(data) {
