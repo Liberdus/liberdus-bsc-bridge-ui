@@ -44,4 +44,96 @@ describe('InfoTab read warning toasts', () => {
       { timeoutMs: 4000 }
     );
   });
+
+  it('shows -- for destination cooldown when the destination snapshot is degraded', () => {
+    const tab = new InfoTab();
+    tab.load();
+
+    tab.render({
+      source: {
+        configuredNetworkName: 'Polygon Amoy',
+        configuredAddress: '0x1111111111111111111111111111111111111111',
+        owner: null,
+        onChainId: null,
+        onChainChainId: null,
+        bridgeOutEnabled: null,
+        token: null,
+        halted: null,
+        maxBridgeOutAmount: null,
+        vaultBalance: null,
+        requiredSignatures: null,
+        signers: [],
+        operationDeadlineSeconds: null,
+      },
+      destination: {
+        configuredNetworkName: 'BNB Testnet',
+        configuredAddress: '0x2222222222222222222222222222222222222222',
+        owner: null,
+        onChainId: null,
+        onChainChainId: null,
+        bridgeOutEnabled: null,
+        bridgeInCaller: null,
+        bridgeInEnabled: null,
+        maxBridgeInAmount: null,
+        bridgeInCooldown: 0,
+        minBridgeOutAmount: null,
+        lastBridgeInTime: null,
+        symbol: null,
+        totalSupply: null,
+        requiredSignatures: null,
+        signers: [],
+        operationDeadlineSeconds: null,
+        error: 'Destination contract unavailable',
+        errors: {},
+      },
+    });
+
+    expect(document.querySelector('[data-info-field="destination:bridge-in-cooldown"]').textContent).toBe('--');
+  });
+
+  it('still shows 0s for destination cooldown when the snapshot is healthy', () => {
+    const tab = new InfoTab();
+    tab.load();
+
+    tab.render({
+      source: {
+        configuredNetworkName: 'Polygon Amoy',
+        configuredAddress: '0x1111111111111111111111111111111111111111',
+        owner: null,
+        onChainId: null,
+        onChainChainId: null,
+        bridgeOutEnabled: null,
+        token: null,
+        halted: null,
+        maxBridgeOutAmount: null,
+        vaultBalance: null,
+        requiredSignatures: null,
+        signers: [],
+        operationDeadlineSeconds: null,
+      },
+      destination: {
+        configuredNetworkName: 'BNB Testnet',
+        configuredAddress: '0x2222222222222222222222222222222222222222',
+        owner: null,
+        onChainId: null,
+        onChainChainId: null,
+        bridgeOutEnabled: true,
+        bridgeInCaller: '0x3333333333333333333333333333333333333333',
+        bridgeInEnabled: true,
+        maxBridgeInAmount: '1000000000000000000',
+        bridgeInCooldown: 0,
+        minBridgeOutAmount: '1000000000000000',
+        lastBridgeInTime: null,
+        symbol: 'LIB',
+        totalSupply: '1000000000000000000',
+        requiredSignatures: 2,
+        signers: ['0x4444444444444444444444444444444444444444'],
+        operationDeadlineSeconds: 259200,
+        error: null,
+        errors: {},
+      },
+    });
+
+    expect(document.querySelector('[data-info-field="destination:bridge-in-cooldown"]').textContent).toBe('0s');
+  });
 });

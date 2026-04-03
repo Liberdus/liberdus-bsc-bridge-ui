@@ -97,7 +97,14 @@ export class InfoTab {
       this._renderAddress(contractKey, 'bridge-in-caller', snapshot.bridgeInCaller || '--');
       this._setText(contractKey, 'bridge-in-enabled', this._boolLabel(snapshot.bridgeInEnabled));
       this._setText(contractKey, 'max-bridge-in', this._formatTokenAmount(snapshot.maxBridgeInAmount));
-      this._setText(contractKey, 'bridge-in-cooldown', this._formatSeconds(snapshot.bridgeInCooldown));
+      this._setText(
+        contractKey,
+        'bridge-in-cooldown',
+        this._formatSnapshotSeconds(snapshot.bridgeInCooldown, {
+          snapshotError: snapshot.error,
+          fieldError: snapshot.errors?.bridgeInCooldown,
+        })
+      );
       this._setText(contractKey, 'min-bridge-out', this._formatTokenAmount(snapshot.minBridgeOutAmount));
       this._setText(contractKey, 'last-bridge-in', this._formatUnix(snapshot.lastBridgeInTime));
       this._setText(contractKey, 'token-symbol', this._valueOrDash(snapshot.symbol));
@@ -353,6 +360,15 @@ export class InfoTab {
     if (mins && secs) return `${mins}m ${secs}s`;
     if (mins) return `${mins}m`;
     return `${secs}s`;
+  }
+
+  _formatSnapshotSeconds(seconds, { snapshotError = null, fieldError = null } = {}) {
+    if (fieldError) return '--';
+
+    const n = Number(seconds);
+    if (snapshotError && Number.isFinite(n) && n === 0) return '--';
+
+    return this._formatSeconds(seconds);
   }
 
   _formatUnix(seconds) {
