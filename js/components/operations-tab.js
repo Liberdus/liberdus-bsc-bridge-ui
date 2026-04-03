@@ -1,5 +1,10 @@
 import { RefreshButton } from './refresh-button.js';
 import { renderOperationsTabTemplate } from './operations-tab-template.js';
+import {
+  buildRequestOperationPayload,
+  getRequestOperationVisibleFields,
+  REQUEST_OPERATION_FIELD_NAMES,
+} from './operations-tab-request-definitions.js';
 import { AdminOperationsService } from '../services/admin-operations-service.js';
 import { escapeHtml } from '../utils/helpers.js';
 import { normalizeVaultOperation } from '../utils/vault-operations.js';
@@ -699,21 +704,16 @@ export class OperationsTab {
     if (!(typeSelect instanceof HTMLSelectElement)) return;
 
     const opType = Number(typeSelect.value);
-    const show = (name, on) => {
-      const el = this.panel?.querySelector(`[data-op-field="${name}"]`);
-      if (el) el.hidden = !on;
-    };
+    const visibleFields = new Set(getRequestOperationVisibleFields(this._selectedContractKey, opType));
 
-    show('amount', this._selectedContractKey === 'source' && opType === 0);
-    show('enabled', this._selectedContractKey === 'source' && opType === 2);
-    show('destBridgeInCaller', this._selectedContractKey === 'destination' && opType === 0);
-    show('destBridgeInAmount', this._selectedContractKey === 'destination' && opType === 1);
-    show('destBridgeInCooldown', this._selectedContractKey === 'destination' && opType === 1);
-    show('destBridgeInEnabled', this._selectedContractKey === 'destination' && opType === 3);
-    show('destBridgeOutEnabled', this._selectedContractKey === 'destination' && opType === 4);
-    show('destMinBridgeOutAmount', this._selectedContractKey === 'destination' && opType === 5);
-    show('oldSigner', (this._selectedContractKey === 'source' && opType === 1) || (this._selectedContractKey === 'destination' && opType === 2));
-    show('newSigner', (this._selectedContractKey === 'source' && opType === 1) || (this._selectedContractKey === 'destination' && opType === 2));
+    for (const fieldName of REQUEST_OPERATION_FIELD_NAMES) {
+      this._setRequestFieldVisibility(fieldName, visibleFields.has(fieldName));
+    }
+  }
+
+  _setRequestFieldVisibility(fieldName, isVisible) {
+    const el = this.panel?.querySelector(`[data-op-field="${fieldName}"]`);
+    if (el) el.hidden = !isVisible;
   }
 
   async _onChange(event) {
@@ -855,119 +855,96 @@ export class OperationsTab {
       return;
     }
 
-    const actionToastId = this._nextActionToastId('requestOperation');
-    let toastId = null;
-    try {
-      const switchResult = await this._ensureRequiredNetworkForAction(actionToastId, contractKey);
-      toastId = switchResult.toastId || null;
+    await this._runContractWriteAction({
+      actionKey: 'requestOperation',
+      contractKey,
+      loadingMessage: 'Submitting request...',
+      missingContractMessage: `Connect a wallet on ${this._requiredNetworkName(contractKey)} to request operations.`,
+      refreshReason: 'operationRequested',
+      fallbackErrorMessage: 'Request failed.',
+      successMessage: ({ tx, contractKey: activeContractKey }) => this._buildTxSuccessMessage(activeContractKey, tx?.hash, 'Request submitted.'),
+      execute: async ({ contractWrite }) => {
+        const tx = await contractWrite.requestOperation(opType, payload.target, payload.value, payload.data);
+        return { tx };
+      },
+      onSuccess: async ({ tx, receipt, contractKey: activeContractKey }) => {
+        const operationId = this._extractOperationIdFromReceipt(receipt);
+        if (this._selectedContractKey !== activeContractKey) return;
 
-      const contract = window.contractManager?.getWriteContract?.(contractKey);
-      if (!contract) throw new Error(`Connect a wallet on ${this._requiredNetworkName(contractKey)} to request operations.`);
-
-      toastId = this._showActionLoadingToast({
-        toastId: toastId || actionToastId,
-        message: 'Submitting request...',
-      });
-      const tx = await contract.requestOperation(opType, payload.target, payload.value, payload.data);
-      const receipt = await tx.wait?.();
-
-      const opId = receipt?.events?.find?.((entry) => entry?.event === 'OperationRequested')?.args?.operationId || null;
-      const operationId = opId ? String(opId) : null;
-      const explorer = this._selectedNetworkConfig(contractKey)?.BLOCK_EXPLORER || '';
-      const link = tx?.hash && explorer ? `${explorer.replace(/\/$/, '')}/tx/${tx.hash}` : '';
-      const message = link
-        ? `Request submitted. <a href="${link}" target="_blank">View transaction</a>`
-        : 'Request submitted.';
-      this._showActionToast({ toastId, type: 'success', title: 'Done', message, timeoutMs: 3500, dismissible: true, allowHtml: true });
-
-      await window.contractManager?.refreshStatus?.({ key: contractKey, reason: 'operationRequested' }).catch(() => {});
-      if (this._selectedContractKey === contractKey) {
         this._lastOperationId = operationId;
         this._renderRequestResult({
           operationId,
           txHash: tx?.hash ? String(tx.hash) : null,
         });
         await this._refreshRequestedOperations();
-      }
-      if (operationId && this._selectedContractKey === contractKey) {
+
+        if (!operationId) return;
         const input = this.panel?.querySelector('[data-ops-operation-id]');
         if (input instanceof HTMLInputElement) {
           input.value = operationId;
         }
         await this._loadOperationDetails().catch(() => {});
-      }
-    } catch (error) {
-      toastId = toastId || error?._actionToastId || actionToastId;
-      const msg = this._actionErrorMessage(error, 'Request failed.', contractKey);
-      this._showActionToast({ toastId, type: 'error', title: 'Error', message: msg, timeoutMs: 0, dismissible: true });
-    }
+      },
+    });
   }
 
   _buildRequestOperationPayload(opType, contractKey = this._selectedContractKey) {
-    const ethers = window.ethers;
-    const utils = ethers?.utils;
-    const AddressZero = ethers?.constants?.AddressZero || '0x0000000000000000000000000000000000000000';
-    let target = AddressZero;
-    let value = ethers?.constants?.Zero || 0;
-    let data = '0x';
+    return buildRequestOperationPayload(contractKey, opType, this._buildRequestPayloadContext());
+  }
 
-    if (contractKey === 'destination') {
-      if (opType === 0) {
-        const input = this.panel?.querySelector('[data-op-dest-bridge-in-caller]');
-        const address = input instanceof HTMLInputElement ? input.value.trim() : '';
-        const normalized = this._normalizeAddress(address);
-        if (!normalized) throw new Error('Invalid bridge in caller address.');
-        target = normalized;
-      } else if (opType === 1) {
-        const amountInput = this.panel?.querySelector('[data-op-dest-bridge-in-amount]');
-        const cooldownInput = this.panel?.querySelector('[data-op-dest-bridge-in-cooldown]');
-        const amountStr = amountInput instanceof HTMLInputElement ? amountInput.value.trim() : '';
-        const cooldownStr = cooldownInput instanceof HTMLInputElement ? cooldownInput.value.trim() : '';
-        if (!amountStr) throw new Error('Enter a max bridge in amount.');
-        if (!cooldownStr) throw new Error('Enter a bridge in cooldown.');
-        if (!utils?.parseUnits || !utils?.defaultAbiCoder?.encode) throw new Error('Ethers utils unavailable.');
-        const cooldown = BigInt(cooldownStr);
-        if (cooldown <= 0n) throw new Error('Bridge in cooldown must be greater than zero.');
-        value = utils.parseUnits(amountStr, this._tokenDecimals());
-        data = utils.defaultAbiCoder.encode(['uint256'], [cooldown.toString()]);
-      } else if (opType === 2) {
-        ({ target, value } = this._buildUpdateSignerPayload());
-      } else if (opType === 3) {
-        data = this._encodeBooleanSelection('[data-op-dest-bridge-in-enabled]');
-      } else if (opType === 4) {
-        data = this._encodeBooleanSelection('[data-op-dest-bridge-out-enabled]');
-      } else if (opType === 5) {
-        const amountInput = this.panel?.querySelector('[data-op-dest-min-bridge-out-amount]');
-        const amountStr = amountInput instanceof HTMLInputElement ? amountInput.value.trim() : '';
-        if (!amountStr) throw new Error('Enter a min bridge out amount.');
-        if (!utils?.parseUnits) throw new Error('Ethers utils unavailable.');
-        value = utils.parseUnits(amountStr, this._tokenDecimals());
-      } else {
-        throw new Error('Unknown operation type.');
-      }
+  _buildRequestPayloadContext() {
+    return {
+      AddressZero: window.ethers?.constants?.AddressZero || '0x0000000000000000000000000000000000000000',
+      Zero: window.ethers?.constants?.Zero || 0,
+      buildUpdateSignerPayload: () => this._buildUpdateSignerPayload(),
+      encodeBooleanSelection: (selector) => this._encodeBooleanSelection(selector),
+      encodeUint256: (value, options) => this._encodeUint256(value, options),
+      parseTokenAmount: (value) => this._parseTokenAmount(value),
+      readAddress: (selector, errorMessage) => this._readAddress(selector, errorMessage),
+      requireInputValue: (selector, errorMessage) => this._requireInputValue(selector, errorMessage),
+    };
+  }
 
-      return { target, value, data };
+  _getInputValue(selector) {
+    const input = this.panel?.querySelector(selector);
+    return input instanceof HTMLInputElement || input instanceof HTMLSelectElement ? input.value.trim() : '';
+  }
+
+  _requireInputValue(selector, errorMessage) {
+    const value = this._getInputValue(selector);
+    if (!value) {
+      throw new Error(errorMessage);
+    }
+    return value;
+  }
+
+  _readAddress(selector, errorMessage) {
+    const normalized = this._normalizeAddress(this._getInputValue(selector));
+    if (!normalized) {
+      throw new Error(errorMessage);
+    }
+    return normalized;
+  }
+
+  _parseTokenAmount(value) {
+    if (!window.ethers?.utils?.parseUnits) {
+      throw new Error('Ethers utils unavailable.');
+    }
+    return window.ethers.utils.parseUnits(value, this._tokenDecimals());
+  }
+
+  _encodeUint256(value, { positive = false, positiveMessage = 'Value must be greater than zero.' } = {}) {
+    const coder = window.ethers?.utils?.defaultAbiCoder;
+    if (!coder?.encode) {
+      throw new Error('Ethers utils unavailable.');
     }
 
-    if (opType === 0) {
-      const amountInput = this.panel?.querySelector('[data-op-amount]');
-      const amountStr = amountInput instanceof HTMLInputElement ? amountInput.value.trim() : '';
-      if (!amountStr) throw new Error('Enter a max bridge out amount.');
-      if (!utils?.parseUnits) throw new Error('Ethers utils unavailable.');
-      value = utils.parseUnits(amountStr, this._tokenDecimals());
-    } else if (opType === 1) {
-      ({ target, value } = this._buildUpdateSignerPayload());
-    } else if (opType === 2) {
-      data = this._encodeBooleanSelection('[data-op-enabled]');
-    } else if (opType === 3) {
-      target = AddressZero;
-      value = 0;
-      data = '0x';
-    } else {
-      throw new Error('Unknown operation type.');
+    const parsed = BigInt(value);
+    if (positive && parsed <= 0n) {
+      throw new Error(positiveMessage);
     }
 
-    return { target, value, data };
+    return coder.encode(['uint256'], [parsed.toString()]);
   }
 
   _buildUpdateSignerPayload() {
@@ -1005,36 +982,19 @@ export class OperationsTab {
       return;
     }
 
-    const actionToastId = this._nextActionToastId('transferOwnership');
-    let toastId = null;
-    try {
-      const switchResult = await this._ensureRequiredNetworkForAction(actionToastId, contractKey);
-      toastId = switchResult.toastId || null;
-
-      const contract = window.contractManager?.getWriteContract?.(contractKey);
-      if (!contract) throw new Error(`Connect a wallet on ${this._requiredNetworkName(contractKey)} to transfer ownership.`);
-
-      toastId = this._showActionLoadingToast({
-        toastId: toastId || actionToastId,
-        message: 'Submitting transfer...',
-      });
-      const tx = await contract.transferOwnership(normalized);
-      await tx.wait?.();
-
-      const explorer = this._selectedNetworkConfig(contractKey)?.BLOCK_EXPLORER || '';
-      const link = tx?.hash && explorer ? `${explorer.replace(/\/$/, '')}/tx/${tx.hash}` : '';
-      const message = link
-        ? `Transfer submitted. <a href="${link}" target="_blank">View transaction</a>`
-        : 'Transfer submitted.';
-      this._showActionToast({ toastId, type: 'success', title: 'Done', message, timeoutMs: 3500, dismissible: true, allowHtml: true });
-
-      await window.contractManager?.refreshStatus?.({ key: contractKey, reason: 'ownershipTransferred' }).catch(() => {});
-      await this._syncAccess().catch(() => {});
-    } catch (error) {
-      toastId = toastId || error?._actionToastId || actionToastId;
-      const msg = this._actionErrorMessage(error, 'Transfer failed.', contractKey);
-      this._showActionToast({ toastId, type: 'error', title: 'Error', message: msg, timeoutMs: 0, dismissible: true });
-    }
+    await this._runContractWriteAction({
+      actionKey: 'transferOwnership',
+      contractKey,
+      loadingMessage: 'Submitting transfer...',
+      missingContractMessage: `Connect a wallet on ${this._requiredNetworkName(contractKey)} to transfer ownership.`,
+      refreshReason: 'ownershipTransferred',
+      fallbackErrorMessage: 'Transfer failed.',
+      successMessage: ({ tx, contractKey: activeContractKey }) => this._buildTxSuccessMessage(activeContractKey, tx?.hash, 'Transfer submitted.'),
+      execute: ({ contractWrite }) => contractWrite.transferOwnership(normalized),
+      onSuccess: async () => {
+        await this._syncAccess().catch(() => {});
+      },
+    });
   }
 
   _renderRequestResult({ operationId, txHash }) {
@@ -1366,46 +1326,28 @@ export class OperationsTab {
       return;
     }
 
-    const actionToastId = this._nextActionToastId('submitSignature');
-    let toastId = null;
     const contractKey = this._selectedContractKey;
-    try {
-      const switchResult = await this._ensureRequiredNetworkForAction(actionToastId, contractKey);
-      toastId = switchResult.toastId || null;
-
-      const contractRead = window.contractManager?.getReadContract?.(contractKey);
-      const contractWrite = window.contractManager?.getWriteContract?.(contractKey);
-      const signer = window.walletManager?.getSigner?.();
-      if (!contractRead || !contractWrite || !signer) {
-        throw new Error(`Connect a wallet on ${this._requiredNetworkName(contractKey)} to submit signatures.`);
-      }
-
-      toastId = this._showActionLoadingToast({
-        toastId: toastId || actionToastId,
-        message: 'Signing & submitting...',
-      });
-      const messageHash = await contractRead.getOperationHash(operationId);
-      const signature = await signer.signMessage(utils.arrayify(messageHash));
-      const tx = await contractWrite.submitSignature(operationId, signature);
-      await tx.wait?.();
-
-      const explorer = this._selectedNetworkConfig(contractKey)?.BLOCK_EXPLORER || '';
-      const link = tx?.hash && explorer ? `${explorer.replace(/\/$/, '')}/tx/${tx.hash}` : '';
-      const message = link
-        ? `Signature submitted. <a href="${link}" target="_blank">View transaction</a>`
-        : 'Signature submitted.';
-      this._showActionToast({ toastId, type: 'success', title: 'Done', message, timeoutMs: 3500, dismissible: true, allowHtml: true });
-
-      await window.contractManager?.refreshStatus?.({ key: contractKey, reason: 'signatureSubmitted' }).catch(() => {});
-      if (this._selectedContractKey === contractKey) {
+    await this._runContractWriteAction({
+      actionKey: 'submitSignature',
+      contractKey,
+      loadingMessage: 'Signing & submitting...',
+      missingContractMessage: `Connect a wallet on ${this._requiredNetworkName(contractKey)} to submit signatures.`,
+      requireReadContract: true,
+      requireSigner: true,
+      refreshReason: 'signatureSubmitted',
+      fallbackErrorMessage: 'Submission failed.',
+      successMessage: ({ tx, contractKey: activeContractKey }) => this._buildTxSuccessMessage(activeContractKey, tx?.hash, 'Signature submitted.'),
+      execute: async ({ contractRead, contractWrite, signer }) => {
+        const messageHash = await contractRead.getOperationHash(operationId);
+        const signature = await signer.signMessage(utils.arrayify(messageHash));
+        return contractWrite.submitSignature(operationId, signature);
+      },
+      onSuccess: async ({ contractKey: activeContractKey }) => {
+        if (this._selectedContractKey !== activeContractKey) return;
         await this._refreshRequestedOperations();
         await this._loadOperationDetails().catch(() => {});
-      }
-    } catch (error) {
-      toastId = toastId || error?._actionToastId || actionToastId;
-      const msg = this._actionErrorMessage(error, 'Submission failed.', contractKey);
-      this._showActionToast({ toastId, type: 'error', title: 'Error', message: msg, timeoutMs: 0, dismissible: true });
-    }
+      },
+    });
   }
 
   async _ensureRequiredNetworkForAction(toastId, contractKey = this._selectedContractKey) {
@@ -1434,6 +1376,114 @@ export class OperationsTab {
       }
       throw error;
     }
+  }
+
+  async _runContractWriteAction({
+    actionKey,
+    contractKey = this._selectedContractKey,
+    loadingMessage,
+    missingContractMessage,
+    successMessage,
+    fallbackErrorMessage,
+    refreshReason = null,
+    requireReadContract = false,
+    requireWriteContract = true,
+    requireSigner = false,
+    execute,
+    onSuccess = null,
+  }) {
+    const actionToastId = this._nextActionToastId(actionKey);
+    let toastId = null;
+
+    try {
+      const switchResult = await this._ensureRequiredNetworkForAction(actionToastId, contractKey);
+      toastId = switchResult.toastId || null;
+
+      const actionContext = this._getActionContext(contractKey);
+      this._assertActionResources(actionContext, {
+        requireReadContract,
+        requireWriteContract,
+        requireSigner,
+        missingMessage: missingContractMessage,
+      });
+
+      toastId = this._showActionLoadingToast({
+        toastId: toastId || actionToastId,
+        message: loadingMessage,
+      });
+
+      const executionResult = await execute(actionContext);
+      const hasWrappedResult = !!executionResult && typeof executionResult === 'object' && 'tx' in executionResult;
+      const tx = hasWrappedResult ? executionResult.tx : executionResult;
+      const receipt = hasWrappedResult && 'receipt' in executionResult
+        ? executionResult.receipt
+        : await tx?.wait?.();
+
+      const message = typeof successMessage === 'function'
+        ? successMessage({ contractKey, tx, receipt, actionContext })
+        : successMessage;
+      this._showActionToast({
+        toastId,
+        type: 'success',
+        title: 'Done',
+        message,
+        timeoutMs: 3500,
+        dismissible: true,
+        allowHtml: true,
+      });
+
+      if (refreshReason) {
+        await window.contractManager?.refreshStatus?.({ key: contractKey, reason: refreshReason }).catch(() => {});
+      }
+      if (typeof onSuccess === 'function') {
+        await onSuccess({ contractKey, tx, receipt, actionContext });
+      }
+
+      return { tx, receipt };
+    } catch (error) {
+      toastId = toastId || error?._actionToastId || actionToastId;
+      const msg = this._actionErrorMessage(error, fallbackErrorMessage, contractKey);
+      this._showActionToast({ toastId, type: 'error', title: 'Error', message: msg, timeoutMs: 0, dismissible: true });
+      return null;
+    }
+  }
+
+  _getActionContext(contractKey = this._selectedContractKey) {
+    return {
+      contractRead: window.contractManager?.getReadContract?.(contractKey) || null,
+      contractWrite: window.contractManager?.getWriteContract?.(contractKey) || null,
+      signer: window.walletManager?.getSigner?.() || null,
+    };
+  }
+
+  _assertActionResources(
+    actionContext,
+    { requireReadContract = false, requireWriteContract = true, requireSigner = false, missingMessage = 'Required contract resources are unavailable.' } = {}
+  ) {
+    if (
+      (requireReadContract && !actionContext.contractRead) ||
+      (requireWriteContract && !actionContext.contractWrite) ||
+      (requireSigner && !actionContext.signer)
+    ) {
+      throw new Error(missingMessage);
+    }
+  }
+
+  _buildTxSuccessMessage(contractKey, txHash, fallbackMessage) {
+    const link = this._buildTxExplorerLink(contractKey, txHash);
+    return link
+      ? `${fallbackMessage} <a href="${link}" target="_blank">View transaction</a>`
+      : fallbackMessage;
+  }
+
+  _buildTxExplorerLink(contractKey, txHash) {
+    const explorer = this._selectedNetworkConfig(contractKey)?.BLOCK_EXPLORER || '';
+    return txHash && explorer ? `${explorer.replace(/\/$/, '')}/tx/${txHash}` : '';
+  }
+
+  _extractOperationIdFromReceipt(receipt) {
+    const operationId = receipt?.events?.find?.((entry) => entry?.event === 'OperationRequested')?.args?.operationId || null;
+    return operationId ? String(operationId) : null;
   }
 
   _requiredNetworkName(contractKey = this._selectedContractKey) {
