@@ -193,6 +193,65 @@ describe('OperationsTab requested operations history', () => {
     );
   });
 
+  it('ignores stale requested-operation results after switching contracts', async () => {
+    window.contractManager.getAccessState = vi.fn(async () => ({
+      owner: OWNER,
+      isOwner: true,
+      isSigner: true,
+      ownerError: null,
+      signerError: null,
+      error: null,
+    }));
+
+    const pending = new Map();
+    const historyService = {
+      load: vi.fn((contractKey) => new Promise((resolve) => {
+        pending.set(contractKey, resolve);
+      })),
+    };
+
+    const tab = new OperationsTab({ operationsService: historyService });
+    tab.load();
+    await tab._syncAccess();
+    tab._isActive = true;
+
+    const sourceRefresh = tab._refreshRequestedOperations();
+    await flushPromises();
+
+    const destinationRefresh = tab._selectContract('destination');
+    await flushPromises();
+
+    pending.get('destination')({
+      activeCount: 1,
+      items: [makeHistoryItem({
+        operationId: OPERATION_ID_TWO,
+        opType: 4,
+        value: '0',
+        data: `0x${'0'.repeat(63)}1`,
+      })],
+    });
+    await destinationRefresh;
+
+    pending.get('source')({
+      activeCount: 1,
+      items: [makeHistoryItem({
+        operationId: OPERATION_ID_ONE,
+        opType: 0,
+        value: '2500000000000000000',
+      })],
+    });
+    await sourceRefresh;
+
+    const rows = Array.from(document.querySelectorAll('[data-ops-history-row]'));
+    expect(tab._selectedContractKey).toBe('destination');
+    expect(historyService.load).toHaveBeenCalledTimes(2);
+    expect(historyService.load).toHaveBeenNthCalledWith(1, 'source');
+    expect(historyService.load).toHaveBeenNthCalledWith(2, 'destination');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toContain('Set Bridge Out Enabled');
+    expect(rows[0].textContent).not.toContain('Set Bridge Out Amount');
+  });
+
   it('fills the lookup input and loads operation details when a history row is clicked', async () => {
     const freshOperation = makeHistoryItem({
       operationId: OPERATION_ID_ONE,

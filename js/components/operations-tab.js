@@ -31,6 +31,7 @@ export class OperationsTab {
     this._historyVisibleCount = this.historyPageSize;
     this._historyFilterOpType = null;
     this._historyFilterStatus = null;
+    this._historyRequestId = 0;
     this._isActive = false;
     this._lastOperationId = null;
     this._selectedOperation = null;
@@ -120,16 +121,16 @@ export class OperationsTab {
     return Object.fromEntries(CONTRACT_KEYS.map((key) => [key, this._emptyAccessState()]));
   }
 
-  _selectedMetadata() {
-    return getContractMetadata(this._selectedContractKey);
+  _selectedMetadata(key = this._selectedContractKey) {
+    return getContractMetadata(key);
   }
 
-  _selectedNetworkConfig() {
-    return getNetworkConfig(this._selectedContractKey);
+  _selectedNetworkConfig(key = this._selectedContractKey) {
+    return getNetworkConfig(key);
   }
 
-  _selectedStatusSnapshot() {
-    return window.contractManager?.getStatusSnapshot?.(this._selectedContractKey) || {};
+  _selectedStatusSnapshot(key = this._selectedContractKey) {
+    return window.contractManager?.getStatusSnapshot?.(key) || {};
   }
 
   _tokenSymbol() {
@@ -501,6 +502,7 @@ export class OperationsTab {
   }
 
   _resetHistoryState() {
+    this._historyRequestId += 1;
     this._historyEvents = [];
     this._historyActiveCount = 0;
     this._historyLoaded = false;
@@ -535,26 +537,30 @@ export class OperationsTab {
     if (this._historyLoading) return;
     if (!this._hasAdminAccess()) return;
 
+    const contractKey = this._selectedContractKey;
+    const requestId = ++this._historyRequestId;
     this._historyLoading = true;
     this._historyError = null;
     this._setHistoryLoading(true);
     this._renderRequestedOperations();
 
     try {
-      const result = await this._getOperationsService().load(this._selectedContractKey);
+      const result = await this._getOperationsService().load(contractKey);
+      if (!this._isCurrentHistoryRequest(requestId, contractKey)) return;
       this._historyEvents = Array.isArray(result?.items) ? result.items : [];
       this._historyActiveCount = Number.isFinite(result?.activeCount) ? result.activeCount : this._historyEvents.length;
       this._historyLoaded = true;
       this._historyVisibleCount = Math.max(this._historyVisibleCount, this.historyPageSize);
       this._renderRequestedOperations();
     } catch (error) {
+      if (!this._isCurrentHistoryRequest(requestId, contractKey)) return;
       const errorState = this._describeHistoryLoadError(error);
       this._historyError = errorState;
       console.error('[OperationsTab] Failed to load requested operations', {
         error,
         title: errorState.title,
         detail: errorState.detail,
-        contractKey: this._selectedContractKey,
+        contractKey,
       });
       window.toastManager?.error?.('Failed to load requested operations', {
         message: errorState.detail,
@@ -562,10 +568,15 @@ export class OperationsTab {
         dismissible: true,
       });
     } finally {
+      if (!this._isCurrentHistoryRequest(requestId, contractKey)) return;
       this._historyLoading = false;
       this._setHistoryLoading(false);
       if (this._historyError) this._renderRequestedOperations();
     }
+  }
+
+  _isCurrentHistoryRequest(requestId, contractKey) {
+    return this._historyRequestId === requestId && this._selectedContractKey === contractKey;
   }
 
   _getFilteredHistoryEvents() {
@@ -828,6 +839,7 @@ export class OperationsTab {
   async _requestOperation() {
     if (!this._access.connected || !(this._access.isAdmin || this._access.isMultisig)) return;
 
+    const contractKey = this._selectedContractKey;
     const typeSelect = this.panel?.querySelector('[data-op-type]');
     const opType = typeSelect instanceof HTMLSelectElement ? Number(typeSelect.value) : NaN;
     if (!Number.isFinite(opType)) {
@@ -837,7 +849,7 @@ export class OperationsTab {
 
     let payload = null;
     try {
-      payload = this._buildRequestOperationPayload(opType);
+      payload = this._buildRequestOperationPayload(opType, contractKey);
     } catch (error) {
       window.toastManager?.error?.(error?.message || 'Invalid operation parameters.');
       return;
@@ -846,11 +858,11 @@ export class OperationsTab {
     const actionToastId = this._nextActionToastId('requestOperation');
     let toastId = null;
     try {
-      const switchResult = await this._ensureRequiredNetworkForAction(actionToastId);
+      const switchResult = await this._ensureRequiredNetworkForAction(actionToastId, contractKey);
       toastId = switchResult.toastId || null;
 
-      const contract = window.contractManager?.getWriteContract?.(this._selectedContractKey);
-      if (!contract) throw new Error(`Connect a wallet on ${this._requiredNetworkName()} to request operations.`);
+      const contract = window.contractManager?.getWriteContract?.(contractKey);
+      if (!contract) throw new Error(`Connect a wallet on ${this._requiredNetworkName(contractKey)} to request operations.`);
 
       toastId = this._showActionLoadingToast({
         toastId: toastId || actionToastId,
@@ -861,23 +873,23 @@ export class OperationsTab {
 
       const opId = receipt?.events?.find?.((entry) => entry?.event === 'OperationRequested')?.args?.operationId || null;
       const operationId = opId ? String(opId) : null;
-      this._lastOperationId = operationId;
-
-      this._renderRequestResult({
-        operationId,
-        txHash: tx?.hash ? String(tx.hash) : null,
-      });
-
-      const explorer = this._selectedNetworkConfig()?.BLOCK_EXPLORER || '';
+      const explorer = this._selectedNetworkConfig(contractKey)?.BLOCK_EXPLORER || '';
       const link = tx?.hash && explorer ? `${explorer.replace(/\/$/, '')}/tx/${tx.hash}` : '';
       const message = link
         ? `Request submitted. <a href="${link}" target="_blank">View transaction</a>`
         : 'Request submitted.';
       this._showActionToast({ toastId, type: 'success', title: 'Done', message, timeoutMs: 3500, dismissible: true, allowHtml: true });
 
-      await window.contractManager?.refreshStatus?.({ key: this._selectedContractKey, reason: 'operationRequested' }).catch(() => {});
-      await this._refreshRequestedOperations();
-      if (operationId) {
+      await window.contractManager?.refreshStatus?.({ key: contractKey, reason: 'operationRequested' }).catch(() => {});
+      if (this._selectedContractKey === contractKey) {
+        this._lastOperationId = operationId;
+        this._renderRequestResult({
+          operationId,
+          txHash: tx?.hash ? String(tx.hash) : null,
+        });
+        await this._refreshRequestedOperations();
+      }
+      if (operationId && this._selectedContractKey === contractKey) {
         const input = this.panel?.querySelector('[data-ops-operation-id]');
         if (input instanceof HTMLInputElement) {
           input.value = operationId;
@@ -886,12 +898,12 @@ export class OperationsTab {
       }
     } catch (error) {
       toastId = toastId || error?._actionToastId || actionToastId;
-      const msg = this._actionErrorMessage(error, 'Request failed.');
+      const msg = this._actionErrorMessage(error, 'Request failed.', contractKey);
       this._showActionToast({ toastId, type: 'error', title: 'Error', message: msg, timeoutMs: 0, dismissible: true });
     }
   }
 
-  _buildRequestOperationPayload(opType) {
+  _buildRequestOperationPayload(opType, contractKey = this._selectedContractKey) {
     const ethers = window.ethers;
     const utils = ethers?.utils;
     const AddressZero = ethers?.constants?.AddressZero || '0x0000000000000000000000000000000000000000';
@@ -899,7 +911,7 @@ export class OperationsTab {
     let value = ethers?.constants?.Zero || 0;
     let data = '0x';
 
-    if (this._selectedContractKey === 'destination') {
+    if (contractKey === 'destination') {
       if (opType === 0) {
         const input = this.panel?.querySelector('[data-op-dest-bridge-in-caller]');
         const address = input instanceof HTMLInputElement ? input.value.trim() : '';
@@ -984,6 +996,7 @@ export class OperationsTab {
   async _transferOwnership() {
     if (!this._access.connected || !this._access.isAdmin) return;
 
+    const contractKey = this._selectedContractKey;
     const input = this.panel?.querySelector('[data-ops-new-owner]');
     const newOwner = input instanceof HTMLInputElement ? input.value.trim() : '';
     const normalized = this._normalizeAddress(newOwner);
@@ -995,11 +1008,11 @@ export class OperationsTab {
     const actionToastId = this._nextActionToastId('transferOwnership');
     let toastId = null;
     try {
-      const switchResult = await this._ensureRequiredNetworkForAction(actionToastId);
+      const switchResult = await this._ensureRequiredNetworkForAction(actionToastId, contractKey);
       toastId = switchResult.toastId || null;
 
-      const contract = window.contractManager?.getWriteContract?.(this._selectedContractKey);
-      if (!contract) throw new Error(`Connect a wallet on ${this._requiredNetworkName()} to transfer ownership.`);
+      const contract = window.contractManager?.getWriteContract?.(contractKey);
+      if (!contract) throw new Error(`Connect a wallet on ${this._requiredNetworkName(contractKey)} to transfer ownership.`);
 
       toastId = this._showActionLoadingToast({
         toastId: toastId || actionToastId,
@@ -1008,18 +1021,18 @@ export class OperationsTab {
       const tx = await contract.transferOwnership(normalized);
       await tx.wait?.();
 
-      const explorer = this._selectedNetworkConfig()?.BLOCK_EXPLORER || '';
+      const explorer = this._selectedNetworkConfig(contractKey)?.BLOCK_EXPLORER || '';
       const link = tx?.hash && explorer ? `${explorer.replace(/\/$/, '')}/tx/${tx.hash}` : '';
       const message = link
         ? `Transfer submitted. <a href="${link}" target="_blank">View transaction</a>`
         : 'Transfer submitted.';
       this._showActionToast({ toastId, type: 'success', title: 'Done', message, timeoutMs: 3500, dismissible: true, allowHtml: true });
 
-      await window.contractManager?.refreshStatus?.({ key: this._selectedContractKey, reason: 'ownershipTransferred' }).catch(() => {});
+      await window.contractManager?.refreshStatus?.({ key: contractKey, reason: 'ownershipTransferred' }).catch(() => {});
       await this._syncAccess().catch(() => {});
     } catch (error) {
       toastId = toastId || error?._actionToastId || actionToastId;
-      const msg = this._actionErrorMessage(error, 'Transfer failed.');
+      const msg = this._actionErrorMessage(error, 'Transfer failed.', contractKey);
       this._showActionToast({ toastId, type: 'error', title: 'Error', message: msg, timeoutMs: 0, dismissible: true });
     }
   }
@@ -1355,15 +1368,16 @@ export class OperationsTab {
 
     const actionToastId = this._nextActionToastId('submitSignature');
     let toastId = null;
+    const contractKey = this._selectedContractKey;
     try {
-      const switchResult = await this._ensureRequiredNetworkForAction(actionToastId);
+      const switchResult = await this._ensureRequiredNetworkForAction(actionToastId, contractKey);
       toastId = switchResult.toastId || null;
 
-      const contractRead = window.contractManager?.getReadContract?.(this._selectedContractKey);
-      const contractWrite = window.contractManager?.getWriteContract?.(this._selectedContractKey);
+      const contractRead = window.contractManager?.getReadContract?.(contractKey);
+      const contractWrite = window.contractManager?.getWriteContract?.(contractKey);
       const signer = window.walletManager?.getSigner?.();
       if (!contractRead || !contractWrite || !signer) {
-        throw new Error(`Connect a wallet on ${this._requiredNetworkName()} to submit signatures.`);
+        throw new Error(`Connect a wallet on ${this._requiredNetworkName(contractKey)} to submit signatures.`);
       }
 
       toastId = this._showActionLoadingToast({
@@ -1375,25 +1389,27 @@ export class OperationsTab {
       const tx = await contractWrite.submitSignature(operationId, signature);
       await tx.wait?.();
 
-      const explorer = this._selectedNetworkConfig()?.BLOCK_EXPLORER || '';
+      const explorer = this._selectedNetworkConfig(contractKey)?.BLOCK_EXPLORER || '';
       const link = tx?.hash && explorer ? `${explorer.replace(/\/$/, '')}/tx/${tx.hash}` : '';
       const message = link
         ? `Signature submitted. <a href="${link}" target="_blank">View transaction</a>`
         : 'Signature submitted.';
       this._showActionToast({ toastId, type: 'success', title: 'Done', message, timeoutMs: 3500, dismissible: true, allowHtml: true });
 
-      await window.contractManager?.refreshStatus?.({ key: this._selectedContractKey, reason: 'signatureSubmitted' }).catch(() => {});
-      await this._refreshRequestedOperations();
-      await this._loadOperationDetails().catch(() => {});
+      await window.contractManager?.refreshStatus?.({ key: contractKey, reason: 'signatureSubmitted' }).catch(() => {});
+      if (this._selectedContractKey === contractKey) {
+        await this._refreshRequestedOperations();
+        await this._loadOperationDetails().catch(() => {});
+      }
     } catch (error) {
       toastId = toastId || error?._actionToastId || actionToastId;
-      const msg = this._actionErrorMessage(error, 'Submission failed.');
+      const msg = this._actionErrorMessage(error, 'Submission failed.', contractKey);
       this._showActionToast({ toastId, type: 'error', title: 'Error', message: msg, timeoutMs: 0, dismissible: true });
     }
   }
 
-  async _ensureRequiredNetworkForAction(toastId) {
-    if (window.networkManager?.isOnNetwork?.(this._selectedContractKey)) {
+  async _ensureRequiredNetworkForAction(toastId, contractKey = this._selectedContractKey) {
+    if (window.networkManager?.isOnNetwork?.(contractKey)) {
       return { switched: false, toastId: null };
     }
 
@@ -1401,14 +1417,14 @@ export class OperationsTab {
       toastId,
       type: 'loading',
       title: 'Loading',
-      message: `Switch to ${this._requiredNetworkName()} in your wallet to continue`,
+      message: `Switch to ${this._requiredNetworkName(contractKey)} in your wallet to continue`,
       timeoutMs: 0,
       dismissible: false,
     });
 
     try {
-      const result = await window.networkManager?.ensureNetwork?.(this._selectedContractKey);
-      await window.contractManager?.refreshStatus?.({ key: this._selectedContractKey, reason: 'requiredNetworkEnsured' }).catch(() => {});
+      const result = await window.networkManager?.ensureNetwork?.(contractKey);
+      await window.contractManager?.refreshStatus?.({ key: contractKey, reason: 'requiredNetworkEnsured' }).catch(() => {});
       await this._syncAccess().catch(() => {});
       return { switched: !!result?.switched, toastId: activeToastId };
     } catch (error) {
@@ -1420,8 +1436,8 @@ export class OperationsTab {
     }
   }
 
-  _requiredNetworkName() {
-    return this._selectedNetworkConfig()?.NAME || 'the required network';
+  _requiredNetworkName(contractKey = this._selectedContractKey) {
+    return this._selectedNetworkConfig(contractKey)?.NAME || 'the required network';
   }
 
   _showActionLoadingToast({ toastId = null, message }) {
@@ -1455,11 +1471,11 @@ export class OperationsTab {
     return `${base}-${Date.now()}-${this._actionToastSequence}`;
   }
 
-  _actionErrorMessage(error, fallback) {
+  _actionErrorMessage(error, fallback, contractKey = this._selectedContractKey) {
     if (error?._phase === 'networkSwitch') {
       if (error?.code === 4001) return 'Network switch request was rejected.';
       if (error?.code === -32002) return 'Network switch request already pending in your wallet.';
-      return this._extractActionErrorMessage(error) || `Failed to switch to ${this._requiredNetworkName()}.`;
+      return this._extractActionErrorMessage(error) || `Failed to switch to ${this._requiredNetworkName(contractKey)}.`;
     }
     return this._extractActionErrorMessage(error) || fallback;
   }

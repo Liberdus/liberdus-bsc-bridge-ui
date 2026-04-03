@@ -74,16 +74,39 @@ export class ContractManager {
       throw new Error('Ethers.js not loaded');
     }
 
-    await Promise.all(CONTRACT_KEYS.map((key) => this._loadContext(key)));
+    const results = await Promise.allSettled(CONTRACT_KEYS.map((key) => this._loadContext(key)));
+    const failures = [];
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') return;
+      const key = CONTRACT_KEYS[index];
+      const label = getContractMetadata(key).label;
+      const message = result.reason?.message || `Failed to initialize ${label}`;
+      failures.push({ key, label, message });
+      console.warn('[ContractManager] Context load failed', { key, label, error: result.reason });
+    });
+
     this.updateConnections({ reason: 'load' });
     this._bindWalletEvents();
     await this.refreshAllStatus({ reason: 'load' });
+
+    if (failures.length === CONTRACT_KEYS.length) {
+      throw new Error(failures.map(({ label, message }) => `${label}: ${message}`).join(' | '));
+    }
   }
 
   async _loadContext(key) {
     const context = this.getContext(key);
-    context.readOnlyProvider = await getReadOnlyProviderForNetwork(getNetworkConfig(key));
-    context.abi = await this._fetchAbi(key);
+    context.loadError = null;
+
+    try {
+      context.readOnlyProvider = await getReadOnlyProviderForNetwork(getNetworkConfig(key));
+      context.abi = await this._fetchAbi(key);
+    } catch (error) {
+      context.readOnlyProvider = null;
+      context.abi = null;
+      context.loadError = error?.message || `Failed to initialize ${getContractMetadata(key).label}`;
+      throw error;
+    }
   }
 
   async _fetchAbi(key) {
@@ -112,6 +135,7 @@ export class ContractManager {
       signer: null,
       contractRead: null,
       contractWrite: null,
+      loadError: null,
       statusSnapshot: this._emptySnapshot(key),
     };
   }
@@ -249,7 +273,7 @@ export class ContractManager {
         isSigner: false,
         ownerError: null,
         signerError: null,
-        error: 'Contract not ready',
+        error: this._contractNotReadyError(normalizedKey),
       };
     }
 
@@ -287,7 +311,7 @@ export class ContractManager {
     const contract = this.getReadContract(normalizedKey);
 
     if (!contract) {
-      snapshot.error = 'Contract not ready';
+      snapshot.error = this._contractNotReadyError(normalizedKey);
       this.getContext(normalizedKey).statusSnapshot = snapshot;
       this._emitUpdatedEvent({ reason, key: normalizedKey });
       return this.getStatusSnapshot(normalizedKey);
@@ -458,6 +482,10 @@ export class ContractManager {
     } catch {
       return null;
     }
+  }
+
+  _contractNotReadyError(key = 'source') {
+    return this.getContext(key).loadError || 'Contract not ready';
   }
 
   _emitUpdatedEvent({ reason = 'updated', key = null } = {}) {
