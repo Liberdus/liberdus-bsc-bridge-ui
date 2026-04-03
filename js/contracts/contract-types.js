@@ -10,6 +10,7 @@ export const CONTRACT_METADATA = Object.freeze({
     contractLabel: 'Vault',
     networkConfigKey: 'SOURCE',
     contractConfigKey: 'SOURCE',
+    notifyInfoReadErrors: true,
   }),
   destination: Object.freeze({
     key: 'destination',
@@ -18,6 +19,7 @@ export const CONTRACT_METADATA = Object.freeze({
     contractLabel: 'Liberdus',
     networkConfigKey: 'DESTINATION',
     contractConfigKey: 'DESTINATION',
+    notifyInfoReadErrors: false,
   }),
 });
 

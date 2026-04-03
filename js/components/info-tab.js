@@ -387,8 +387,14 @@ export class InfoTab {
 
   _notifyReadError(snapshots) {
     for (const contractKey of CONTRACT_KEYS) {
+      const metadata = getContractMetadata(contractKey);
+      if (!metadata.notifyInfoReadErrors) {
+        this._lastErrorToastMessageByContract.delete(contractKey);
+        continue;
+      }
+
       const snapshot = snapshots?.[contractKey];
-      const label = getContractMetadata(contractKey).label;
+      const label = metadata.label;
       const message = snapshot?.error ? `${label} read warning: ${snapshot.error}` : null;
       if (!message) {
         this._lastErrorToastMessageByContract.delete(contractKey);
