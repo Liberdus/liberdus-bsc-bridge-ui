@@ -1,23 +1,63 @@
-import { CONFIG } from '../config.js';
-import { getReadOnlyProvider } from '../utils/read-only-provider.js';
+import { getReadOnlyProviderForNetwork } from '../utils/read-only-provider.js';
 import { createUnavailableVaultOperation, normalizeVaultOperation } from '../utils/vault-operations.js';
+import { CONTRACT_KEYS, getContractConfig, getContractMetadata, getNetworkConfig, normalizeContractKey } from './contract-types.js';
 
 export class ContractManager {
   constructor({ walletManager, networkManager } = {}) {
     this.walletManager = walletManager || null;
     this.networkManager = networkManager || null;
 
-    this.readOnlyProvider = null;
-    this.provider = null;
-    this.signer = null;
-
-    this.abi = null;
-    this.contractRead = null;
-    this.contractWrite = null;
-
-    this._statusSnapshot = this._emptySnapshot();
+    this._contexts = Object.fromEntries(CONTRACT_KEYS.map((key) => [key, this._createContext(key)]));
     this._loadPromise = null;
     this._walletEventsBound = false;
+  }
+
+  get readOnlyProvider() {
+    return this.getReadOnlyProvider('source');
+  }
+
+  set readOnlyProvider(value) {
+    this.getContext('source').readOnlyProvider = value;
+  }
+
+  get provider() {
+    return this.getContext('source').provider;
+  }
+
+  set provider(value) {
+    this.getContext('source').provider = value;
+  }
+
+  get signer() {
+    return this.getContext('source').signer;
+  }
+
+  set signer(value) {
+    this.getContext('source').signer = value;
+  }
+
+  get abi() {
+    return this.getContext('source').abi;
+  }
+
+  set abi(value) {
+    this.getContext('source').abi = value;
+  }
+
+  get contractRead() {
+    return this.getContext('source').contractRead;
+  }
+
+  set contractRead(value) {
+    this.getContext('source').contractRead = value;
+  }
+
+  get contractWrite() {
+    return this.getContext('source').contractWrite;
+  }
+
+  set contractWrite(value) {
+    this.getContext('source').contractWrite = value;
   }
 
   load() {
@@ -34,28 +74,84 @@ export class ContractManager {
       throw new Error('Ethers.js not loaded');
     }
 
-    this.readOnlyProvider = await getReadOnlyProvider();
-    this.abi = await this._fetchAbi();
+    const results = await Promise.allSettled(CONTRACT_KEYS.map((key) => this._loadContext(key)));
+    const failures = [];
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') return;
+      const key = CONTRACT_KEYS[index];
+      const label = getContractMetadata(key).label;
+      const message = result.reason?.message || `Failed to initialize ${label}`;
+      failures.push({ key, label, message });
+      console.warn('[ContractManager] Context load failed', { key, label, error: result.reason });
+    });
 
     this.updateConnections({ reason: 'load' });
     this._bindWalletEvents();
-    await this.refreshStatus({ reason: 'load' });
+    await this.refreshAllStatus({ reason: 'load' });
+
+    if (failures.length === CONTRACT_KEYS.length) {
+      throw new Error(failures.map(({ label, message }) => `${label}: ${message}`).join(' | '));
+    }
   }
 
-  async _fetchAbi() {
-    const abiPath = CONFIG.BRIDGE.CONTRACTS.SOURCE.ABI_PATH;
-    const response = await fetch(abiPath, { cache: 'no-cache' });
+  async _loadContext(key) {
+    const context = this.getContext(key);
+    context.loadError = null;
+
+    const [abiResult, providerResult] = await Promise.allSettled([
+      context.abi ? Promise.resolve(context.abi) : this._fetchAbi(key),
+      getReadOnlyProviderForNetwork(getNetworkConfig(key)),
+    ]);
+
+    if (abiResult.status === 'fulfilled') {
+      context.abi = abiResult.value;
+    }
+
+    if (providerResult.status === 'fulfilled') {
+      context.readOnlyProvider = providerResult.value;
+    } else {
+      context.readOnlyProvider = null;
+    }
+
+    const failures = [abiResult, providerResult].filter((result) => result.status === 'rejected');
+    if (failures.length > 0) {
+      const failureMessages = failures.map((result) => result.reason?.message).filter(Boolean);
+      context.loadError =
+        failureMessages[0] ||
+        `Failed to initialize ${getContractMetadata(key).label}`;
+      throw failures[0].reason;
+    }
+  }
+
+  async _fetchAbi(key) {
+    const abiPath = getContractConfig(key)?.ABI_PATH;
+    const label = getContractMetadata(key).label;
+    const response = await fetch(abiPath, { cache: 'no-store' });
     if (!response.ok) {
-      throw new Error(`Failed to load ABI (${abiPath}): ${response.status}`);
+      throw new Error(`Failed to load ABI for ${label} (${abiPath}): ${response.status}`);
     }
 
     const json = await response.json();
     const abi = Array.isArray(json) ? json : json?.abi;
     if (!Array.isArray(abi)) {
-      throw new Error('Invalid ABI format: expected ABI array or { abi: [] }');
+      throw new Error(`Invalid ABI format for ${label}: expected ABI array or { abi: [] }`);
     }
 
     return abi;
+  }
+
+  _createContext(key) {
+    return {
+      key,
+      abi: null,
+      readOnlyProvider: null,
+      provider: null,
+      signer: null,
+      contractRead: null,
+      contractWrite: null,
+      loadError: null,
+      statusSnapshot: this._emptySnapshot(key),
+    };
   }
 
   _bindWalletEvents() {
@@ -64,7 +160,7 @@ export class ContractManager {
 
     const syncOnWalletEvent = () => {
       this.updateConnections({ reason: 'connectionsChanged' });
-      this.refreshStatus({ reason: 'connectionsChanged' }).catch(() => {});
+      this.refreshAllStatus({ reason: 'connectionsChanged' }).catch(() => {});
     };
 
     document.addEventListener('walletConnected', syncOnWalletEvent);
@@ -74,43 +170,59 @@ export class ContractManager {
     document.addEventListener('walletProvidersChanged', syncOnWalletEvent);
   }
 
-  _makeContract(signerOrProvider) {
-    const address = CONFIG.BRIDGE.CONTRACTS.SOURCE.ADDRESS;
-    if (!address || !this.abi || !signerOrProvider || !window.ethers) return null;
-    return new window.ethers.Contract(address, this.abi, signerOrProvider);
+  _makeContract(key, signerOrProvider) {
+    const address = getContractConfig(key)?.ADDRESS;
+    const abi = this.getAbi(key);
+    if (!address || !abi || !signerOrProvider || !window.ethers) return null;
+    return new window.ethers.Contract(address, abi, signerOrProvider);
   }
 
   updateConnections({ reason = 'updated' } = {}) {
-    const txEnabled = !!this.networkManager?.isTxEnabled?.();
-    // Keep read traffic on the public RPC to avoid MetaMask provider churn during chain switches.
-    const readProvider = this.readOnlyProvider || this.walletManager?.getProvider?.() || null;
-    this.provider = readProvider;
-    this.signer = txEnabled ? this.walletManager?.getSigner?.() || null : null;
+    for (const key of CONTRACT_KEYS) {
+      const context = this.getContext(key);
+      const txEnabled = !!this.networkManager?.isTxEnabledFor?.(key);
+      const readProvider = context.readOnlyProvider || this.walletManager?.getProvider?.() || null;
 
-    this.contractRead = this._makeContract(readProvider);
-    this.contractWrite = this.signer ? this._makeContract(this.signer) : null;
+      context.provider = readProvider;
+      context.signer = txEnabled ? this.walletManager?.getSigner?.() || null : null;
+      context.contractRead = this._makeContract(key, readProvider);
+      context.contractWrite = context.signer ? this._makeContract(key, context.signer) : null;
+    }
 
     this._emitUpdatedEvent({ reason });
   }
 
-  isReady() {
-    return !!this.contractRead;
+  getContext(key = 'source') {
+    return this._contexts[normalizeContractKey(key)] || this._contexts.source;
   }
 
-  getReadOnlyProvider() {
-    return this.readOnlyProvider || this.provider || null;
+  isReady(key = 'source') {
+    return !!this.getReadContract(key);
   }
 
-  getReadContract() {
-    return this.contractRead;
+  areAllContextsReady() {
+    return CONTRACT_KEYS.every((key) => this.isReady(key));
   }
 
-  getWriteContract() {
-    return this.contractWrite;
+  getAbi(key = 'source') {
+    return this.getContext(key).abi;
   }
 
-  async getOperationsBatch(operationIds) {
-    const contract = this.getReadContract();
+  getReadOnlyProvider(key = 'source') {
+    const context = this.getContext(key);
+    return context.readOnlyProvider || context.provider || null;
+  }
+
+  getReadContract(key = 'source') {
+    return this.getContext(key).contractRead;
+  }
+
+  getWriteContract(key = 'source') {
+    return this.getContext(key).contractWrite;
+  }
+
+  async getOperationsBatch(operationIds, key = 'source') {
+    const contract = this.getReadContract(key);
     if (!contract) return new Map();
     if (!Array.isArray(operationIds) || operationIds.length === 0) return new Map();
 
@@ -137,13 +249,23 @@ export class ContractManager {
     return out;
   }
 
-  getStatusSnapshot() {
-    return { ...this._statusSnapshot, signers: [...(this._statusSnapshot.signers || [])] };
+  getStatusSnapshot(key = 'source') {
+    const snapshot = this.getContext(key).statusSnapshot;
+    return {
+      ...snapshot,
+      signers: [...(snapshot.signers || [])],
+      errors: { ...(snapshot.errors || {}) },
+    };
   }
 
-  async getAccessState(address) {
+  getStatusSnapshots() {
+    return Object.fromEntries(CONTRACT_KEYS.map((key) => [key, this.getStatusSnapshot(key)]));
+  }
+
+  async getAccessState(address, key = 'source') {
+    const normalizedKey = normalizeContractKey(key);
     const normalizedAddress = this._normalizeAddress(address);
-    const contract = this.getReadContract();
+    const contract = this.getReadContract(normalizedKey);
 
     if (!normalizedAddress) {
       return {
@@ -165,7 +287,7 @@ export class ContractManager {
         isSigner: false,
         ownerError: null,
         signerError: null,
-        error: 'Contract not ready',
+        error: this._contractNotReadyError(normalizedKey),
       };
     }
 
@@ -190,90 +312,110 @@ export class ContractManager {
     };
   }
 
-  async refreshStatus({ reason = 'refresh' } = {}) {
-    const snapshot = this._emptySnapshot();
-    const contract = this.getReadContract();
+  async refreshAllStatus({ reason = 'refresh' } = {}) {
+    const entries = await Promise.all(
+      CONTRACT_KEYS.map(async (key) => [key, await this.refreshStatus({ key, reason })])
+    );
+    return Object.fromEntries(entries);
+  }
+
+  async refreshStatus({ key = 'source', reason = 'refresh' } = {}) {
+    const normalizedKey = normalizeContractKey(key);
+    const snapshot = this._emptySnapshot(normalizedKey);
+    const contract = this.getReadContract(normalizedKey);
 
     if (!contract) {
-      snapshot.error = 'Contract not ready';
-      this._statusSnapshot = snapshot;
-      this._emitUpdatedEvent({ reason });
-      return this.getStatusSnapshot();
+      snapshot.error = this._contractNotReadyError(normalizedKey);
+      this.getContext(normalizedKey).statusSnapshot = snapshot;
+      this._emitUpdatedEvent({ reason, key: normalizedKey });
+      return this.getStatusSnapshot(normalizedKey);
     }
 
-    const [
-      onChainId,
-      chainId,
-      owner,
-      operationCount,
-      operationDeadline,
-      token,
-      requiredSignatures,
-      bridgeOutEnabled,
-      halted,
-      maxBridgeOutAmount,
-      vaultBalance,
-      signer0,
-      signer1,
-      signer2,
-      signer3,
-    ] = await Promise.all([
-      this._safeRead(contract, 'getChainId'),
-      this._safeRead(contract, 'chainId'),
-      this._safeRead(contract, 'owner'),
-      this._safeRead(contract, 'operationCount'),
-      this._safeRead(contract, 'OPERATION_DEADLINE'),
-      this._safeRead(contract, 'token'),
-      this._safeRead(contract, 'REQUIRED_SIGNATURES'),
-      this._safeRead(contract, 'bridgeOutEnabled'),
-      this._safeRead(contract, 'halted'),
-      this._safeRead(contract, 'maxBridgeOutAmount'),
-      this._safeRead(contract, 'getVaultBalance'),
-      this._safeRead(contract, 'signers', [0]),
-      this._safeRead(contract, 'signers', [1]),
-      this._safeRead(contract, 'signers', [2]),
-      this._safeRead(contract, 'signers', [3]),
-    ]);
+    const readers = this._getStatusReaders(normalizedKey);
+    const results = await Promise.all(
+      readers.map(({ methodName, args = [] }) => this._safeRead(contract, methodName, args))
+    );
 
-    snapshot.onChainId = this._toNumberOrNull(onChainId.value);
-    snapshot.onChainChainId = this._toNumberOrNull(chainId.value);
-    snapshot.owner = owner.value ? String(owner.value) : null;
-    snapshot.operationCount = this._toNumberOrNull(operationCount.value);
-    snapshot.operationDeadlineSeconds = this._toNumberOrNull(operationDeadline.value);
-    snapshot.token = token.value ? String(token.value) : null;
-    snapshot.requiredSignatures = this._toNumberOrNull(requiredSignatures.value);
-    snapshot.bridgeOutEnabled = this._toBoolOrNull(bridgeOutEnabled.value);
-    snapshot.halted = this._toBoolOrNull(halted.value);
-    snapshot.maxBridgeOutAmount = this._toStringOrNull(maxBridgeOutAmount.value);
-    snapshot.vaultBalance = this._toStringOrNull(vaultBalance.value);
-    snapshot.signers = [signer0.value, signer1.value, signer2.value, signer3.value]
-      .map((v) => (v ? String(v) : null))
-      .filter(Boolean);
+    readers.forEach((reader, index) => {
+      const result = results[index];
+      snapshot.errors[reader.errorKey] = result.error;
+      reader.apply(snapshot, result.value);
+    });
 
-    snapshot.errors = {
-      getChainId: onChainId.error,
-      chainId: chainId.error,
-      owner: owner.error,
-      operationCount: operationCount.error,
-      OPERATION_DEADLINE: operationDeadline.error,
-      token: token.error,
-      REQUIRED_SIGNATURES: requiredSignatures.error,
-      bridgeOutEnabled: bridgeOutEnabled.error,
-      halted: halted.error,
-      maxBridgeOutAmount: maxBridgeOutAmount.error,
-      getVaultBalance: vaultBalance.error,
-      signers0: signer0.error,
-      signers1: signer1.error,
-      signers2: signer2.error,
-      signers3: signer3.error,
-    };
-
-    const firstError = Object.values(snapshot.errors).find((v) => !!v) || null;
+    const firstError = Object.values(snapshot.errors).find((value) => !!value) || null;
     snapshot.error = firstError;
+    snapshot.lastUpdatedAt = Date.now();
 
-    this._statusSnapshot = snapshot;
-    this._emitUpdatedEvent({ reason });
-    return this.getStatusSnapshot();
+    this.getContext(normalizedKey).statusSnapshot = snapshot;
+    this._emitUpdatedEvent({ reason, key: normalizedKey });
+    return this.getStatusSnapshot(normalizedKey);
+  }
+
+  _getStatusReaders(key) {
+    const shared = [
+      this._reader('onChainId', 'getChainId', this._toNumberOrNull),
+      this._reader('onChainChainId', 'chainId', this._toNumberOrNull),
+      this._reader('owner', 'owner', this._toStringOrNull),
+      this._reader('operationCount', 'operationCount', this._toNumberOrNull),
+      this._reader('operationDeadlineSeconds', 'OPERATION_DEADLINE', this._toNumberOrNull),
+      this._reader('requiredSignatures', 'REQUIRED_SIGNATURES', this._toNumberOrNull),
+      this._reader('bridgeOutEnabled', 'bridgeOutEnabled', this._toBoolOrNull),
+      this._signerReader(0),
+      this._signerReader(1),
+      this._signerReader(2),
+      this._signerReader(3),
+    ];
+
+    if (key === 'destination') {
+      return [
+        ...shared,
+        this._reader('name', 'name', this._toStringOrNull),
+        this._reader('symbol', 'symbol', this._toStringOrNull),
+        this._reader('totalSupply', 'totalSupply', this._toStringOrNull),
+        this._reader('bridgeInCaller', 'bridgeInCaller', this._toStringOrNull),
+        this._reader('maxBridgeInAmount', 'maxBridgeInAmount', this._toStringOrNull),
+        this._reader('minBridgeOutAmount', 'minBridgeOutAmount', this._toStringOrNull),
+        this._reader('bridgeInCooldown', 'bridgeInCooldown', this._toNumberOrNull),
+        this._reader('lastBridgeInTime', 'lastBridgeInTime', this._toNumberOrNull),
+        this._reader('bridgeInEnabled', 'bridgeInEnabled', this._toBoolOrNull),
+      ];
+    }
+
+    return [
+      ...shared,
+      this._reader('token', 'token', this._toStringOrNull),
+      this._reader('halted', 'halted', this._toBoolOrNull),
+      this._reader('maxBridgeOutAmount', 'maxBridgeOutAmount', this._toStringOrNull),
+      this._reader('vaultBalance', 'getVaultBalance', this._toStringOrNull),
+    ];
+  }
+
+  _reader(field, methodName, transform = null, args = []) {
+    return {
+      field,
+      methodName,
+      args,
+      errorKey: methodName,
+      apply: (snapshot, value) => {
+        snapshot[field] = typeof transform === 'function' ? transform.call(this, value) : value;
+      },
+    };
+  }
+
+  _signerReader(index) {
+    return {
+      field: `signers${index}`,
+      methodName: 'signers',
+      args: [index],
+      errorKey: `signers${index}`,
+      apply: (snapshot, value) => {
+        if (!value) return;
+        const signer = String(value);
+        if (!snapshot.signers.includes(signer)) {
+          snapshot.signers.push(signer);
+        }
+      },
+    };
   }
 
   async _safeRead(contract, methodName, args = []) {
@@ -292,25 +434,42 @@ export class ContractManager {
     }
   }
 
-  _emptySnapshot() {
+  _emptySnapshot(key) {
+    const metadata = getContractMetadata(key);
+    const contractConfig = getContractConfig(key);
+    const networkConfig = getNetworkConfig(key);
+
     return {
-      configuredAddress: CONFIG.BRIDGE.CONTRACTS.SOURCE.ADDRESS,
-      configuredChainId: CONFIG.BRIDGE.CHAINS.SOURCE.CHAIN_ID,
+      contractKey: metadata.key,
+      contractLabel: metadata.label,
+      shortLabel: metadata.shortLabel,
+      configuredAddress: contractConfig?.ADDRESS || null,
+      configuredChainId: networkConfig?.CHAIN_ID ?? null,
+      configuredNetworkName: networkConfig?.NAME || null,
       onChainId: null,
       onChainChainId: null,
       owner: null,
       operationCount: null,
       operationDeadlineSeconds: null,
-      token: null,
       requiredSignatures: null,
       bridgeOutEnabled: null,
-      halted: null,
-      maxBridgeOutAmount: null,
-      vaultBalance: null,
       signers: [],
       errors: {},
       error: null,
       lastUpdatedAt: Date.now(),
+      token: null,
+      halted: null,
+      maxBridgeOutAmount: null,
+      vaultBalance: null,
+      name: null,
+      symbol: null,
+      totalSupply: null,
+      bridgeInCaller: null,
+      maxBridgeInAmount: null,
+      minBridgeOutAmount: null,
+      bridgeInCooldown: null,
+      lastBridgeInTime: null,
+      bridgeInEnabled: null,
     };
   }
 
@@ -339,16 +498,26 @@ export class ContractManager {
     }
   }
 
-  _emitUpdatedEvent({ reason = 'updated' } = {}) {
+  _contractNotReadyError(key = 'source') {
+    return this.getContext(key).loadError || 'Contract not ready';
+  }
+
+  _emitUpdatedEvent({ reason = 'updated', key = null } = {}) {
+    const status = this.getStatusSnapshot('source');
+    const statuses = this.getStatusSnapshots();
     document.dispatchEvent(
       new CustomEvent('contractManagerUpdated', {
         detail: {
           reason,
+          key,
           txEnabled: !!this.networkManager?.isTxEnabled?.(),
-          ready: this.isReady(),
-          address: CONFIG.BRIDGE.CONTRACTS.SOURCE.ADDRESS,
-          chainId: CONFIG.BRIDGE.CHAINS.SOURCE.CHAIN_ID,
-          status: this.getStatusSnapshot(),
+          txEnabledByKey: Object.fromEntries(CONTRACT_KEYS.map((contractKey) => [contractKey, !!this.networkManager?.isTxEnabledFor?.(contractKey)])),
+          ready: this.isReady('source'),
+          readyByKey: Object.fromEntries(CONTRACT_KEYS.map((contractKey) => [contractKey, this.isReady(contractKey)])),
+          address: getContractConfig('source')?.ADDRESS || null,
+          chainId: getNetworkConfig('source')?.CHAIN_ID ?? null,
+          status,
+          statuses,
         },
       })
     );

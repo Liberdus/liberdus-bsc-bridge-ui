@@ -1,5 +1,3 @@
-import { renderVaultOperationOptions, REQUEST_VAULT_OPERATION_TYPE_ORDER } from '../utils/vault-operations.js';
-
 export function renderOperationsTabTemplate({ refreshButton, tokenSymbol }) {
   return `
     <div class="panel-header">
@@ -7,13 +5,32 @@ export function renderOperationsTabTemplate({ refreshButton, tokenSymbol }) {
         <h2>Admin</h2>
         ${refreshButton}
       </div>
-      <p class="muted" data-ops-status>Connect a wallet to check access.</p>
+      <p class="ops-status-banner is-neutral" data-ops-status>Connect a wallet to check access.</p>
     </div>
 
     <div class="stack">
       <div class="card">
+        <div class="card-title-row">
+          <div class="card-title">Contract</div>
+          <div class="muted" data-ops-contract-helper>Choose which contract to administer.</div>
+        </div>
+        <div class="tab-bar ops-contract-switch" role="tablist" aria-label="Admin contract switch">
+          <button type="button" class="tab-button is-active" data-ops-contract-tab="source" aria-selected="true">Source</button>
+          <button type="button" class="tab-button" data-ops-contract-tab="destination" aria-selected="false">Destination</button>
+        </div>
+      </div>
+
+      <div class="card">
         <div class="card-title">Access</div>
         <div class="kv-grid">
+          <div class="kv">
+            <div class="kv-label">Selected Contract</div>
+            <div class="kv-value" data-ops-contract-label>--</div>
+          </div>
+          <div class="kv">
+            <div class="kv-label">Required Network</div>
+            <div class="kv-value" data-ops-required-network>--</div>
+          </div>
           <div class="kv kv--full">
             <div class="kv-label">Connected Address</div>
             <div class="kv-value">
@@ -50,7 +67,7 @@ export function renderOperationsTabTemplate({ refreshButton, tokenSymbol }) {
       <div class="card" data-ops-history-section hidden>
         <div class="ops-history-lookup">
           <div class="ops-history-section-title">Operation Lookup</div>
-          <p class="muted">Paste an operation ID or select one below to review it. Signing remains limited to multisig wallets.</p>
+          <p class="muted" data-ops-history-copy>Paste an operation ID or select one below to review it.</p>
           <label class="field field--full">
             <span class="field-label">Operation ID</span>
             <div class="ops-history-lookup-row">
@@ -62,14 +79,12 @@ export function renderOperationsTabTemplate({ refreshButton, tokenSymbol }) {
         <div class="ops-history-divider" role="presentation"></div>
         <div class="ops-history-intro">
           <div class="card-title">Requested Operations</div>
-          <p class="muted">Loaded from the Vault&apos;s current on-chain operation storage.</p>
+          <p class="muted" data-ops-history-intro>Loaded from the selected contract&apos;s current on-chain operation storage.</p>
         </div>
         <div class="proposals-filters">
           <label class="filter-field">
             <span class="filter-label">Operation</span>
-            <select class="field-input" data-ops-history-filter-type>
-              ${renderVaultOperationOptions({ includeAll: true })}
-            </select>
+            <select class="field-input" data-ops-history-filter-type></select>
           </label>
           <label class="filter-field">
             <span class="filter-label">Status</span>
@@ -89,18 +104,18 @@ export function renderOperationsTabTemplate({ refreshButton, tokenSymbol }) {
       </div>
 
       <div class="card" data-ops-admin-section hidden>
-        <div class="card-title">Admin Actions</div>
+        <div class="card-title" data-ops-actions-title>Admin Actions</div>
         <div class="form-grid">
           <label class="field">
             <span class="field-label">Request Operation</span>
-            <select class="field-input" data-op-type>
-              ${renderVaultOperationOptions({ order: REQUEST_VAULT_OPERATION_TYPE_ORDER })}
-            </select>
+            <select class="field-input" data-op-type></select>
           </label>
-          <label class="field" data-op-field="amount">
+
+          <label class="field" data-op-field="amount" hidden>
             <span class="field-label">Max Bridge Out Amount (${tokenSymbol})</span>
             <input class="field-input" type="text" inputmode="decimal" placeholder="0" data-op-amount />
           </label>
+
           <label class="field" data-op-field="enabled" hidden>
             <span class="field-label">Bridge Out Enabled</span>
             <select class="field-input" data-op-enabled>
@@ -108,10 +123,48 @@ export function renderOperationsTabTemplate({ refreshButton, tokenSymbol }) {
               <option value="false">Disable</option>
             </select>
           </label>
+
+          <label class="field" data-op-field="destBridgeInCaller" hidden>
+            <span class="field-label">Bridge In Caller</span>
+            <input class="field-input" type="text" placeholder="0x..." data-op-dest-bridge-in-caller />
+          </label>
+
+          <label class="field" data-op-field="destBridgeInAmount" hidden>
+            <span class="field-label">Max Bridge In Amount (${tokenSymbol})</span>
+            <input class="field-input" type="text" inputmode="decimal" placeholder="0" data-op-dest-bridge-in-amount />
+          </label>
+
+          <label class="field" data-op-field="destBridgeInCooldown" hidden>
+            <span class="field-label">Bridge In Cooldown (seconds)</span>
+            <input class="field-input" type="text" inputmode="numeric" placeholder="60" data-op-dest-bridge-in-cooldown />
+          </label>
+
+          <label class="field" data-op-field="destBridgeInEnabled" hidden>
+            <span class="field-label">Bridge In Enabled</span>
+            <select class="field-input" data-op-dest-bridge-in-enabled>
+              <option value="true">Enable</option>
+              <option value="false">Disable</option>
+            </select>
+          </label>
+
+          <label class="field" data-op-field="destBridgeOutEnabled" hidden>
+            <span class="field-label">Bridge Out Enabled</span>
+            <select class="field-input" data-op-dest-bridge-out-enabled>
+              <option value="true">Enable</option>
+              <option value="false">Disable</option>
+            </select>
+          </label>
+
+          <label class="field" data-op-field="destMinBridgeOutAmount" hidden>
+            <span class="field-label">Min Bridge Out Amount (${tokenSymbol})</span>
+            <input class="field-input" type="text" inputmode="decimal" placeholder="0" data-op-dest-min-bridge-out-amount />
+          </label>
+
           <label class="field" data-op-field="oldSigner" hidden>
             <span class="field-label">Old Signer</span>
             <input class="field-input" type="text" placeholder="0x..." data-op-old-signer />
           </label>
+
           <label class="field" data-op-field="newSigner" hidden>
             <span class="field-label">New Signer</span>
             <input class="field-input" type="text" placeholder="0x..." data-op-new-signer />

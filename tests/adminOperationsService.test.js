@@ -52,7 +52,7 @@ describe('AdminOperationsService', () => {
     const result = await service.load();
 
     expect(contract.getAllOperationIds).toHaveBeenCalledTimes(1);
-    expect(contractManager.getOperationsBatch).toHaveBeenCalledWith([OPERATION_ID_TWO, OPERATION_ID_ONE]);
+    expect(contractManager.getOperationsBatch).toHaveBeenCalledWith([OPERATION_ID_TWO, OPERATION_ID_ONE], 'source');
     expect(result.activeCount).toBe(2);
     expect(result.items.map((item) => item.operationId)).toEqual([OPERATION_ID_TWO, OPERATION_ID_ONE]);
   });
@@ -71,7 +71,7 @@ describe('AdminOperationsService', () => {
     expect(contract.getOperationIdsCount).toHaveBeenCalledTimes(1);
     expect(contract.operationIds).toHaveBeenNthCalledWith(1, 0);
     expect(contract.operationIds).toHaveBeenNthCalledWith(2, 1);
-    expect(contractManager.getOperationsBatch).toHaveBeenCalledWith([OPERATION_ID_TWO, OPERATION_ID_ONE]);
+    expect(contractManager.getOperationsBatch).toHaveBeenCalledWith([OPERATION_ID_TWO, OPERATION_ID_ONE], 'source');
     expect(result.items.map((item) => item.operationId)).toEqual([OPERATION_ID_TWO, OPERATION_ID_ONE]);
   });
 
