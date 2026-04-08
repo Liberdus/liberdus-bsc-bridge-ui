@@ -36,7 +36,7 @@ const PROFILES = {
       ABI_PATH: './abi/destination-liberdus.json',
     },
     BRIDGE: {
-      OBSERVER_URL: 'https://dev.liberdus.com:3030/observer',
+      OBSERVER_URL: 'https://gate-test.liberdus.com/observer',
     },
   },
   prod: {
