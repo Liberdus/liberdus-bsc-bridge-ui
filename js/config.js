@@ -36,7 +36,7 @@ const PROFILES = {
       ABI_PATH: './abi/destination-liberdus.json',
     },
     BRIDGE: {
-      OBSERVER_URL: 'https://gate-test.liberdus.com/observer',
+      OBSERVER_URL: 'https://dev.liberdus.com:3030/observer',
     },
   },
   prod: {
@@ -71,7 +71,7 @@ const PROFILES = {
       ABI_PATH: './abi/destination-liberdus.json',
     },
     BRIDGE: {
-      OBSERVER_URL: 'https://dev.liberdus.com:3030/observer',
+      OBSERVER_URL: 'https://gate-test.liberdus.com/observer',
     },
   },
 };
@@ -79,7 +79,7 @@ const PROFILES = {
 export const CONFIG = {
   APP: {
     NAME: 'Liberdus BSC Bridge UI',
-    VERSION: '0.1.2',
+    VERSION: '1.0.1',
   },
   RUNTIME: {
     PROFILE: 'dev', // 'dev' or 'prod'
