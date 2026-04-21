@@ -1,10 +1,25 @@
 # Wallet Library Extraction Plan
 
+See also: `docs/wallet-core-phased-extraction-roadmap.md` for the detailed phase-by-phase implementation sequence.
+
 ## Goal
 
 Extract the reusable wallet core from `liberdus-bsc-bridge-ui` into a shareable library that can later be used by apps such as `WhaleSwap-UI`.
 
 This document is about the extraction boundary and repo strategy, not about changing bridge functionality right now.
+
+## Current Consumption Model
+
+`liberdus-bsc-bridge-ui` is not currently using app-runtime packages for browser code.
+
+What the repo is doing today:
+
+- browser ESM app code under `js/`
+- `index.html` loads `./js/bootstrap.js` as a module
+- `ethers` is loaded from `./libs/ethers.umd.min.js`
+- `package.json` is only being used for development tooling and tests
+
+That means the first shared-library rollout should not assume npm-package consumption inside the bridge app.
 
 ## Current Bridge Shape
 
@@ -154,7 +169,6 @@ If a separate repo is created, keep it very small.
 
 ```text
 liberdus-wallet-core/
-  package.json
   README.md
   src/
     injected-wallet-connector.js
@@ -168,6 +182,21 @@ liberdus-wallet-core/
     injected-wallet-connector.test.js
     wallet-session.test.js
 ```
+
+Optional development files such as `package.json` can exist in the library repo for tests/tooling, but bridge should not depend on consuming it as an npm-style runtime package.
+
+The shared repo should also include consumer documentation so other repos know how to adopt it without reverse-engineering bridge internals.
+
+Recommended consumer docs in the shared repo:
+
+- what the library is responsible for
+- what remains app-local
+- required adapters or integration points
+- example imports
+- example boot/setup flow
+- example connect / restore / disconnect flow
+- how to handle `chainId` and wallet events
+- what network policy is intentionally left to the dapp
 
 ## Recommended Public API Shape
 
@@ -236,17 +265,20 @@ Do the internal cleanup in bridge and the organizational cleanup in WhaleSwap be
 
 Both apps are browser-first ESM apps with little or no bundling. That matters.
 
-The library should therefore avoid assuming a bundler-only environment.
+The library should therefore avoid assuming a bundler-only or npm-package-only environment.
 
 Practical options once the shared repo exists:
 
-1. Publish plain ESM files and consume them through import maps
-2. Use a local package dependency plus import-map entries
-3. Vendor/copy a built ESM artifact into each app during a simple build step
+1. Vendor plain ESM files from the library repo into the bridge app
+2. Pull the library repo in as a submodule or subtree under a served app directory such as `vendor/liberdus-wallet-core/`
+3. Use an import map that points to a local served file path inside the app
+4. Copy a built ESM artifact from the library repo into the app during a simple sync step
 
 Avoid making the first version depend on framework-specific tooling.
 
 ## Recommended Extraction Sequence
+
+The bridge app should start with an internal extraction, not with a new external repo dependency.
 
 ## Phase 1: Bridge Internal Cleanup
 
@@ -258,6 +290,57 @@ Without changing behavior:
 - convert core event model to a generic emitter internally
 
 ## Phase 2: Bridge Adapter Layer
+
+## Recommended Start Inside Bridge
+
+Before any new repo is created, move toward an internal library-like folder inside bridge first.
+
+Suggested internal shape:
+
+```text
+js/lib/wallet-core/
+  injected-wallet-connector.js
+  wallet-session.js
+  index.js
+```
+
+Bridge should import from that internal folder first and prove the boundary there.
+
+Only after that is stable should the code be moved to a new shared repository.
+
+As this internal boundary stabilizes, start drafting the future consumer guide in parallel so the eventual shared repo ships with real integration instructions.
+
+## How Bridge Should Use The New Repo Later
+
+When the new repo is ready, bridge should still consume plain files under its own served tree.
+
+Recommended patterns:
+
+1. Vendor the library repo into `vendor/liberdus-wallet-core/`
+2. Or pull it in via submodule/subtree under a served folder
+3. Optionally add an import map alias that points to the vendored local path
+
+Example import-map direction:
+
+```html
+<script type="importmap">
+{
+  "imports": {
+    "@liberdus/wallet-core": "./vendor/liberdus-wallet-core/index.js"
+  }
+}
+</script>
+```
+
+Then app code can import from a stable alias while still serving local files:
+
+```js
+import { createWalletCore } from '@liberdus/wallet-core';
+```
+
+This keeps the runtime model compatible with the current repo setup and avoids needing package-based runtime consumption.
+
+The shared repo should not be considered complete until it includes a usage document for consuming repos.
 
 Keep the bridge app behavior stable with thin adapters:
 
