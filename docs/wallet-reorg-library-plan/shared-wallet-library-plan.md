@@ -1,6 +1,6 @@
-# Wallet Library Extraction Plan
+# Shared Wallet Library Plan
 
-See also: `docs/wallet-core-phased-extraction-roadmap.md` for the detailed phase-by-phase implementation sequence.
+See also: `docs/wallet-reorg-library-plan/bridge-wallet-core-extraction-roadmap.md` for the detailed phase-by-phase implementation sequence inside this repo.
 
 ## Goal
 

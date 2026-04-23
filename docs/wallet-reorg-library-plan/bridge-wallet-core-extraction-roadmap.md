@@ -1,6 +1,6 @@
-# Wallet Core Phased Extraction Roadmap
+# Bridge Wallet Core Extraction Roadmap
 
-See also: `docs/wallet-library-extraction-plan.md` for the higher-level extraction boundary, repo strategy, and packaging guidance.
+See also: `docs/wallet-reorg-library-plan/shared-wallet-library-plan.md` for the higher-level shared-library boundary, repo strategy, and packaging guidance.
 
 ## Goal
 
