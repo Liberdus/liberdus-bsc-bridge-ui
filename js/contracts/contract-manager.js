@@ -342,6 +342,12 @@ export class ContractManager {
       reader.apply(snapshot, result.value);
     });
 
+    if (normalizedKey === 'destination') {
+      const balanceResult = await this._readNativeBalance(normalizedKey, snapshot.bridgeInCaller);
+      snapshot.errors.bridgeInCallerGasBalance = balanceResult.error;
+      snapshot.bridgeInCallerGasBalance = this._toStringOrNull(balanceResult.value);
+    }
+
     const firstError = Object.values(snapshot.errors).find((value) => !!value) || null;
     snapshot.error = firstError;
     snapshot.lastUpdatedAt = Date.now();
@@ -434,6 +440,26 @@ export class ContractManager {
     }
   }
 
+  async _readNativeBalance(key, address) {
+    const normalizedAddress = this._normalizeAddress(address);
+    if (!normalizedAddress) return { value: null, error: null };
+
+    const provider = this.getReadOnlyProvider(key);
+    if (!provider || typeof provider.getBalance !== 'function') {
+      return { value: null, error: 'getBalance() not available on provider' };
+    }
+
+    try {
+      const value = await provider.getBalance(normalizedAddress);
+      return { value, error: null };
+    } catch (error) {
+      return {
+        value: null,
+        error: error?.reason || error?.message || `Failed to read native balance for ${normalizedAddress}`,
+      };
+    }
+  }
+
   _emptySnapshot(key) {
     const metadata = getContractMetadata(key);
     const contractConfig = getContractConfig(key);
@@ -465,6 +491,7 @@ export class ContractManager {
       symbol: null,
       totalSupply: null,
       bridgeInCaller: null,
+      bridgeInCallerGasBalance: null,
       maxBridgeInAmount: null,
       minBridgeOutAmount: null,
       bridgeInCooldown: null,
