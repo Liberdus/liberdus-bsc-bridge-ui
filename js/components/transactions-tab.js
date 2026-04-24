@@ -568,7 +568,14 @@ export class TransactionsTab {
         }
         const type = `<span class="tx-type">${typeLabel}</span>`;
         const status = renderStatus(row.status);
-        const issued = `<span class="tx-muted">${formatRelativeTime(row.timestamp)}</span>`;
+        const issuedTs = Number(row.timestamp);
+        const issued = `
+          <span
+            class="tx-muted"
+            data-issued-time
+            data-issued-ts="${Number.isFinite(issuedTs) && issuedTs > 0 ? issuedTs : ''}"
+          >${formatRelativeTime(row.timestamp)}</span>
+        `;
         const receipt = row.receiptTxHash ? renderTxLink(row.dstChainKey, row.receiptTxHash) : '<span class="tx-muted">--</span>';
 
         return `
@@ -788,12 +795,24 @@ export class TransactionsTab {
 
   _startIssuedTicker() {
     if (this._refreshTimer) return;
-    this._refreshTimer = setInterval(() => this.render(), 60000);
+    this._updateIssuedTimestamps();
+    this._refreshTimer = setInterval(() => this._updateIssuedTimestamps(), 1000);
   }
 
   _stopIssuedTicker() {
     if (this._refreshTimer) clearInterval(this._refreshTimer);
     this._refreshTimer = null;
+  }
+
+  _updateIssuedTimestamps() {
+    if (!this.tableBody) return;
+
+    const labels = this.tableBody.querySelectorAll('[data-issued-time]');
+    for (const label of labels) {
+      const ts = Number(label.getAttribute('data-issued-ts'));
+      const nextLabel = formatRelativeTime(ts);
+      if (label.textContent !== nextLabel) label.textContent = nextLabel;
+    }
   }
 
   _startPendingPoller() {
