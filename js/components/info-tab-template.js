@@ -24,6 +24,8 @@ const DESTINATION_SUMMARY_FIELDS = Object.freeze([
   { label: 'Last Bridge In', field: 'last-bridge-in' },
   { label: 'Contract Address', field: 'contract-address', address: true },
   { label: 'Bridge In Caller', field: 'bridge-in-caller', address: true },
+  { label: 'Bridge In Caller Balance (Gas Fees)', field: 'bridge-in-caller-fee-balance' },
+  { label: 'Estimated Transactions (0.00001 BNB)', field: 'bridge-in-caller-tx-capacity' },
   { label: 'Owner', field: 'owner-address', address: true },
   { label: 'Token Symbol', field: 'token-symbol' },
   { label: 'Total Supply', field: 'total-supply' },

@@ -1,7 +1,7 @@
 import { RefreshButton } from './refresh-button.js';
 import { renderInfoTabTemplate } from './info-tab-template.js';
 import { escapeHtml } from '../utils/helpers.js';
-import { CONTRACT_KEYS, getContractMetadata } from '../contracts/contract-types.js';
+import { CONTRACT_KEYS, getContractMetadata, getNetworkConfig } from '../contracts/contract-types.js';
 
 export class InfoTab {
   constructor() {
@@ -87,6 +87,16 @@ export class InfoTab {
 
     if (contractKey === 'destination') {
       this._renderAddress(contractKey, 'bridge-in-caller', snapshot.bridgeInCaller || '--');
+      this._setText(
+        contractKey,
+        'bridge-in-caller-fee-balance',
+        this._formatNativeTokenAmount(snapshot.bridgeInCallerGasBalance, contractKey)
+      );
+      this._setText(
+        contractKey,
+        'bridge-in-caller-tx-capacity',
+        this._formatTxCapacity(snapshot.bridgeInCallerGasBalance)
+      );
       this._setText(contractKey, 'bridge-in-enabled', this._boolLabel(snapshot.bridgeInEnabled));
       this._setText(contractKey, 'max-bridge-in', this._formatTokenAmount(snapshot.maxBridgeInAmount));
       this._setText(
@@ -268,6 +278,24 @@ export class InfoTab {
     return `${String(value)} (raw)`;
   }
 
+  _formatNativeTokenAmount(value, contractKey) {
+    if (value == null) return '--';
+
+    try {
+      if (window.ethers?.utils?.formatUnits) {
+        const network = getNetworkConfig(contractKey);
+        const decimals = Number(network?.NATIVE_CURRENCY?.decimals ?? 18);
+        const symbol = network?.NATIVE_CURRENCY?.symbol || 'NATIVE';
+        const formatted = window.ethers.utils.formatUnits(value, Number.isFinite(decimals) ? decimals : 18);
+        return `${this._trimDecimals(formatted)} ${symbol}`;
+      }
+    } catch {
+      // Fall back to raw value below.
+    }
+
+    return `${String(value)} (raw)`;
+  }
+
   _formatOperationDeadline(seconds) {
     const n = Number(seconds);
     if (!Number.isFinite(n) || n <= 0) return '--';
@@ -329,6 +357,24 @@ export class InfoTab {
 
   _escapeHtml(value) {
     return escapeHtml(value);
+  }
+
+  _formatTxCapacity(weiValue) {
+    const estimatedTxCostWei = 10_000_000_000_000n;
+    const balance = this._parseBigInt(weiValue);
+    if (balance === null) return '--';
+    const transactionCount = balance / estimatedTxCostWei;
+    const label = transactionCount === 1n ? 'transaction' : 'transactions';
+    return `${transactionCount.toLocaleString()} ${label}`;
+  }
+
+  _parseBigInt(value) {
+    try {
+      if (value == null) return null;
+      return BigInt(String(value));
+    } catch {
+      return null;
+    }
   }
 
   _notifyReadError(snapshots) {

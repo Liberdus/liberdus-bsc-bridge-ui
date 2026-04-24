@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ContractManager } from '../js/contracts/contract-manager.js';
 import { installCommonWindowStubs, normalizeAddress } from './helpers/test-utils.js';
@@ -155,6 +155,40 @@ describe('ContractManager access state', () => {
     expect(snapshot.operationCount).toBe(9);
     expect(snapshot).not.toHaveProperty('activeOperationCount');
     expect(snapshot.requiredSignatures).toBe(3);
+    expect(snapshot.error).toBeNull();
+  });
+
+  it('reads the destination bridge-in caller gas-fee balance into the status snapshot', async () => {
+    const manager = new ContractManager();
+    const getBalance = vi.fn(async () => ({ toString: () => '1500000000000000000' }));
+    const destinationContext = manager.getContext('destination');
+
+    destinationContext.readOnlyProvider = { getBalance };
+    destinationContext.contractRead = {
+      getChainId: async () => ({ toString: () => '97' }),
+      chainId: async () => ({ toString: () => '97' }),
+      owner: async () => OWNER,
+      operationCount: async () => ({ toString: () => '4' }),
+      OPERATION_DEADLINE: async () => ({ toString: () => '259200' }),
+      REQUIRED_SIGNATURES: async () => ({ toString: () => '2' }),
+      bridgeOutEnabled: async () => true,
+      signers: async (index) => [OWNER, SIGNER, STRANGER, '0x4444444444444444444444444444444444444444'][index],
+      name: async () => 'Liberdus',
+      symbol: async () => 'LIB',
+      totalSupply: async () => ({ toString: () => '1000000000000000000' }),
+      bridgeInCaller: async () => SIGNER,
+      maxBridgeInAmount: async () => ({ toString: () => '1000' }),
+      minBridgeOutAmount: async () => ({ toString: () => '10' }),
+      bridgeInCooldown: async () => ({ toString: () => '0' }),
+      lastBridgeInTime: async () => ({ toString: () => '1700000000' }),
+      bridgeInEnabled: async () => true,
+    };
+
+    const snapshot = await manager.refreshStatus({ key: 'destination' });
+
+    expect(getBalance).toHaveBeenCalledWith(normalizeAddress(SIGNER));
+    expect(snapshot.bridgeInCaller).toBe(SIGNER);
+    expect(snapshot.bridgeInCallerGasBalance).toBe('1500000000000000000');
     expect(snapshot.error).toBeNull();
   });
 });
