@@ -92,6 +92,11 @@ export class InfoTab {
         'bridge-in-caller-fee-balance',
         this._formatNativeTokenAmount(snapshot.bridgeInCallerGasBalance, contractKey)
       );
+      this._setText(
+        contractKey,
+        'bridge-in-caller-tx-capacity',
+        this._formatTxCapacity(snapshot.bridgeInCallerGasBalance)
+      );
       this._setText(contractKey, 'bridge-in-enabled', this._boolLabel(snapshot.bridgeInEnabled));
       this._setText(contractKey, 'max-bridge-in', this._formatTokenAmount(snapshot.maxBridgeInAmount));
       this._setText(
@@ -352,6 +357,24 @@ export class InfoTab {
 
   _escapeHtml(value) {
     return escapeHtml(value);
+  }
+
+  _formatTxCapacity(weiValue) {
+    const estimatedTxCostWei = 10_000_000_000_000n;
+    const balance = this._parseBigInt(weiValue);
+    if (balance === null) return '--';
+    const transactionCount = balance / estimatedTxCostWei;
+    const label = transactionCount === 1n ? 'transaction' : 'transactions';
+    return `${transactionCount.toLocaleString()} ${label}`;
+  }
+
+  _parseBigInt(value) {
+    try {
+      if (value == null) return null;
+      return BigInt(String(value));
+    } catch {
+      return null;
+    }
   }
 
   _notifyReadError(snapshots) {
