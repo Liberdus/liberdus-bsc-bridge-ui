@@ -959,6 +959,7 @@ export class OperationsTab {
     return {
       target: oldAddr,
       value: window.ethers.BigNumber.from(newAddr),
+      data: '0x',
     };
   }
 
