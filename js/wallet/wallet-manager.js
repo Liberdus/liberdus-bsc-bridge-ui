@@ -27,7 +27,6 @@ export class WalletManager {
     this.walletId = null;
     this.walletName = null;
     this._connectionPromise = null;
-    this._discoveryUnsubscribe = null;
   }
 
   load() {
@@ -56,8 +55,15 @@ export class WalletManager {
       }
     });
 
-    this._discoveryUnsubscribe = this._subscribeToProviderDiscovery();
-    void this.walletCore.discoverWallets().then(() => this._notifyProvidersChanged());
+    const refreshProviders = () => {
+      this._notify('providersChanged', { wallets: this.getAvailableWallets() });
+    };
+
+    void this.walletCore.discoverWallets().then(() => {
+      refreshProviders();
+      // Wallet-core registers providers on announce; do not call discoverWallets() here.
+      window.addEventListener('eip6963:announceProvider', () => queueMicrotask(refreshProviders));
+    });
   }
 
   async init() {
@@ -222,19 +228,6 @@ export class WalletManager {
       source: wallet.source,
       provider: wallet.provider || null,
     };
-  }
-
-  _subscribeToProviderDiscovery() {
-    const onAnnounce = () => {
-      void this.walletCore.discoverWallets(0).then(() => this._notifyProvidersChanged());
-    };
-
-    window.addEventListener('eip6963:announceProvider', onAnnounce);
-    return () => window.removeEventListener('eip6963:announceProvider', onAnnounce);
-  }
-
-  _notifyProvidersChanged() {
-    this._notify('providersChanged', { wallets: this.getAvailableWallets() });
   }
 
   _notify(event, extra = {}) {
