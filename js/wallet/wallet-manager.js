@@ -65,12 +65,8 @@ export class WalletManager {
       }
     });
 
-    const refreshProviders = () => {
-      this._notify('providersChanged', { wallets: this.getAvailableWallets() });
-    };
-
     void this.walletCore.discoverWallets().then(() => {
-      refreshProviders();
+      this._notify('providersChanged', { wallets: this.getAvailableWallets() });
     });
   }
 
@@ -286,31 +282,21 @@ export class WalletManager {
   async _maybeRestorePendingConnection() {
     const walletId = this._pendingRestoreWalletId;
     if (!walletId || this.isConnected() || this._connectionPromise || this._restoreConnectionPromise) {
-      return false;
+      return;
     }
-    if (!this.getWalletById(walletId)) return false;
+    if (!this.getWalletById(walletId)) return;
 
     this._writeWalletSessionWalletId(walletId);
-    this._restoreConnectionPromise = this.checkPreviousConnection();
-    try {
-      return await this._restoreConnectionPromise;
-    } finally {
+    this._restoreConnectionPromise = this.checkPreviousConnection().finally(() => {
       this._restoreConnectionPromise = null;
-    }
+    });
+    await this._restoreConnectionPromise;
   }
 
   _capturePendingRestoreWallet(walletId) {
     if (!walletId) return;
     if (this.walletCore.hasWalletSession()) return;
-
-    if (this.getWalletById(walletId)) {
-      if (this._pendingRestoreWalletId === walletId) {
-        this._pendingRestoreWalletId = null;
-      }
-      return;
-    }
-
-    this._pendingRestoreWalletId = walletId;
+    this._pendingRestoreWalletId = this.getWalletById(walletId) ? null : walletId;
   }
 
   _readWalletSessionWalletId() {
