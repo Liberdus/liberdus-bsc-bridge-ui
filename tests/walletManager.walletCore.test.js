@@ -64,14 +64,14 @@ function installWindow({ provider, providers = null, multiListener = false } = {
   return handlerByType;
 }
 
-function saveWalletSession(walletId) {
-  localStorage.setItem(WALLET_SESSION_KEY, JSON.stringify({ walletId }));
+function saveWalletSession(walletId, extra = {}) {
+  localStorage.setItem(WALLET_SESSION_KEY, JSON.stringify({ walletId, ...extra }));
 }
 
-function announceWallet(walletId, name, provider) {
+function announceWallet(walletId, name, provider, { rdns = `org.liberdus.${walletId}` } = {}) {
   window.dispatchEvent(new CustomEvent('eip6963:announceProvider', {
     detail: {
-      info: { uuid: walletId, name, rdns: `org.liberdus.${walletId}` },
+      info: { uuid: walletId, name, rdns },
       provider,
     },
   }));
@@ -165,6 +165,20 @@ describe('WalletManager wallet-core adapter', () => {
     expect(names).toEqual(['Brave Wallet', 'MetaMask']);
   });
 
+  it('disambiguates duplicate wallet names for the header picker', async () => {
+    installWindow({ provider: null, multiListener: true });
+    const manager = new WalletManager();
+    manager.load();
+
+    announceWallet('first-wallet', 'MetaMask', makeProvider({ flags: {} }), { rdns: 'io.metamask.first' });
+    announceWallet('second-wallet', 'MetaMask', makeProvider({ flags: {} }), { rdns: 'io.metamask.second' });
+    await manager.walletCore.discoverWallets(0);
+
+    const names = manager.getAvailableWallets().map((wallet) => wallet.name);
+
+    expect(names).toEqual(['MetaMask', 'MetaMask (2)']);
+  });
+
   it('does not recurse on eip6963 announce', async () => {
     const provider = makeProvider();
     installWindow({ provider, multiListener: true });
@@ -195,7 +209,7 @@ describe('WalletManager wallet-core adapter', () => {
     expect(await manager.init()).toBe(false);
     expect(manager.isConnected()).toBe(false);
     expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
-    expect(manager._pendingRestoreWalletId).toBe('late-wallet');
+    expect(manager._pendingRestoreWallet).toMatchObject({ walletId: 'late-wallet' });
 
     const provider = makeProvider({ flags: {} });
     announceWallet('late-wallet', 'Late Wallet', provider);
@@ -205,13 +219,47 @@ describe('WalletManager wallet-core adapter', () => {
     });
 
     expect(manager.getAddress()).toBe(ACCOUNT);
-    expect(manager._pendingRestoreWalletId).toBeNull();
-    expect(localStorage.getItem(WALLET_SESSION_KEY)).toBe(JSON.stringify({ walletId: 'late-wallet' }));
+    expect(manager._pendingRestoreWallet).toBeNull();
+    expect(JSON.parse(localStorage.getItem(WALLET_SESSION_KEY))).toMatchObject({
+      walletId: 'late-wallet',
+      rdns: 'org.liberdus.late-wallet',
+      name: 'Late Wallet',
+    });
     expect(connectedEvents).toHaveLength(1);
     expect(connectedEvents[0]).toMatchObject({
       address: ACCOUNT,
       walletId: 'late-wallet',
       walletName: 'Late Wallet',
+      restored: true,
+    });
+  });
+
+  it('restores a saved EIP-6963 wallet when its UUID changes but rdns stays stable', async () => {
+    installWindow({ provider: null, multiListener: true });
+    saveWalletSession('old-uuid', { rdns: 'io.metamask', name: 'MetaMask' });
+
+    const provider = makeProvider({ flags: {} });
+    window.addEventListener('eip6963:requestProvider', () => {
+      announceWallet('new-uuid', 'MetaMask', provider, { rdns: 'io.metamask' });
+    });
+
+    const manager = new WalletManager();
+    const connectedEvents = [];
+    document.addEventListener('walletConnected', (event) => connectedEvents.push(event.detail.data));
+
+    manager.load();
+    expect(await manager.init()).toBe(true);
+
+    expect(manager.isConnected()).toBe(true);
+    expect(manager.getAddress()).toBe(ACCOUNT);
+    expect(JSON.parse(localStorage.getItem(WALLET_SESSION_KEY))).toMatchObject({
+      walletId: 'new-uuid',
+      rdns: 'io.metamask',
+      name: 'MetaMask',
+    });
+    expect(connectedEvents[0]).toMatchObject({
+      walletId: 'new-uuid',
+      walletName: 'MetaMask',
       restored: true,
     });
   });
@@ -223,7 +271,7 @@ describe('WalletManager wallet-core adapter', () => {
     const manager = new WalletManager();
     manager.load();
     expect(await manager.init()).toBe(false);
-    expect(manager._pendingRestoreWalletId).toBe('locked-wallet');
+    expect(manager._pendingRestoreWallet).toMatchObject({ walletId: 'locked-wallet' });
 
     const provider = makeProvider({ accounts: [], flags: {} });
     announceWallet('locked-wallet', 'Locked Wallet', provider);
@@ -233,7 +281,7 @@ describe('WalletManager wallet-core adapter', () => {
     });
 
     expect(manager.isConnected()).toBe(false);
-    expect(manager._pendingRestoreWalletId).toBeNull();
+    expect(manager._pendingRestoreWallet).toBeNull();
     expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
   });
 
@@ -256,11 +304,11 @@ describe('WalletManager wallet-core adapter', () => {
     manager.load();
     await manager.init();
 
-    expect(manager._pendingRestoreWalletId).toBe('late-wallet');
+    expect(manager._pendingRestoreWallet).toMatchObject({ walletId: 'late-wallet' });
 
     await manager.disconnect();
 
-    expect(manager._pendingRestoreWalletId).toBeNull();
+    expect(manager._pendingRestoreWallet).toBeNull();
     expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
   });
 });

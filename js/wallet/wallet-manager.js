@@ -28,7 +28,7 @@ export class WalletManager {
     this.walletName = null;
     this._connectionPromise = null;
     this._restoreConnectionPromise = null;
-    this._pendingRestoreWalletId = null;
+    this._pendingRestoreWallet = null;
   }
 
   load() {
@@ -37,13 +37,14 @@ export class WalletManager {
     this.walletCore.subscribe((event, data) => {
       if (event === 'connected') {
         this._syncFromCoreState();
-        this._pendingRestoreWalletId = null;
+        this._pendingRestoreWallet = null;
+        this._writeCurrentWalletSession();
         this._notify('connected');
         return;
       }
 
       if (event === 'disconnected' || (event === 'accountChanged' && !data)) {
-        this._pendingRestoreWalletId = null;
+        this._pendingRestoreWallet = null;
         this._clearEthersState();
         this._notify('disconnected');
         return;
@@ -104,7 +105,9 @@ export class WalletManager {
   }
 
   getAvailableWallets() {
-    return this.walletCore.getAvailableWallets().map((wallet) => this._mapWallet(wallet));
+    return this._disambiguateWalletNames(
+      this.walletCore.getAvailableWallets().map((wallet) => this._mapWallet(wallet))
+    );
   }
 
   hasAvailableWallets() {
@@ -161,23 +164,24 @@ export class WalletManager {
       throw this._normalizeWalletError(error);
     }
 
-    this._pendingRestoreWalletId = null;
+    this._pendingRestoreWallet = null;
+    this._writeCurrentWalletSession();
     const data = this._currentWalletData({ userInitiated });
     return { success: true, ...data };
   }
 
   async disconnect() {
-    this._pendingRestoreWalletId = null;
+    this._pendingRestoreWallet = null;
     await this.walletCore.disconnect();
   }
 
-  async checkPreviousConnection() {
-    const savedWalletId = this._readWalletSessionWalletId();
+  async checkPreviousConnection({ retryResolvedPending = true } = {}) {
+    const savedSession = this._readWalletSession();
 
     try {
       await this.walletCore.sync();
     } catch {
-      this._pendingRestoreWalletId = null;
+      this._pendingRestoreWallet = null;
       await this.walletCore.disconnect();
       this._clearEthersState();
       return false;
@@ -185,12 +189,16 @@ export class WalletManager {
 
     const state = this.walletCore.getState();
     if (!state.account) {
-      this._capturePendingRestoreWallet(savedWalletId);
+      this._capturePendingRestoreWallet(savedSession);
+      if (retryResolvedPending) {
+        return await this._maybeRestorePendingConnection();
+      }
       return false;
     }
 
-    this._pendingRestoreWalletId = null;
+    this._pendingRestoreWallet = null;
     this._syncFromCoreState();
+    this._writeCurrentWalletSession();
     this._notify('connected', { restored: true });
     return true;
   }
@@ -243,6 +251,28 @@ export class WalletManager {
     };
   }
 
+  _disambiguateWalletNames(wallets) {
+    const countsByName = new Map();
+    wallets.forEach((wallet) => {
+      const name = wallet.name || 'Browser Wallet';
+      countsByName.set(name, (countsByName.get(name) || 0) + 1);
+    });
+
+    const seenByName = new Map();
+    return wallets.map((wallet) => {
+      const name = wallet.name || 'Browser Wallet';
+      if ((countsByName.get(name) || 0) <= 1) return wallet;
+
+      const seen = (seenByName.get(name) || 0) + 1;
+      seenByName.set(name, seen);
+      if (seen === 1) return wallet;
+      return {
+        ...wallet,
+        name: `${name} (${seen})`,
+      };
+    });
+  }
+
   _notify(event, extra = {}) {
     const eventNameMap = {
       connected: 'walletConnected',
@@ -280,49 +310,116 @@ export class WalletManager {
   }
 
   async _maybeRestorePendingConnection() {
-    const walletId = this._pendingRestoreWalletId;
-    if (!walletId || this.isConnected() || this._connectionPromise || this._restoreConnectionPromise) {
-      return;
+    const pendingSession = this._pendingRestoreWallet;
+    if (!pendingSession || this.isConnected() || this._connectionPromise || this._restoreConnectionPromise) {
+      return false;
     }
-    if (!this.getWalletById(walletId)) return;
 
-    this._writeWalletSessionWalletId(walletId);
-    this._restoreConnectionPromise = this.checkPreviousConnection().finally(() => {
+    const walletId = this._resolveWalletSessionWalletId(pendingSession);
+    if (!walletId) return false;
+
+    this._writeWalletSession({
+      ...pendingSession,
+      ...this._walletSessionFromWallet(this.getWalletById(walletId)),
+      walletId,
+    });
+    this._restoreConnectionPromise = this.checkPreviousConnection({ retryResolvedPending: false }).finally(() => {
       this._restoreConnectionPromise = null;
     });
-    await this._restoreConnectionPromise;
+    return await this._restoreConnectionPromise;
   }
 
-  _capturePendingRestoreWallet(walletId) {
-    if (!walletId) return;
+  _capturePendingRestoreWallet(session) {
+    const savedSession = this._normalizeWalletSession(session);
+    if (!savedSession) return;
     if (this.walletCore.hasWalletSession()) return;
-    this._pendingRestoreWalletId = this.getWalletById(walletId) ? null : walletId;
+
+    if (savedSession.walletId && this.getWalletById(savedSession.walletId)) {
+      this._pendingRestoreWallet = null;
+      return;
+    }
+
+    this._pendingRestoreWallet = savedSession;
   }
 
-  _readWalletSessionWalletId() {
+  _readWalletSession() {
     try {
       const rawSession = localStorage.getItem(WALLET_SESSION_KEY);
       if (!rawSession) return null;
-      if (rawSession === 'injected') return 'legacy:default';
+      if (rawSession === 'injected') return { walletId: 'legacy:default' };
 
       if (rawSession.trim().startsWith('{')) {
         const parsed = JSON.parse(rawSession);
-        return typeof parsed?.walletId === 'string' && parsed.walletId ? parsed.walletId : null;
+        return this._normalizeWalletSession(parsed);
       }
 
-      return rawSession;
+      return { walletId: rawSession };
     } catch {
       return null;
     }
   }
 
-  _writeWalletSessionWalletId(walletId) {
-    if (!walletId) return;
+  _normalizeWalletSession(session) {
+    if (!session || typeof session !== 'object') return null;
+
+    const walletId = this._normalizeSessionText(session.walletId);
+    const rdns = this._normalizeSessionRdns(session.rdns);
+    const name = this._normalizeSessionText(session.name);
+    if (!walletId && !rdns) return null;
+
+    return {
+      ...(walletId ? { walletId } : {}),
+      ...(rdns ? { rdns } : {}),
+      ...(name ? { name } : {}),
+    };
+  }
+
+  _resolveWalletSessionWalletId(session) {
+    const savedSession = this._normalizeWalletSession(session);
+    if (!savedSession) return null;
+
+    if (savedSession.walletId && this.getWalletById(savedSession.walletId)) {
+      return savedSession.walletId;
+    }
+
+    if (!savedSession.rdns) return null;
+
+    const matchingWallets = this.getAvailableWallets()
+      .filter((wallet) => this._normalizeSessionRdns(wallet.rdns) === savedSession.rdns);
+    if (matchingWallets.length !== 1) return null;
+    return matchingWallets[0].id;
+  }
+
+  _writeCurrentWalletSession() {
+    const session = this._walletSessionFromWallet(this.getWalletById(this.walletId));
+    this._writeWalletSession(session);
+  }
+
+  _walletSessionFromWallet(wallet) {
+    if (!wallet?.id) return null;
+    return {
+      walletId: wallet.id,
+      ...(wallet.rdns ? { rdns: wallet.rdns } : {}),
+      ...(wallet.name ? { name: wallet.name } : {}),
+    };
+  }
+
+  _writeWalletSession(session) {
+    const savedSession = this._normalizeWalletSession(session);
+    if (!savedSession?.walletId) return;
     try {
-      localStorage.setItem(WALLET_SESSION_KEY, JSON.stringify({ walletId }));
+      localStorage.setItem(WALLET_SESSION_KEY, JSON.stringify(savedSession));
     } catch {
       // Session restore is best-effort; explicit connects still work without storage.
     }
+  }
+
+  _normalizeSessionText(value) {
+    return String(value || '').trim();
+  }
+
+  _normalizeSessionRdns(value) {
+    return this._normalizeSessionText(value).toLowerCase();
   }
 
   _normalizeWalletError(error) {
