@@ -22,8 +22,18 @@ Skeleton UI for the Liberdus vault bridge app.
 
 Use any static server (ES modules require HTTP, not `file://`).
 
+Clone with submodules:
+
 ```bash
-cd /home/bui/shared/liberdus/liberdus-bsc-bridge-ui
+git clone --recurse-submodules https://github.com/Liberdus/liberdus-bsc-bridge-ui.git
+cd liberdus-bsc-bridge-ui
+python3 -m http.server 8080
+```
+
+If the repo is already cloned:
+
+```bash
+git submodule update --init --recursive
 python3 -m http.server 8080
 ```
 
