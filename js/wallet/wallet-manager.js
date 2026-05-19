@@ -27,6 +27,8 @@ export class WalletManager {
     this.walletId = null;
     this.walletName = null;
     this._connectionPromise = null;
+    this._restoreConnectionPromise = null;
+    this._pendingRestoreWalletId = null;
   }
 
   load() {
@@ -35,13 +37,21 @@ export class WalletManager {
     this.walletCore.subscribe((event, data) => {
       if (event === 'connected') {
         this._syncFromCoreState();
+        this._pendingRestoreWalletId = null;
         this._notify('connected');
         return;
       }
 
       if (event === 'disconnected' || (event === 'accountChanged' && !data)) {
+        this._pendingRestoreWalletId = null;
         this._clearEthersState();
         this._notify('disconnected');
+        return;
+      }
+
+      if (event === 'providersChanged') {
+        this._notify('providersChanged', { wallets: this.getAvailableWallets() });
+        void this._maybeRestorePendingConnection();
         return;
       }
 
@@ -61,8 +71,6 @@ export class WalletManager {
 
     void this.walletCore.discoverWallets().then(() => {
       refreshProviders();
-      // Wallet-core registers providers on announce; do not call discoverWallets() here.
-      window.addEventListener('eip6963:announceProvider', () => queueMicrotask(refreshProviders));
     });
   }
 
@@ -157,26 +165,35 @@ export class WalletManager {
       throw this._normalizeWalletError(error);
     }
 
+    this._pendingRestoreWalletId = null;
     const data = this._currentWalletData({ userInitiated });
     return { success: true, ...data };
   }
 
   async disconnect() {
+    this._pendingRestoreWalletId = null;
     await this.walletCore.disconnect();
   }
 
   async checkPreviousConnection() {
+    const savedWalletId = this._readWalletSessionWalletId();
+
     try {
       await this.walletCore.sync();
     } catch {
+      this._pendingRestoreWalletId = null;
       await this.walletCore.disconnect();
       this._clearEthersState();
       return false;
     }
 
     const state = this.walletCore.getState();
-    if (!state.account) return false;
+    if (!state.account) {
+      this._capturePendingRestoreWallet(savedWalletId);
+      return false;
+    }
 
+    this._pendingRestoreWalletId = null;
     this._syncFromCoreState();
     this._notify('connected', { restored: true });
     return true;
@@ -264,6 +281,62 @@ export class WalletManager {
     localStorage.removeItem(LEGACY_CONNECTION_STORAGE_KEY);
     localStorage.removeItem(LEGACY_LAST_SELECTED_WALLET_STORAGE_KEY);
     localStorage.removeItem(LEGACY_USER_DISCONNECTED_STORAGE_KEY);
+  }
+
+  async _maybeRestorePendingConnection() {
+    const walletId = this._pendingRestoreWalletId;
+    if (!walletId || this.isConnected() || this._connectionPromise || this._restoreConnectionPromise) {
+      return false;
+    }
+    if (!this.getWalletById(walletId)) return false;
+
+    this._writeWalletSessionWalletId(walletId);
+    this._restoreConnectionPromise = this.checkPreviousConnection();
+    try {
+      return await this._restoreConnectionPromise;
+    } finally {
+      this._restoreConnectionPromise = null;
+    }
+  }
+
+  _capturePendingRestoreWallet(walletId) {
+    if (!walletId) return;
+    if (this.walletCore.hasWalletSession()) return;
+
+    if (this.getWalletById(walletId)) {
+      if (this._pendingRestoreWalletId === walletId) {
+        this._pendingRestoreWalletId = null;
+      }
+      return;
+    }
+
+    this._pendingRestoreWalletId = walletId;
+  }
+
+  _readWalletSessionWalletId() {
+    try {
+      const rawSession = localStorage.getItem(WALLET_SESSION_KEY);
+      if (!rawSession) return null;
+      if (rawSession === 'injected') return 'legacy:default';
+
+      if (rawSession.trim().startsWith('{')) {
+        const parsed = JSON.parse(rawSession);
+        return typeof parsed?.walletId === 'string' && parsed.walletId ? parsed.walletId : null;
+      }
+
+      return rawSession;
+    } catch {
+      return null;
+    }
+  }
+
+  _writeWalletSessionWalletId(walletId) {
+    if (!walletId) return;
+    try {
+      localStorage.setItem(WALLET_SESSION_KEY, JSON.stringify({ walletId }));
+    } catch {
+      // Session restore is best-effort; explicit connects still work without storage.
+    }
   }
 
   _normalizeWalletError(error) {

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WalletManager } from '../js/wallet/wallet-manager.js';
 
 const ACCOUNT = '0x1111111111111111111111111111111111111111';
+const WALLET_SESSION_KEY = 'liberdus_bsc_bridge_ui:wallet-session';
 
 function makeProvider({ accounts = [ACCOUNT], chainId = '0x13882', flags = { isMetaMask: true } } = {}) {
   return {
@@ -96,12 +97,16 @@ describe('WalletManager wallet-core adapter', () => {
   it('connects with an explicit wallet id', async () => {
     const manager = await readyManager();
     const walletId = manager.getAvailableWallets()[0].id;
+    const connectedEvents = [];
+    document.addEventListener('walletConnected', (event) => connectedEvents.push(event.detail.data));
 
     await manager.connect({ walletId, userInitiated: true });
 
     expect(manager.isConnected()).toBe(true);
     expect(manager.getAddress()).toBe(ACCOUNT);
     expect(manager.getLastSelectedWalletId()).toBe(walletId);
+    expect(connectedEvents).toHaveLength(1);
+    expect(connectedEvents[0]?.restored).toBeUndefined();
   });
 
   it('requires an explicit wallet id', async () => {
@@ -165,6 +170,80 @@ describe('WalletManager wallet-core adapter', () => {
     expect(requestProviderCount).toBeLessThan(10);
   });
 
+  it('keeps a late EIP-6963 wallet session pending after initial sync clears module storage', async () => {
+    installWindow({ provider: null, multiListener: true });
+    localStorage.setItem(WALLET_SESSION_KEY, JSON.stringify({ walletId: 'late-wallet' }));
+
+    const manager = new WalletManager();
+    manager.load();
+
+    expect(await manager.init()).toBe(false);
+    expect(manager.isConnected()).toBe(false);
+    expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
+    expect(manager._pendingRestoreWalletId).toBe('late-wallet');
+  });
+
+  it('restores a pending late EIP-6963 wallet when it is announced', async () => {
+    installWindow({ provider: null, multiListener: true });
+    localStorage.setItem(WALLET_SESSION_KEY, JSON.stringify({ walletId: 'late-wallet' }));
+
+    const manager = new WalletManager();
+    const connectedEvents = [];
+    document.addEventListener('walletConnected', (event) => connectedEvents.push(event.detail.data));
+
+    manager.load();
+    expect(await manager.init()).toBe(false);
+
+    const provider = makeProvider({ flags: {} });
+    window.dispatchEvent(new CustomEvent('eip6963:announceProvider', {
+      detail: {
+        info: { uuid: 'late-wallet', name: 'Late Wallet', rdns: 'org.liberdus.late' },
+        provider,
+      },
+    }));
+
+    await vi.waitFor(() => {
+      expect(manager.isConnected()).toBe(true);
+    });
+
+    expect(manager.getAddress()).toBe(ACCOUNT);
+    expect(manager._pendingRestoreWalletId).toBeNull();
+    expect(localStorage.getItem(WALLET_SESSION_KEY)).toBe(JSON.stringify({ walletId: 'late-wallet' }));
+    expect(connectedEvents).toHaveLength(1);
+    expect(connectedEvents[0]).toMatchObject({
+      address: ACCOUNT,
+      walletId: 'late-wallet',
+      walletName: 'Late Wallet',
+      restored: true,
+    });
+  });
+
+  it('clears pending restore when a late wallet is found but unauthorized', async () => {
+    installWindow({ provider: null, multiListener: true });
+    localStorage.setItem(WALLET_SESSION_KEY, JSON.stringify({ walletId: 'locked-wallet' }));
+
+    const manager = new WalletManager();
+    manager.load();
+    expect(await manager.init()).toBe(false);
+    expect(manager._pendingRestoreWalletId).toBe('locked-wallet');
+
+    const provider = makeProvider({ accounts: [], flags: {} });
+    window.dispatchEvent(new CustomEvent('eip6963:announceProvider', {
+      detail: {
+        info: { uuid: 'locked-wallet', name: 'Locked Wallet', rdns: 'org.liberdus.locked' },
+        provider,
+      },
+    }));
+
+    await vi.waitFor(() => {
+      expect(provider.request).toHaveBeenCalledWith({ method: 'eth_accounts' });
+    });
+
+    expect(manager.isConnected()).toBe(false);
+    expect(manager._pendingRestoreWalletId).toBeNull();
+    expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
+  });
+
   it('disconnect clears the active session', async () => {
     const manager = await readyManager();
     const walletId = manager.getAvailableWallets()[0].id;
@@ -174,5 +253,21 @@ describe('WalletManager wallet-core adapter', () => {
 
     expect(manager.isConnected()).toBe(false);
     expect(manager.hasUserDisconnected()).toBe(true);
+  });
+
+  it('disconnect clears pending late restore state', async () => {
+    installWindow({ provider: null, multiListener: true });
+    localStorage.setItem(WALLET_SESSION_KEY, JSON.stringify({ walletId: 'late-wallet' }));
+
+    const manager = new WalletManager();
+    manager.load();
+    await manager.init();
+
+    expect(manager._pendingRestoreWalletId).toBe('late-wallet');
+
+    await manager.disconnect();
+
+    expect(manager._pendingRestoreWalletId).toBeNull();
+    expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
   });
 });
