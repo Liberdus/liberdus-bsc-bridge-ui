@@ -61,7 +61,7 @@ export class WalletManager {
   }
 
   async init() {
-    await this.checkPreviousConnection();
+    return await this.checkPreviousConnection();
   }
 
   get isConnecting() {
