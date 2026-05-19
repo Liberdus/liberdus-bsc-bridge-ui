@@ -45,7 +45,6 @@
     "vendor/liberdus-wallet-module/core/discovery.js",
     "vendor/liberdus-wallet-module/core/session.js",
     "vendor/liberdus-wallet-module/adapters/chain.js",
-    "js/wallet/metamask-connector.js",
     "js/wallet/network-manager.js",
     "js/wallet/wallet-manager.js",
     "js/wallet/wallet-popup.js"
