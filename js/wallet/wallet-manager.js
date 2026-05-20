@@ -29,6 +29,8 @@ export class WalletManager {
     this._connectionPromise = null;
     this._restoreConnectionPromise = null;
     this._pendingRestoreWallet = null;
+    this._eventProvider = null;
+    this._boundProviderDisconnect = null;
   }
 
   load() {
@@ -45,6 +47,7 @@ export class WalletManager {
 
       if (event === 'disconnected' || (event === 'accountChanged' && !data)) {
         this._pendingRestoreWallet = null;
+        this._removeProviderDisconnectListener();
         this._clearEthersState();
         this._notify('disconnected');
         return;
@@ -212,6 +215,7 @@ export class WalletManager {
     const injectedProvider = this.walletCore.getEip1193Provider();
 
     if (!state.account || !injectedProvider || !window.ethers) {
+      this._removeProviderDisconnectListener();
       this._clearEthersState();
       return;
     }
@@ -223,6 +227,7 @@ export class WalletManager {
     this.walletId = state.selectedWalletId || state.sessionWalletId || null;
     this.walletName = state.selectedWalletName || null;
     this.walletType = state.selectedWalletRdns || state.selectedWalletName || 'wallet';
+    this._syncProviderDisconnectListener(injectedProvider);
   }
 
   _hasActiveWalletSession() {
@@ -238,6 +243,41 @@ export class WalletManager {
     this.walletType = null;
     this.walletId = null;
     this.walletName = null;
+  }
+
+  _syncProviderDisconnectListener(provider) {
+    if (!provider || typeof provider.on !== 'function') {
+      this._removeProviderDisconnectListener();
+      return;
+    }
+    if (this._eventProvider === provider && this._boundProviderDisconnect) return;
+
+    this._removeProviderDisconnectListener();
+    this._boundProviderDisconnect = () => {
+      void this._handleProviderDisconnect();
+    };
+    provider.on('disconnect', this._boundProviderDisconnect);
+    this._eventProvider = provider;
+  }
+
+  _removeProviderDisconnectListener() {
+    const provider = this._eventProvider;
+    const handler = this._boundProviderDisconnect;
+    if (provider && handler) {
+      if (typeof provider.removeListener === 'function') {
+        provider.removeListener('disconnect', handler);
+      } else if (typeof provider.off === 'function') {
+        provider.off('disconnect', handler);
+      }
+    }
+
+    this._eventProvider = null;
+    this._boundProviderDisconnect = null;
+  }
+
+  async _handleProviderDisconnect() {
+    this._pendingRestoreWallet = null;
+    await this.walletCore.disconnect();
   }
 
   _mapWallet(wallet) {

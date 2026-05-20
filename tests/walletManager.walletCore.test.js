@@ -6,6 +6,7 @@ const ACCOUNT = '0x1111111111111111111111111111111111111111';
 const WALLET_SESSION_KEY = 'liberdus_bsc_bridge_ui:wallet-session';
 
 function makeProvider({ accounts = [ACCOUNT], chainId = '0x13882', flags = { isMetaMask: true } } = {}) {
+  const listeners = new Map();
   return {
     ...flags,
     request: vi.fn(async ({ method }) => {
@@ -13,8 +14,19 @@ function makeProvider({ accounts = [ACCOUNT], chainId = '0x13882', flags = { isM
       if (method === 'eth_chainId') return chainId;
       return null;
     }),
-    on: vi.fn(),
-    removeListener: vi.fn(),
+    on: vi.fn((event, handler) => {
+      const eventListeners = listeners.get(event) || new Set();
+      eventListeners.add(handler);
+      listeners.set(event, eventListeners);
+    }),
+    removeListener: vi.fn((event, handler) => {
+      listeners.get(event)?.delete(handler);
+    }),
+    emit(event, payload) {
+      for (const handler of listeners.get(event) || []) {
+        handler(payload);
+      }
+    },
   };
 }
 
@@ -294,6 +306,26 @@ describe('WalletManager wallet-core adapter', () => {
 
     expect(manager.isConnected()).toBe(false);
     expect(manager.hasUserDisconnected()).toBe(true);
+  });
+
+  it('clears the active session when the provider emits disconnect', async () => {
+    const provider = makeProvider();
+    installWindow({ provider });
+    const manager = await readyManager();
+    const walletId = manager.getAvailableWallets()[0].id;
+    const disconnectedEvents = [];
+    document.addEventListener('walletDisconnected', (event) => disconnectedEvents.push(event.detail.data));
+
+    await manager.connect({ walletId, userInitiated: true });
+    provider.emit('disconnect', { code: 4900, message: 'Provider disconnected' });
+
+    await vi.waitFor(() => {
+      expect(manager.isConnected()).toBe(false);
+    });
+
+    expect(disconnectedEvents).toHaveLength(1);
+    expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
+    expect(provider.removeListener).toHaveBeenCalledWith('disconnect', expect.any(Function));
   });
 
   it('disconnect clears pending late restore state', async () => {
