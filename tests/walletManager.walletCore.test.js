@@ -12,6 +12,7 @@ function makeProvider({ accounts = [ACCOUNT], chainId = '0x13882', flags = { isM
     request: vi.fn(async ({ method }) => {
       if (method === 'eth_accounts' || method === 'eth_requestAccounts') return accounts;
       if (method === 'eth_chainId') return chainId;
+      if (method === 'wallet_revokePermissions') return null;
       return null;
     }),
     on: vi.fn((event, handler) => {
@@ -304,6 +305,72 @@ describe('WalletManager wallet-core adapter', () => {
     await manager.connect({ walletId, userInitiated: true });
     await manager.disconnect();
 
+    expect(manager.isConnected()).toBe(false);
+    expect(manager.hasUserDisconnected()).toBe(true);
+  });
+
+  it('disconnect revokes wallet permissions when supported', async () => {
+    const provider = makeProvider();
+    installWindow({ provider });
+    const manager = await readyManager();
+    const walletId = manager.getAvailableWallets()[0].id;
+
+    await manager.connect({ walletId, userInitiated: true });
+    await manager.disconnect();
+
+    expect(provider.request).toHaveBeenCalledWith({
+      method: 'wallet_revokePermissions',
+      params: [{ eth_accounts: {} }],
+    });
+    expect(manager.isConnected()).toBe(false);
+  });
+
+  it('emits one disconnect event when permission revocation clears accounts first', async () => {
+    const provider = makeProvider();
+    provider.request.mockImplementation(async ({ method }) => {
+      if (method === 'eth_accounts' || method === 'eth_requestAccounts') return [ACCOUNT];
+      if (method === 'eth_chainId') return '0x13882';
+      if (method === 'wallet_revokePermissions') {
+        provider.emit('accountsChanged', []);
+        return null;
+      }
+      return null;
+    });
+    installWindow({ provider });
+    const manager = await readyManager();
+    const walletId = manager.getAvailableWallets()[0].id;
+    const disconnectedEvents = [];
+    document.addEventListener('walletDisconnected', (event) => disconnectedEvents.push(event.detail.data));
+
+    await manager.connect({ walletId, userInitiated: true });
+    await manager.disconnect();
+
+    expect(disconnectedEvents).toHaveLength(1);
+    expect(manager.isConnected()).toBe(false);
+    expect(manager.hasUserDisconnected()).toBe(true);
+  });
+
+  it('disconnect clears the active session when permission revocation is unsupported', async () => {
+    const provider = makeProvider();
+    provider.request.mockImplementation(async ({ method }) => {
+      if (method === 'eth_accounts' || method === 'eth_requestAccounts') return [ACCOUNT];
+      if (method === 'eth_chainId') return '0x13882';
+      if (method === 'wallet_revokePermissions') {
+        throw new Error('Unsupported method');
+      }
+      return null;
+    });
+    installWindow({ provider });
+    const manager = await readyManager();
+    const walletId = manager.getAvailableWallets()[0].id;
+
+    await manager.connect({ walletId, userInitiated: true });
+    await expect(manager.disconnect()).resolves.toBeUndefined();
+
+    expect(provider.request).toHaveBeenCalledWith({
+      method: 'wallet_revokePermissions',
+      params: [{ eth_accounts: {} }],
+    });
     expect(manager.isConnected()).toBe(false);
     expect(manager.hasUserDisconnected()).toBe(true);
   });

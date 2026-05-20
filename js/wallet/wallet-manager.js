@@ -46,15 +46,18 @@ export class WalletManager {
       }
 
       if (event === 'disconnected' || (event === 'accountChanged' && !data)) {
+        const wasConnected = this._hasLocalWalletState();
         this._pendingRestoreWallet = null;
         this._removeProviderDisconnectListener();
         this._clearEthersState();
-        this._notify('disconnected');
+        if (wasConnected) {
+          this._notify('disconnected');
+        }
         return;
       }
 
       if (event === 'providersChanged') {
-        if (this.isConnected()) {
+        if (this.isConnected() && this.walletCore.getState().account) {
           this._syncFromCoreState();
         }
         this._notify('providersChanged', { wallets: this.getAvailableWallets() });
@@ -178,6 +181,7 @@ export class WalletManager {
 
   async disconnect() {
     this._pendingRestoreWallet = null;
+    await this._revokeWalletPermissions();
     await this.walletCore.disconnect();
   }
 
@@ -238,6 +242,18 @@ export class WalletManager {
     return !!(state.sessionWalletId || state.selectedWalletId);
   }
 
+  _hasLocalWalletState() {
+    return !!(
+      this.provider
+      || this.signer
+      || this.address
+      || this.walletType
+      || this.walletId
+      || this.walletName
+      || this.chainId != null
+    );
+  }
+
   _clearEthersState() {
     this.provider = null;
     this.signer = null;
@@ -281,6 +297,20 @@ export class WalletManager {
   async _handleProviderDisconnect() {
     this._pendingRestoreWallet = null;
     await this.walletCore.disconnect();
+  }
+
+  async _revokeWalletPermissions() {
+    const provider = this.walletCore.getEip1193Provider();
+    if (!provider?.request) return;
+
+    try {
+      await provider.request({
+        method: 'wallet_revokePermissions',
+        params: [{ eth_accounts: {} }],
+      });
+    } catch {
+      // Not all wallets support permission revocation; local disconnect still applies.
+    }
   }
 
   _mapWallet(wallet) {
