@@ -328,6 +328,27 @@ describe('WalletManager wallet-core adapter', () => {
     expect(provider.removeListener).toHaveBeenCalledWith('disconnect', expect.any(Function));
   });
 
+  it('rebinds when wallet-core replaces the active legacy provider', async () => {
+    const legacyProvider = makeProvider({ flags: { isMetaMask: true } });
+    const eip6963Provider = makeProvider({ flags: {} });
+    installWindow({ providers: [legacyProvider], multiListener: true });
+    const manager = await readyManager();
+    const walletId = manager.getAvailableWallets()[0].id;
+
+    await manager.connect({ walletId, userInitiated: true });
+
+    expect(manager.getProvider().provider).toBe(legacyProvider);
+    expect(legacyProvider.on).toHaveBeenCalledWith('disconnect', expect.any(Function));
+
+    announceWallet('metamask-new-uuid', 'MetaMask', eip6963Provider, { rdns: 'io.metamask' });
+
+    await vi.waitFor(() => {
+      expect(manager.getProvider().provider).toBe(eip6963Provider);
+    });
+    expect(legacyProvider.removeListener).toHaveBeenCalledWith('disconnect', expect.any(Function));
+    expect(eip6963Provider.on).toHaveBeenCalledWith('disconnect', expect.any(Function));
+  });
+
   it('disconnect clears pending late restore state', async () => {
     installWindow({ provider: null, multiListener: true });
     saveWalletSession('late-wallet');

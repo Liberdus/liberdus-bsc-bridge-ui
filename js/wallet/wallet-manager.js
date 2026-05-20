@@ -54,6 +54,9 @@ export class WalletManager {
       }
 
       if (event === 'providersChanged') {
+        if (this.isConnected()) {
+          this._syncFromCoreState();
+        }
         this._notify('providersChanged', { wallets: this.getAvailableWallets() });
         void this._maybeRestorePendingConnection();
         return;
