@@ -1,6 +1,7 @@
 import { createWalletCore } from '../../vendor/liberdus-wallet-module/index.js';
 
 const WALLET_SESSION_KEY = 'liberdus_bsc_bridge_ui:wallet-session';
+const USER_DISCONNECTED_KEY = 'liberdus_bsc_bridge_ui:user-disconnected';
 const LEGACY_CONNECTION_STORAGE_KEY = 'liberdus_token_ui_wallet_connection';
 const LEGACY_LAST_SELECTED_WALLET_STORAGE_KEY = 'liberdus_token_ui_last_selected_wallet_id';
 const LEGACY_USER_DISCONNECTED_STORAGE_KEY = 'liberdus_token_ui_wallet_user_disconnected';
@@ -138,6 +139,9 @@ export class WalletManager {
       return wallet.provider;
     }
 
+    if (waitMs > 0 && !this.walletCore.getEip1193Provider()) {
+      await this.walletCore.discoverWallets(waitMs);
+    }
     return this.walletCore.getEip1193Provider();
   }
 
@@ -174,6 +178,7 @@ export class WalletManager {
     }
 
     this._pendingRestoreWallet = null;
+    this._setUserDisconnected(false);
     this._writeCurrentWalletSession();
     const data = this._currentWalletData({ userInitiated });
     return { success: true, ...data };
@@ -183,6 +188,7 @@ export class WalletManager {
     this._pendingRestoreWallet = null;
     await this._revokeWalletPermissions();
     await this.walletCore.disconnect();
+    this._setUserDisconnected(true);
   }
 
   async checkPreviousConnection({ retryResolvedPending = true } = {}) {
@@ -214,7 +220,7 @@ export class WalletManager {
   }
 
   hasUserDisconnected() {
-    return !this.walletCore.hasWalletSession();
+    return localStorage.getItem(USER_DISCONNECTED_KEY) === 'true';
   }
 
   _syncFromCoreState() {
@@ -384,6 +390,14 @@ export class WalletManager {
     localStorage.removeItem(LEGACY_CONNECTION_STORAGE_KEY);
     localStorage.removeItem(LEGACY_LAST_SELECTED_WALLET_STORAGE_KEY);
     localStorage.removeItem(LEGACY_USER_DISCONNECTED_STORAGE_KEY);
+  }
+
+  _setUserDisconnected(value) {
+    if (value) {
+      localStorage.setItem(USER_DISCONNECTED_KEY, 'true');
+      return;
+    }
+    localStorage.removeItem(USER_DISCONNECTED_KEY);
   }
 
   async _maybeRestorePendingConnection() {

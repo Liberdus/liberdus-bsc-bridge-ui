@@ -140,6 +140,30 @@ describe('WalletManager wallet-core adapter', () => {
     await expect(manager.connect({ userInitiated: true })).rejects.toThrow('Choose a wallet to connect');
   });
 
+  it('does not treat a missing session as an explicit user disconnect', async () => {
+    const manager = await readyManager();
+
+    expect(manager.isConnected()).toBe(false);
+    expect(manager.hasUserDisconnected()).toBe(false);
+  });
+
+  it('waits for provider discovery when resolving the active provider', async () => {
+    installWindow({ provider: null, multiListener: true });
+    const provider = makeProvider({ flags: {} });
+    const manager = new WalletManager();
+
+    window.addEventListener('eip6963:requestProvider', () => {
+      window.setTimeout(() => {
+        announceWallet('late-provider', 'Late Provider', provider);
+      }, 10);
+    });
+
+    manager.load();
+    const resolvedProvider = await manager.getEip1193Provider({ waitMs: 50 });
+
+    expect(resolvedProvider).toBe(provider);
+  });
+
   it('restores a saved session on init', async () => {
     const manager = await readyManager();
     const walletId = manager.getAvailableWallets()[0].id;
