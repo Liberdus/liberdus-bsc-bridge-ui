@@ -179,6 +179,23 @@ describe('WalletManager wallet-core adapter', () => {
     expect(connectedEvents[0]?.restored).toBe(true);
   });
 
+  it('does not report restored connection when ethers is unavailable', async () => {
+    const manager = await readyManager();
+    const walletId = manager.getAvailableWallets()[0].id;
+    await manager.connect({ walletId, userInitiated: true });
+    delete window.ethers;
+
+    const restoredManager = new WalletManager();
+    const connectedEvents = [];
+    document.addEventListener('walletConnected', (event) => connectedEvents.push(event.detail.data));
+
+    restoredManager.load();
+    expect(await restoredManager.init()).toBe(false);
+    expect(restoredManager.isConnected()).toBe(false);
+    expect(connectedEvents).toHaveLength(0);
+    expect(JSON.parse(localStorage.getItem(WALLET_SESSION_KEY))).toMatchObject({ walletId });
+  });
+
   it('clears legacy token-ui storage keys on load', () => {
     localStorage.setItem('liberdus_token_ui_wallet_connection', JSON.stringify({ address: ACCOUNT }));
     localStorage.setItem('liberdus_token_ui_last_selected_wallet_id', 'metamask');

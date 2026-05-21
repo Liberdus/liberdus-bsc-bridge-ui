@@ -214,6 +214,7 @@ export class WalletManager {
 
     this._pendingRestoreWallet = null;
     this._syncFromCoreState();
+    if (!this.isConnected()) return false;
     this._writeCurrentWalletSession();
     this._notify('connected', { restored: true });
     return true;
