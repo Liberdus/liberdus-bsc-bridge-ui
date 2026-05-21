@@ -239,7 +239,7 @@ export class WalletManager {
 
   _hasActiveWalletSession() {
     const state = this.walletCore.getState();
-    return !!(state.sessionWalletId || state.selectedWalletId);
+    return !!state.sessionWalletId;
   }
 
   _hasLocalWalletState() {

@@ -298,6 +298,32 @@ describe('WalletManager wallet-core adapter', () => {
     expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
   });
 
+  it('does not reconnect from account events after restore loses authorization', async () => {
+    const provider = makeProvider({ accounts: [], flags: {} });
+    installWindow({ provider: null, multiListener: true });
+    saveWalletSession('locked-wallet');
+
+    const manager = new WalletManager();
+    const connectedEvents = [];
+    document.addEventListener('walletConnected', (event) => connectedEvents.push(event.detail.data));
+
+    manager.load();
+    expect(await manager.init()).toBe(false);
+    announceWallet('locked-wallet', 'Locked Wallet', provider);
+
+    await vi.waitFor(() => {
+      expect(provider.request).toHaveBeenCalledWith({ method: 'eth_accounts' });
+    });
+    expect(manager.isConnected()).toBe(false);
+
+    provider.emit('accountsChanged', [ACCOUNT]);
+    provider.emit('chainChanged', '0x13882');
+    await Promise.resolve();
+
+    expect(manager.isConnected()).toBe(false);
+    expect(connectedEvents).toHaveLength(0);
+  });
+
   it('disconnect clears the active session', async () => {
     const manager = await readyManager();
     const walletId = manager.getAvailableWallets()[0].id;
