@@ -295,8 +295,12 @@ export class WalletManager {
   }
 
   async _handleProviderDisconnect() {
-    this._pendingRestoreWallet = null;
-    await this.walletCore.disconnect();
+    const wasConnected = this._hasLocalWalletState();
+    this._removeProviderDisconnectListener();
+    this._clearEthersState();
+    if (wasConnected) {
+      this._notify('disconnected');
+    }
   }
 
   async _revokeWalletPermissions() {

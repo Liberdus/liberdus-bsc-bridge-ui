@@ -401,7 +401,7 @@ describe('WalletManager wallet-core adapter', () => {
     expect(manager.hasUserDisconnected()).toBe(true);
   });
 
-  it('clears the active session when the provider emits disconnect', async () => {
+  it('preserves the saved session when the provider emits disconnect', async () => {
     const provider = makeProvider();
     installWindow({ provider });
     const manager = await readyManager();
@@ -417,7 +417,8 @@ describe('WalletManager wallet-core adapter', () => {
     });
 
     expect(disconnectedEvents).toHaveLength(1);
-    expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
+    expect(JSON.parse(localStorage.getItem(WALLET_SESSION_KEY))).toMatchObject({ walletId });
+    expect(manager.hasUserDisconnected()).toBe(false);
     expect(provider.removeListener).toHaveBeenCalledWith('disconnect', expect.any(Function));
   });
 
