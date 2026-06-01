@@ -1,3 +1,4 @@
+import { switchOrAddEthereumChain } from '../../vendor/liberdus-wallet-module/adapters/chain.js';
 import { CONFIG } from '../config.js';
 import { getContractMetadata, normalizeContractKey } from '../contracts/contract-types.js';
 
@@ -119,33 +120,15 @@ export class NetworkManager {
   async switchToChain(network) {
     const walletProvider = await this.walletManager?.getEip1193Provider?.({ waitMs: 200 });
     if (!walletProvider) throw new Error('Wallet not available');
-    const chainHex = this._toHexChainId(network.CHAIN_ID);
-    try {
-      await walletProvider.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: chainHex }],
-      });
-      return true;
-    } catch (error) {
-      if (error && error.code === 4902) {
-        await walletProvider.request({
-          method: 'wallet_addEthereumChain',
-          params: [{
-            chainId: chainHex,
-            chainName: network.NAME,
-            rpcUrls: [network.RPC_URL, ...network.FALLBACK_RPCS],
-            nativeCurrency: network.NATIVE_CURRENCY,
-            blockExplorerUrls: [network.BLOCK_EXPLORER],
-          }],
-        });
-        await walletProvider.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: chainHex }],
-        });
-        return true;
-      }
-      throw error;
-    }
+
+    await switchOrAddEthereumChain(walletProvider, {
+      chainId: network.CHAIN_ID,
+      chainName: network.NAME,
+      rpcUrls: [network.RPC_URL, ...(network.FALLBACK_RPCS || [])].filter(Boolean),
+      nativeCurrency: network.NATIVE_CURRENCY,
+      blockExplorerUrls: [network.BLOCK_EXPLORER].filter(Boolean),
+    });
+    return true;
   }
 
   updateUIState() {
@@ -176,10 +159,6 @@ export class NetworkManager {
       }
       el.classList.toggle('is-disabled', !connected);
     });
-  }
-
-  _toHexChainId(chainId) {
-    return '0x' + Number(chainId).toString(16);
   }
 
   _normalizeChainId(chainId) {

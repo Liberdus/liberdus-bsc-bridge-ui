@@ -2,7 +2,7 @@ import { CONFIG } from '../config.js';
 
 /**
  * WalletPopup (Phase 2)
- * Sheet-style MetaMask popup:
+ * Sheet-style connected wallet popup:
  * - address (copy)
  * - balance (native, best-effort)
  * - disconnect
