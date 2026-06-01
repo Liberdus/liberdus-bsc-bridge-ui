@@ -44,7 +44,8 @@ Open `http://localhost:8080`.
 - `index.html` app shell
 - `css/` shared reference styles
 - `js/app.js` bootstrap + global manager wiring
-- `js/wallet/` injected-wallet discovery, connection, and network management
+- `js/wallet/` injected-wallet discovery, connection, and network management (via [`liberdus-wallet-module`](vendor/liberdus-wallet-module))
+- `docs/SUBMODULE.md` submodule maintenance guide
 - `js/contracts/contract-manager.js` ABI/provider/contract wiring
 - `js/components/` tabs + header + toast components
 - `abi/source-vault.json` source Vault ABI
