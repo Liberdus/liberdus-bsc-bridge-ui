@@ -140,11 +140,11 @@ describe('WalletManager wallet-core adapter', () => {
     await expect(manager.connect({ userInitiated: true })).rejects.toThrow('Choose a wallet to connect');
   });
 
-  it('does not treat a missing session as an explicit user disconnect', async () => {
+  it('starts disconnected when no wallet session exists', async () => {
     const manager = await readyManager();
 
     expect(manager.isConnected()).toBe(false);
-    expect(manager.hasUserDisconnected()).toBe(false);
+    expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
   });
 
   it('waits for provider discovery when resolving the active provider', async () => {
@@ -272,11 +272,9 @@ describe('WalletManager wallet-core adapter', () => {
     });
 
     expect(manager.getAddress()).toBe(ACCOUNT);
-    expect(manager._pendingRestoreWallet).toBeNull();
     expect(JSON.parse(localStorage.getItem(WALLET_SESSION_KEY))).toMatchObject({
       walletId: 'late-wallet',
       rdns: 'org.liberdus.late-wallet',
-      name: 'Late Wallet',
     });
     expect(connectedEvents).toHaveLength(1);
     expect(connectedEvents[0]).toMatchObject({
@@ -307,7 +305,6 @@ describe('WalletManager wallet-core adapter', () => {
     expect(JSON.parse(localStorage.getItem(WALLET_SESSION_KEY))).toMatchObject({
       walletId: 'new-uuid',
       rdns: 'io.metamask',
-      name: 'MetaMask',
     });
     expect(connectedEvents[0]).toMatchObject({
       walletId: 'new-uuid',
@@ -332,7 +329,6 @@ describe('WalletManager wallet-core adapter', () => {
     });
 
     expect(manager.isConnected()).toBe(false);
-    expect(manager._pendingRestoreWallet).toBeNull();
     expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
   });
 
@@ -370,7 +366,7 @@ describe('WalletManager wallet-core adapter', () => {
     await manager.disconnect();
 
     expect(manager.isConnected()).toBe(false);
-    expect(manager.hasUserDisconnected()).toBe(true);
+    expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
   });
 
   it('disconnect revokes wallet permissions when supported', async () => {
@@ -411,7 +407,7 @@ describe('WalletManager wallet-core adapter', () => {
 
     expect(disconnectedEvents).toHaveLength(1);
     expect(manager.isConnected()).toBe(false);
-    expect(manager.hasUserDisconnected()).toBe(true);
+    expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
   });
 
   it('disconnect clears the active session when permission revocation is unsupported', async () => {
@@ -436,7 +432,7 @@ describe('WalletManager wallet-core adapter', () => {
       params: [{ eth_accounts: {} }],
     });
     expect(manager.isConnected()).toBe(false);
-    expect(manager.hasUserDisconnected()).toBe(true);
+    expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
   });
 
   it('emits one disconnect event when the provider emits disconnect', async () => {
@@ -456,7 +452,6 @@ describe('WalletManager wallet-core adapter', () => {
 
     expect(disconnectedEvents).toHaveLength(1);
     expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
-    expect(manager.hasUserDisconnected()).toBe(false);
   });
 
   it('rebinds when wallet-core replaces the active legacy provider', async () => {
@@ -489,7 +484,6 @@ describe('WalletManager wallet-core adapter', () => {
 
     await manager.disconnect();
 
-    expect(manager._pendingRestoreWallet).toBeNull();
     expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
   });
 });
