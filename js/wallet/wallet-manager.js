@@ -1,7 +1,6 @@
 import { createWalletCore } from '../../vendor/liberdus-wallet-module/index.js';
 
 const WALLET_SESSION_KEY = 'liberdus_bsc_bridge_ui:wallet-session';
-const USER_DISCONNECTED_KEY = 'liberdus_bsc_bridge_ui:user-disconnected';
 const LEGACY_CONNECTION_STORAGE_KEY = 'liberdus_token_ui_wallet_connection';
 const LEGACY_LAST_SELECTED_WALLET_STORAGE_KEY = 'liberdus_token_ui_last_selected_wallet_id';
 const LEGACY_USER_DISCONNECTED_STORAGE_KEY = 'liberdus_token_ui_wallet_user_disconnected';
@@ -9,7 +8,7 @@ const LEGACY_USER_DISCONNECTED_STORAGE_KEY = 'liberdus_token_ui_wallet_user_disc
 /**
  * WalletManager
  * - Explicit injected-wallet selection via wallet-core
- * - Silent restore from saved session
+ * - Silent restore from saved session (wallet-core owns persistence)
  * - Dispatches DOM events:
  *   - walletConnected, walletDisconnected, walletAccountChanged, walletChainChanged, walletProvidersChanged
  */
@@ -28,10 +27,6 @@ export class WalletManager {
     this.walletId = null;
     this.walletName = null;
     this._connectionPromise = null;
-    this._restoreConnectionPromise = null;
-    this._pendingRestoreWallet = null;
-    this._eventProvider = null;
-    this._boundProviderDisconnect = null;
   }
 
   load() {
@@ -40,16 +35,12 @@ export class WalletManager {
     this.walletCore.subscribe((event, data) => {
       if (event === 'connected') {
         this._syncFromCoreState();
-        this._pendingRestoreWallet = null;
-        this._writeCurrentWalletSession();
         this._notify('connected');
         return;
       }
 
       if (event === 'disconnected' || (event === 'accountChanged' && !data)) {
         const wasConnected = this._hasLocalWalletState();
-        this._pendingRestoreWallet = null;
-        this._removeProviderDisconnectListener();
         this._clearEthersState();
         if (wasConnected) {
           this._notify('disconnected');
@@ -62,7 +53,6 @@ export class WalletManager {
           this._syncFromCoreState();
         }
         this._notify('providersChanged', { wallets: this.getAvailableWallets() });
-        void this._maybeRestorePendingConnection();
         return;
       }
 
@@ -177,27 +167,18 @@ export class WalletManager {
       throw this._normalizeWalletError(error);
     }
 
-    this._pendingRestoreWallet = null;
-    this._setUserDisconnected(false);
-    this._writeCurrentWalletSession();
     const data = this._currentWalletData({ userInitiated });
     return { success: true, ...data };
   }
 
   async disconnect() {
-    this._pendingRestoreWallet = null;
-    await this._revokeWalletPermissions();
     await this.walletCore.disconnect();
-    this._setUserDisconnected(true);
   }
 
-  async checkPreviousConnection({ retryResolvedPending = true } = {}) {
-    const savedSession = this._readWalletSession();
-
+  async checkPreviousConnection() {
     try {
       await this.walletCore.sync();
     } catch {
-      this._pendingRestoreWallet = null;
       await this.walletCore.disconnect();
       this._clearEthersState();
       return false;
@@ -205,23 +186,13 @@ export class WalletManager {
 
     const state = this.walletCore.getState();
     if (!state.account) {
-      this._capturePendingRestoreWallet(savedSession);
-      if (retryResolvedPending) {
-        return await this._maybeRestorePendingConnection();
-      }
       return false;
     }
 
-    this._pendingRestoreWallet = null;
     this._syncFromCoreState();
     if (!this.isConnected()) return false;
-    this._writeCurrentWalletSession();
     this._notify('connected', { restored: true });
     return true;
-  }
-
-  hasUserDisconnected() {
-    return localStorage.getItem(USER_DISCONNECTED_KEY) === 'true';
   }
 
   _syncFromCoreState() {
@@ -229,7 +200,6 @@ export class WalletManager {
     const injectedProvider = this.walletCore.getEip1193Provider();
 
     if (!state.account || !injectedProvider || !window.ethers) {
-      this._removeProviderDisconnectListener();
       this._clearEthersState();
       return;
     }
@@ -241,7 +211,6 @@ export class WalletManager {
     this.walletId = state.selectedWalletId || state.sessionWalletId || null;
     this.walletName = state.selectedWalletName || null;
     this.walletType = state.selectedWalletRdns || state.selectedWalletName || 'wallet';
-    this._syncProviderDisconnectListener(injectedProvider);
   }
 
   _hasActiveWalletSession() {
@@ -269,59 +238,6 @@ export class WalletManager {
     this.walletType = null;
     this.walletId = null;
     this.walletName = null;
-  }
-
-  _syncProviderDisconnectListener(provider) {
-    if (!provider || typeof provider.on !== 'function') {
-      this._removeProviderDisconnectListener();
-      return;
-    }
-    if (this._eventProvider === provider && this._boundProviderDisconnect) return;
-
-    this._removeProviderDisconnectListener();
-    this._boundProviderDisconnect = () => {
-      void this._handleProviderDisconnect();
-    };
-    provider.on('disconnect', this._boundProviderDisconnect);
-    this._eventProvider = provider;
-  }
-
-  _removeProviderDisconnectListener() {
-    const provider = this._eventProvider;
-    const handler = this._boundProviderDisconnect;
-    if (provider && handler) {
-      if (typeof provider.removeListener === 'function') {
-        provider.removeListener('disconnect', handler);
-      } else if (typeof provider.off === 'function') {
-        provider.off('disconnect', handler);
-      }
-    }
-
-    this._eventProvider = null;
-    this._boundProviderDisconnect = null;
-  }
-
-  async _handleProviderDisconnect() {
-    const wasConnected = this._hasLocalWalletState();
-    this._removeProviderDisconnectListener();
-    this._clearEthersState();
-    if (wasConnected) {
-      this._notify('disconnected');
-    }
-  }
-
-  async _revokeWalletPermissions() {
-    const provider = this.walletCore.getEip1193Provider();
-    if (!provider?.request) return;
-
-    try {
-      await provider.request({
-        method: 'wallet_revokePermissions',
-        params: [{ eth_accounts: {} }],
-      });
-    } catch {
-      // Not all wallets support permission revocation; local disconnect still applies.
-    }
   }
 
   _mapWallet(wallet) {
@@ -391,127 +307,6 @@ export class WalletManager {
     localStorage.removeItem(LEGACY_CONNECTION_STORAGE_KEY);
     localStorage.removeItem(LEGACY_LAST_SELECTED_WALLET_STORAGE_KEY);
     localStorage.removeItem(LEGACY_USER_DISCONNECTED_STORAGE_KEY);
-  }
-
-  _setUserDisconnected(value) {
-    if (value) {
-      localStorage.setItem(USER_DISCONNECTED_KEY, 'true');
-      return;
-    }
-    localStorage.removeItem(USER_DISCONNECTED_KEY);
-  }
-
-  async _maybeRestorePendingConnection() {
-    const pendingSession = this._pendingRestoreWallet;
-    if (!pendingSession || this.isConnected() || this._connectionPromise || this._restoreConnectionPromise) {
-      return false;
-    }
-
-    const walletId = this._resolveWalletSessionWalletId(pendingSession);
-    if (!walletId) return false;
-
-    this._writeWalletSession({
-      ...pendingSession,
-      ...this._walletSessionFromWallet(this.getWalletById(walletId)),
-      walletId,
-    });
-    this._restoreConnectionPromise = this.checkPreviousConnection({ retryResolvedPending: false }).finally(() => {
-      this._restoreConnectionPromise = null;
-    });
-    return await this._restoreConnectionPromise;
-  }
-
-  _capturePendingRestoreWallet(session) {
-    const savedSession = this._normalizeWalletSession(session);
-    if (!savedSession) return;
-    if (this.walletCore.hasWalletSession()) return;
-
-    if (savedSession.walletId && this.getWalletById(savedSession.walletId)) {
-      this._pendingRestoreWallet = null;
-      return;
-    }
-
-    this._pendingRestoreWallet = savedSession;
-  }
-
-  _readWalletSession() {
-    try {
-      const rawSession = localStorage.getItem(WALLET_SESSION_KEY);
-      if (!rawSession) return null;
-      if (rawSession === 'injected') return { walletId: 'legacy:default' };
-
-      if (rawSession.trim().startsWith('{')) {
-        const parsed = JSON.parse(rawSession);
-        return this._normalizeWalletSession(parsed);
-      }
-
-      return { walletId: rawSession };
-    } catch {
-      return null;
-    }
-  }
-
-  _normalizeWalletSession(session) {
-    if (!session || typeof session !== 'object') return null;
-
-    const walletId = this._normalizeSessionText(session.walletId);
-    const rdns = this._normalizeSessionRdns(session.rdns);
-    const name = this._normalizeSessionText(session.name);
-    if (!walletId && !rdns) return null;
-
-    return {
-      ...(walletId ? { walletId } : {}),
-      ...(rdns ? { rdns } : {}),
-      ...(name ? { name } : {}),
-    };
-  }
-
-  _resolveWalletSessionWalletId(session) {
-    const savedSession = this._normalizeWalletSession(session);
-    if (!savedSession) return null;
-
-    if (savedSession.walletId && this.getWalletById(savedSession.walletId)) {
-      return savedSession.walletId;
-    }
-
-    if (!savedSession.rdns) return null;
-
-    const matchingWallets = this.getAvailableWallets()
-      .filter((wallet) => this._normalizeSessionRdns(wallet.rdns) === savedSession.rdns);
-    if (matchingWallets.length !== 1) return null;
-    return matchingWallets[0].id;
-  }
-
-  _writeCurrentWalletSession() {
-    const session = this._walletSessionFromWallet(this.getWalletById(this.walletId));
-    this._writeWalletSession(session);
-  }
-
-  _walletSessionFromWallet(wallet) {
-    if (!wallet?.id) return null;
-    return {
-      walletId: wallet.id,
-      ...(wallet.rdns ? { rdns: wallet.rdns } : {}),
-      ...(wallet.name ? { name: wallet.name } : {}),
-    };
-  }
-
-  _writeWalletSession(session) {
-    const savedSession = this._normalizeWalletSession(session);
-    if (!savedSession?.walletId) return;
-    try {
-      localStorage.setItem(WALLET_SESSION_KEY, JSON.stringify(savedSession));
-    } catch {
-      // Session restore is best-effort; explicit connects still work without storage.
-    }
-  }
-
-  _normalizeSessionText(value) {
-    return String(value || '').trim();
-  }
-
-  _normalizeSessionRdns(value) {
-    return this._normalizeSessionText(value).toLowerCase();
   }
 
   _normalizeWalletError(error) {

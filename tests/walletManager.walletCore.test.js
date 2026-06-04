@@ -140,11 +140,11 @@ describe('WalletManager wallet-core adapter', () => {
     await expect(manager.connect({ userInitiated: true })).rejects.toThrow('Choose a wallet to connect');
   });
 
-  it('does not treat a missing session as an explicit user disconnect', async () => {
+  it('starts disconnected when no wallet session exists', async () => {
     const manager = await readyManager();
 
     expect(manager.isConnected()).toBe(false);
-    expect(manager.hasUserDisconnected()).toBe(false);
+    expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
   });
 
   it('waits for provider discovery when resolving the active provider', async () => {
@@ -262,8 +262,7 @@ describe('WalletManager wallet-core adapter', () => {
     manager.load();
     expect(await manager.init()).toBe(false);
     expect(manager.isConnected()).toBe(false);
-    expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
-    expect(manager._pendingRestoreWallet).toMatchObject({ walletId: 'late-wallet' });
+    expect(JSON.parse(localStorage.getItem(WALLET_SESSION_KEY))).toMatchObject({ walletId: 'late-wallet' });
 
     const provider = makeProvider({ flags: {} });
     announceWallet('late-wallet', 'Late Wallet', provider);
@@ -273,18 +272,15 @@ describe('WalletManager wallet-core adapter', () => {
     });
 
     expect(manager.getAddress()).toBe(ACCOUNT);
-    expect(manager._pendingRestoreWallet).toBeNull();
     expect(JSON.parse(localStorage.getItem(WALLET_SESSION_KEY))).toMatchObject({
       walletId: 'late-wallet',
       rdns: 'org.liberdus.late-wallet',
-      name: 'Late Wallet',
     });
     expect(connectedEvents).toHaveLength(1);
     expect(connectedEvents[0]).toMatchObject({
       address: ACCOUNT,
       walletId: 'late-wallet',
       walletName: 'Late Wallet',
-      restored: true,
     });
   });
 
@@ -309,12 +305,10 @@ describe('WalletManager wallet-core adapter', () => {
     expect(JSON.parse(localStorage.getItem(WALLET_SESSION_KEY))).toMatchObject({
       walletId: 'new-uuid',
       rdns: 'io.metamask',
-      name: 'MetaMask',
     });
     expect(connectedEvents[0]).toMatchObject({
       walletId: 'new-uuid',
       walletName: 'MetaMask',
-      restored: true,
     });
   });
 
@@ -325,7 +319,7 @@ describe('WalletManager wallet-core adapter', () => {
     const manager = new WalletManager();
     manager.load();
     expect(await manager.init()).toBe(false);
-    expect(manager._pendingRestoreWallet).toMatchObject({ walletId: 'locked-wallet' });
+    expect(JSON.parse(localStorage.getItem(WALLET_SESSION_KEY))).toMatchObject({ walletId: 'locked-wallet' });
 
     const provider = makeProvider({ accounts: [], flags: {} });
     announceWallet('locked-wallet', 'Locked Wallet', provider);
@@ -335,7 +329,6 @@ describe('WalletManager wallet-core adapter', () => {
     });
 
     expect(manager.isConnected()).toBe(false);
-    expect(manager._pendingRestoreWallet).toBeNull();
     expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
   });
 
@@ -373,7 +366,7 @@ describe('WalletManager wallet-core adapter', () => {
     await manager.disconnect();
 
     expect(manager.isConnected()).toBe(false);
-    expect(manager.hasUserDisconnected()).toBe(true);
+    expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
   });
 
   it('disconnect revokes wallet permissions when supported', async () => {
@@ -414,7 +407,7 @@ describe('WalletManager wallet-core adapter', () => {
 
     expect(disconnectedEvents).toHaveLength(1);
     expect(manager.isConnected()).toBe(false);
-    expect(manager.hasUserDisconnected()).toBe(true);
+    expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
   });
 
   it('disconnect clears the active session when permission revocation is unsupported', async () => {
@@ -439,10 +432,10 @@ describe('WalletManager wallet-core adapter', () => {
       params: [{ eth_accounts: {} }],
     });
     expect(manager.isConnected()).toBe(false);
-    expect(manager.hasUserDisconnected()).toBe(true);
+    expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
   });
 
-  it('preserves the saved session when the provider emits disconnect', async () => {
+  it('emits one disconnect event when the provider emits disconnect', async () => {
     const provider = makeProvider();
     installWindow({ provider });
     const manager = await readyManager();
@@ -458,9 +451,7 @@ describe('WalletManager wallet-core adapter', () => {
     });
 
     expect(disconnectedEvents).toHaveLength(1);
-    expect(JSON.parse(localStorage.getItem(WALLET_SESSION_KEY))).toMatchObject({ walletId });
-    expect(manager.hasUserDisconnected()).toBe(false);
-    expect(provider.removeListener).toHaveBeenCalledWith('disconnect', expect.any(Function));
+    expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
   });
 
   it('rebinds when wallet-core replaces the active legacy provider', async () => {
@@ -473,18 +464,15 @@ describe('WalletManager wallet-core adapter', () => {
     await manager.connect({ walletId, userInitiated: true });
 
     expect(manager.getProvider().provider).toBe(legacyProvider);
-    expect(legacyProvider.on).toHaveBeenCalledWith('disconnect', expect.any(Function));
 
     announceWallet('metamask-new-uuid', 'MetaMask', eip6963Provider, { rdns: 'io.metamask' });
 
     await vi.waitFor(() => {
       expect(manager.getProvider().provider).toBe(eip6963Provider);
     });
-    expect(legacyProvider.removeListener).toHaveBeenCalledWith('disconnect', expect.any(Function));
-    expect(eip6963Provider.on).toHaveBeenCalledWith('disconnect', expect.any(Function));
   });
 
-  it('disconnect clears pending late restore state', async () => {
+  it('disconnect clears a saved late-restore session', async () => {
     installWindow({ provider: null, multiListener: true });
     saveWalletSession('late-wallet');
 
@@ -492,11 +480,10 @@ describe('WalletManager wallet-core adapter', () => {
     manager.load();
     await manager.init();
 
-    expect(manager._pendingRestoreWallet).toMatchObject({ walletId: 'late-wallet' });
+    expect(JSON.parse(localStorage.getItem(WALLET_SESSION_KEY))).toMatchObject({ walletId: 'late-wallet' });
 
     await manager.disconnect();
 
-    expect(manager._pendingRestoreWallet).toBeNull();
     expect(localStorage.getItem(WALLET_SESSION_KEY)).toBeNull();
   });
 });
